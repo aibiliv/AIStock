@@ -1,7 +1,7 @@
-import { env } from "cloudflare:workers";
 import { ensureSchema, getDb } from "../../../db";
 import { analysisReports } from "../../../db/schema";
 import { analyzeStockData, automaticExplanation } from "../../../lib/stocks";
+import { getAiConfig } from "../../../lib/ai-config";
 
 type DeepSeekResponse = {
   choices?: Array<{ message?: { content?: string } }>;
@@ -45,22 +45,22 @@ function normalizeExplanation(value: unknown, fallback: Explanation): Explanatio
 
 async function getDeepSeekExplanation(facts: Awaited<ReturnType<typeof analyzeStockData>>) {
   const fallback = automaticExplanation(facts);
-  const runtimeEnv = env as unknown as { DEEPSEEK_API_KEY?: string };
-  if (!runtimeEnv.DEEPSEEK_API_KEY) {
+  const ai = getAiConfig();
+  if (!ai.configured) {
     return { mode: "automatic" as const, explanation: fallback };
   }
 
   let response: Response;
   try {
-    response = await fetch("https://api.deepseek.com/chat/completions", {
+    response = await fetch(`${ai.apiBase}/chat/completions`, {
       method: "POST",
       signal: AbortSignal.timeout(20_000),
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${runtimeEnv.DEEPSEEK_API_KEY}`,
+        authorization: `Bearer ${ai.apiKey}`,
       },
       body: JSON.stringify({
-        model: "deepseek-chat",
+        model: ai.model,
         response_format: { type: "json_object" },
         temperature: 0.2,
         messages: [

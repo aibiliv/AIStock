@@ -1,9 +1,10 @@
-import { env } from "cloudflare:workers";
+import { getAiConfig } from "../../../lib/ai-config";
 
 export async function GET() {
-  const runtimeEnv = env as unknown as { DEEPSEEK_API_KEY?: string };
+  const ai = getAiConfig();
   return Response.json({
-    deepseekConfigured: Boolean(runtimeEnv.DEEPSEEK_API_KEY),
+    deepseekConfigured: ai.configured,
+    aiProvider: ai.provider,
     dataSource: "腾讯证券 / Yahoo公开行情",
     reminderMode: "页面打开期间每5分钟检查",
   });

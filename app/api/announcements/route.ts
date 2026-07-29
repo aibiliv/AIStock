@@ -1,9 +1,9 @@
-import { env } from "cloudflare:workers";
 import { and, desc, eq } from "drizzle-orm";
 import { extractText, getDocumentProxy } from "unpdf";
 import { ensureSchema, getDb } from "../../../db";
 import { announcementNotes } from "../../../db/schema";
 import { isStockCode } from "../../../lib/domain";
+import { getAiConfig } from "../../../lib/ai-config";
 
 const allowedHosts = new Set([
   "static.cninfo.com.cn",
@@ -54,19 +54,19 @@ function automaticSummary(text: string): SummaryResult {
 }
 
 async function summarizeWithDeepSeek(text: string): Promise<SummaryResult> {
-  const runtimeEnv = env as unknown as { DEEPSEEK_API_KEY?: string };
-  if (!runtimeEnv.DEEPSEEK_API_KEY) return automaticSummary(text);
+  const ai = getAiConfig();
+  if (!ai.configured) return automaticSummary(text);
 
   try {
-    const response = await fetch("https://api.deepseek.com/chat/completions", {
+    const response = await fetch(`${ai.apiBase}/chat/completions`, {
       method: "POST",
       signal: AbortSignal.timeout(20_000),
       headers: {
         "content-type": "application/json",
-        authorization: `Bearer ${runtimeEnv.DEEPSEEK_API_KEY}`,
+        authorization: `Bearer ${ai.apiKey}`,
       },
       body: JSON.stringify({
-        model: "deepseek-chat",
+        model: ai.model,
         response_format: { type: "json_object" },
         temperature: 0.1,
         messages: [

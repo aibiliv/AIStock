@@ -93,6 +93,7 @@ type Analysis = {
 
 type Status = {
   deepseekConfigured: boolean;
+  aiProvider?: string;
   dataSource: string;
   reminderMode: string;
 };
@@ -387,7 +388,7 @@ export function Dashboard() {
         </div>
         <div className="source-status">
           <i />
-          <span><b>{status?.deepseekConfigured ? "DeepSeek分析" : "自动解释模式"}</b><small>{status?.dataSource ?? "正在检查数据源"}</small></span>
+          <span><b>{status?.deepseekConfigured ? (status.aiProvider === "openai" ? "OpenAI分析" : "AI分析") : "自动解释模式"}</b><small>{status?.dataSource ?? "正在检查数据源"}</small></span>
         </div>
       </aside>
 
@@ -624,7 +625,7 @@ function AnalysisView({ analysis, watched, canSell, onWatch, onBuy, onSell }: {
       <section className="stock-summary panel">
         <div className="stock-identity">
           <span className="stock-avatar large">{stock.name.slice(0, 1)}</span>
-          <div><span className="demo-label">{analysis.mode === "deepseek" ? "DeepSeek解释" : "自动解释"}</span><h2>{stock.name} <small>{stock.code}</small></h2><p>{stock.industry}</p></div>
+          <div><span className="demo-label">{analysis.mode === "deepseek" ? "AI解释" : "自动解释"}</span><h2>{stock.name} <small>{stock.code}</small></h2><p>{stock.industry}</p></div>
         </div>
         <div className="price-block">
           <strong>{price(quote.price)}</strong>
@@ -808,7 +809,7 @@ function AnalysisHistory({ symbol, currentPrice }: { symbol: string; currentPric
         const change = ((currentPrice * 100 / report.priceCents) - 1) * 100;
         return (
           <article className="history-item" key={report.id}>
-            <div><b>{new Date(report.createdAt).toLocaleString("zh-CN")}</b><span>{report.mode === "deepseek" ? "DeepSeek" : "自动解释"} · 当时{money(report.priceCents)} · 至今<span className={change >= 0 ? "up" : "down"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span></span></div>
+            <div><b>{new Date(report.createdAt).toLocaleString("zh-CN")}</b><span>{report.mode === "deepseek" ? "AI" : "自动解释"} · 当时{money(report.priceCents)} · 至今<span className={change >= 0 ? "up" : "down"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span></span></div>
             <p>{report.summary}</p>
           </article>
         );
@@ -896,7 +897,7 @@ function AnnouncementPanel({ stock }: { stock: Analysis["stock"] }) {
       <div className="announcement-list">
         {notes.slice(0, 3).map((note) => (
           <article key={note.id}>
-            <div><b>{note.title}</b><span>{note.mode === "deepseek" ? "DeepSeek摘要" : "自动摘要"} · {note.totalPages}页</span></div>
+            <div><b>{note.title}</b><span>{note.mode === "deepseek" ? "AI摘要" : "自动摘要"} · {note.totalPages}页</span></div>
             <p>{note.summary}</p>
             {note.risks.length > 0 && <small>需要核验：{note.risks.join("；")}</small>}
             <div className="announcement-actions">
@@ -1053,7 +1054,7 @@ function Settings({ status, alerts, section, onSection, onDisable, onNotificatio
 }) {
   const notificationState = typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported";
   const cards = [
-    { id: "ai", icon: "AI", title: "AI分析", text: status?.deepseekConfigured ? "DeepSeek已由服务端安全配置。" : "当前未配置DeepSeek，使用基于真实数据的自动解释。", state: status?.deepseekConfigured ? "已连接" : "自动模式" },
+    { id: "ai", icon: "AI", title: "AI分析", text: status?.deepseekConfigured ? "AI分析已由服务端安全配置。" : "当前未配置AI密钥，使用基于真实数据的自动解释。", state: status?.deepseekConfigured ? "已连接" : "自动模式" },
     { id: "data", icon: "数", title: "数据来源", text: `${status?.dataSource ?? "公开行情"}。结果显示获取时间，失败时不会伪装成最新。`, state: "无需账号" },
     { id: "alerts", icon: "醒", title: "提醒管理", text: `${status?.reminderMode ?? "页面打开期间检查"}。重要止损仍需在券商App重复设置。`, state: `${alerts.filter((item) => item.enabled).length}条启用` },
     { id: "privacy", icon: "私", title: "隐私与备份", text: "交易数据保存在私有数据库中，可随时下载JSON备份。", state: "默认私有" },
@@ -1071,7 +1072,7 @@ function Settings({ status, alerts, section, onSection, onDisable, onNotificatio
           </article>
         ))}
       </div>
-      {section === "ai" && <section className="panel settings-detail"><h3>AI连接状态</h3><p>{status?.deepseekConfigured ? "DeepSeek API密钥只在服务端读取，浏览器无法看到。" : "没有DeepSeek密钥时，系统不会假装调用AI，而是明确显示“自动解释”。"}</p></section>}
+      {section === "ai" && <section className="panel settings-detail"><h3>AI连接状态</h3><p>{status?.deepseekConfigured ? "AI API密钥只在服务端读取，浏览器无法看到。" : "没有AI密钥时，系统不会假装调用AI，而是明确显示“自动解释”。"}</p></section>}
       {section === "data" && <section className="panel settings-detail"><h3>数据原则</h3><p>行情来自公开接口，可能延迟或暂时不可用。每次分析都记录来源、行情时间和获取时间；财务数据缺失时显示“暂无”，不会补数字。</p></section>}
       {section === "alerts" && (
         <section className="panel settings-detail">
