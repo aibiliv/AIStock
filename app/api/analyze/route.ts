@@ -119,22 +119,28 @@ export async function POST(request: Request) {
       : await getDeepSeekExplanation(facts);
     const result = { ...facts, ...analysis };
     if (payload.saveHistory) {
-      await ensureSchema();
-      await getDb().insert(analysisReports).values({
-        symbol: facts.stock.code,
-        name: facts.stock.name,
-        priceCents: Math.round(facts.quote.price * 100),
-        priceMillis: Math.round(facts.quote.price * 1000),
-        marketTime: facts.quote.marketTime,
-        source: facts.source.name,
-        mode: analysis.mode,
-        summary: analysis.explanation.summary,
-        reportJson: JSON.stringify(result),
-      });
+      try {
+        await ensureSchema();
+        await getDb().insert(analysisReports).values({
+          symbol: facts.stock.code,
+          name: facts.stock.name,
+          priceCents: Math.round(facts.quote.price * 100),
+          priceMillis: Math.round(facts.quote.price * 1000),
+          marketTime: facts.quote.marketTime,
+          source: facts.source.name,
+          mode: analysis.mode,
+          summary: analysis.explanation.summary,
+          reportJson: JSON.stringify(result),
+        });
+      } catch {
+        return Response.json({ ...result, historyWarning: "分析结果正常，但本次历史记录未保存。" });
+      }
     }
     return Response.json(result);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "股票分析暂时不可用";
+    const message = error instanceof Error && error.message.startsWith("暂时无法按名称识别")
+      ? error.message
+      : "股票分析暂时不可用，请稍后重试";
     return Response.json({ error: message }, { status: 502 });
   }
 }
