@@ -5,6 +5,7 @@ export type Trade = {
   side: "买入" | "卖出";
   priceCents: number;
   priceMillis?: number | null;
+  priceTenThousandths?: number | null;
   quantity: number;
   tradeDate: string;
   reason: string;
@@ -19,8 +20,10 @@ export type Position = {
   quantity: number;
   costCents: number;
   costMillis: number;
+  costTenThousandths: number;
   averageCostCents: number;
   averageCostMillis: number;
+  averageCostTenThousandths: number;
   legacyPrecision: boolean;
 };
 
@@ -82,19 +85,28 @@ export function calculatePortfolio(trades: Trade[]): PortfolioSummary {
       quantity: 0,
       costCents: 0,
       costMillis: 0,
+      costTenThousandths: 0,
       averageCostCents: 0,
       averageCostMillis: 0,
+      averageCostTenThousandths: 0,
       legacyPrecision: false,
     };
-    const priceMillis = trade.priceMillis ?? trade.priceCents * 10;
-    current.legacyPrecision ||= trade.priceMillis === null || trade.priceMillis === undefined;
+    const priceTenThousandths =
+      trade.priceTenThousandths ?? (trade.priceMillis ?? trade.priceCents * 10) * 10;
+    current.legacyPrecision ||=
+      trade.priceTenThousandths === null &&
+      trade.priceTenThousandths === undefined &&
+      trade.priceMillis === null &&
+      trade.priceMillis === undefined;
 
     if (trade.side === "买入") {
       current.quantity += trade.quantity;
-      current.costMillis += priceMillis * trade.quantity + trade.feeCents * 10;
-      current.costCents = Math.round(current.costMillis / 10);
-      current.averageCostMillis = Math.round(current.costMillis / current.quantity);
-      current.averageCostCents = Math.round(current.averageCostMillis / 10);
+      current.costTenThousandths += priceTenThousandths * trade.quantity + trade.feeCents * 100;
+      current.costMillis = Math.round(current.costTenThousandths / 10);
+      current.costCents = Math.round(current.costTenThousandths / 100);
+      current.averageCostTenThousandths = Math.round(current.costTenThousandths / current.quantity);
+      current.averageCostMillis = Math.round(current.averageCostTenThousandths / 10);
+      current.averageCostCents = Math.round(current.averageCostTenThousandths / 100);
       positions.set(trade.symbol, current);
       continue;
     }
@@ -104,23 +116,25 @@ export function calculatePortfolio(trades: Trade[]): PortfolioSummary {
       continue;
     }
 
-    const saleProfitMillis =
-      priceMillis * soldQuantity -
-      current.averageCostMillis * soldQuantity -
-      trade.feeCents * 10;
-    realizedMillis += saleProfitMillis;
-    if (saleProfitMillis > 0) winningSells += 1;
-    if (saleProfitMillis < 0) losingSells += 1;
+    const saleProfitTenThousandths =
+      priceTenThousandths * soldQuantity -
+      current.averageCostTenThousandths * soldQuantity -
+      trade.feeCents * 100;
+    realizedMillis += saleProfitTenThousandths / 10;
+    if (saleProfitTenThousandths > 0) winningSells += 1;
+    if (saleProfitTenThousandths < 0) losingSells += 1;
 
     current.quantity -= soldQuantity;
-    current.costMillis = current.quantity > 0
-      ? Math.max(0, current.costMillis - current.averageCostMillis * soldQuantity)
+    current.costTenThousandths = current.quantity > 0
+      ? Math.max(0, current.costTenThousandths - current.averageCostTenThousandths * soldQuantity)
       : 0;
-    current.costCents = Math.round(current.costMillis / 10);
-    current.averageCostMillis = current.quantity > 0
-      ? Math.round(current.costMillis / current.quantity)
+    current.costMillis = Math.round(current.costTenThousandths / 10);
+    current.costCents = Math.round(current.costTenThousandths / 100);
+    current.averageCostTenThousandths = current.quantity > 0
+      ? Math.round(current.costTenThousandths / current.quantity)
       : 0;
-    current.averageCostCents = Math.round(current.averageCostMillis / 10);
+    current.averageCostMillis = Math.round(current.averageCostTenThousandths / 10);
+    current.averageCostCents = Math.round(current.averageCostTenThousandths / 100);
     positions.set(trade.symbol, current);
   }
 
@@ -218,6 +232,11 @@ export function toCents(value: unknown) {
 export function toMillis(value: unknown) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.round(number * 1000) : 0;
+}
+
+export function toTenThousandths(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.round(number * 10_000) : 0;
 }
 
 export function isStockCode(value: string) {

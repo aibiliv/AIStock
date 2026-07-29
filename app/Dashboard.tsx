@@ -192,12 +192,22 @@ function millisPrice(millis: number) {
   return price(millis / 1000);
 }
 
+function tenThousandthsPrice(value: number) {
+  return `¥${(value / 10_000).toLocaleString("zh-CN", {
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  })}`;
+}
+
 function alertPrice(alert: AlertRule) {
   const value = millisPrice(alert.targetPriceMillis ?? alert.targetPriceCents * 10);
   return alert.targetPriceMillis === null || alert.targetPriceMillis === undefined ? `约${value}` : value;
 }
 
 function tradePrice(trade: Trade) {
+  if (trade.priceTenThousandths !== null && trade.priceTenThousandths !== undefined) {
+    return tenThousandthsPrice(trade.priceTenThousandths);
+  }
   const value = millisPrice(trade.priceMillis ?? trade.priceCents * 10);
   return trade.priceMillis === null || trade.priceMillis === undefined ? `约${value}` : value;
 }
@@ -725,7 +735,7 @@ function Home({
                   <article className="holding-card" key={position.symbol}>
                     <div className="holding-top">
                       <span className="stock-avatar">{position.name.slice(0, 1)}</span>
-                      <div><h4>{position.name}<small>{position.symbol}</small></h4><p>{position.quantity}股 · 成本{position.legacyPrecision ? "约" : ""}{millisPrice(position.averageCostMillis)}</p></div>
+                      <div><h4>{position.name}<small>{position.symbol}</small></h4><p>{position.quantity}股 · 成本{position.legacyPrecision ? "约" : ""}{tenThousandthsPrice(position.averageCostTenThousandths)}</p></div>
                       <strong className={(rate ?? 0) >= 0 ? "up" : "down"}>{rate === null ? "行情更新中" : `${rate >= 0 ? "+" : ""}${rate.toFixed(2)}%`}</strong>
                     </div>
                     <div className="risk-line"><span>{insight?.allocationPercent !== null && insight?.allocationPercent !== undefined ? `${portfolioInsights.configured ? "账户仓位" : "持仓内部占比"} ${insight.allocationPercent.toFixed(1)}%` : "按当前参考价计算"}</span><b>{quote ? money(profitCents) : "暂无"}</b></div>
@@ -1199,10 +1209,10 @@ function EvidencePanel({ analysis, position }: { analysis: Analysis; position: P
   ];
 
   if (position) {
-    const returnPercent = ((quote.price * 1000 / position.averageCostMillis) - 1) * 100;
+    const returnPercent = ((quote.price * 10_000 / position.averageCostTenThousandths) - 1) * 100;
     evidence.unshift({
       label: "我的持仓",
-      value: `${position.quantity}股 · 成本${millisPrice(position.averageCostMillis)}`,
+      value: `${position.quantity}股 · 成本${tenThousandthsPrice(position.averageCostTenThousandths)}`,
       detail: `按当前参考价估算为${returnPercent >= 0 ? "+" : ""}${returnPercent.toFixed(2)}%，不含未来费用和滑点。`,
       confidence: "高",
       source: "我的交易记录",
@@ -1243,8 +1253,8 @@ function SmartAssistant({ analysis, position, portfolioInsights }: {
 
   const positionContext = position ? {
     quantity: position.quantity,
-    averageCost: position.averageCostMillis / 1000,
-    returnPercent: ((analysis.quote.price * 1000 / position.averageCostMillis) - 1) * 100,
+    averageCost: position.averageCostTenThousandths / 10_000,
+    returnPercent: ((analysis.quote.price * 10_000 / position.averageCostTenThousandths) - 1) * 100,
     stockPositionPercent: portfolioInsights.positions.find((item) => item.symbol === position.symbol)?.allocationPercent ?? null,
   } : null;
 
@@ -1960,7 +1970,7 @@ function TradeModal({ mode, stock, positions, onClose, onSubmit }: {
           <div className="form-grid">
             <label>股票代码<input ref={firstInput} name="symbol" defaultValue={symbol} pattern="\d{6}" required /></label>
             <label>股票名称<input name="name" defaultValue={name} required maxLength={30} /></label>
-            <label>{mode === "buy" ? "买入" : "卖出"}价格<input name="price" type="number" min="0.01" step="0.01" required /></label>
+            <label>{mode === "buy" ? "买入" : "卖出"}价格<input name="price" type="number" min="0" step="any" required /></label>
             <label>数量（股）<input name="quantity" type="number" min="1" step="1" required /></label>
             <label>交易日期<input name="tradeDate" type="date" defaultValue={localIsoDate()} max={localIsoDate()} required /></label>
             <label>总费用（可选）<input name="fee" type="number" min="0" step="0.01" defaultValue="0" /></label>
