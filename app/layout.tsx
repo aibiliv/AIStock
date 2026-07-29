@@ -11,8 +11,11 @@ export const metadata: Metadata = {
   title: "我的股票助手｜看懂、记录、复盘",
   description: "为A股新手准备的个人股票复盘助手：AI通俗分析、交易记录、价格提醒与卖出复盘。",
   icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
+    icon: [
+      { url: "/favicon.ico", sizes: "64x64", type: "image/x-icon" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
+    ],
+    shortcut: "/favicon.ico",
   },
   openGraph: {
     title: "我的股票助手｜看懂、记录、复盘",
