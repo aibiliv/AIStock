@@ -18,8 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && \
 # 安装全部依赖（build 需要 vinext/vite，运行需要 wrangler/workerd）
 # 使用淘宝镜像加速 npm 下载
 COPY package.json package-lock.json ./
-RUN npm config set registry https://registry.npmmirror.com && \
-    npm install --no-audit --no-fund && \
+RUN npm install --no-audit --no-fund && \
     npm cache clean --force
 
 # 复制源码并构建（vinext build 产出 dist/）
