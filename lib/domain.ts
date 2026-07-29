@@ -42,6 +42,20 @@ export type TradeCycle = {
   realizedCents: number;
 };
 
+export type MarketPeriod = "day" | "week" | "month";
+
+export type MarketBar = {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  ma5: number | null;
+  ma20: number | null;
+  ma60: number | null;
+};
+
 function orderedTrades(trades: Trade[]) {
   return [...trades].sort((a, b) => {
     const dateOrder = a.tradeDate.localeCompare(b.tradeDate);
@@ -188,4 +202,57 @@ export function isIsoDate(value: unknown): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+export function aggregateMarketHistory(
+  history: Array<Pick<MarketBar, "date" | "open" | "high" | "low" | "close" | "volume">>,
+  period: MarketPeriod,
+): MarketBar[] {
+  const grouped: Array<Omit<MarketBar, "ma5" | "ma20" | "ma60">> = [];
+  let lastKey = "";
+
+  for (const row of history) {
+    let key = row.date;
+    if (period === "month") key = row.date.slice(0, 7);
+    if (period === "week") {
+      const monday = new Date(`${row.date}T00:00:00Z`);
+      const weekday = monday.getUTCDay() || 7;
+      monday.setUTCDate(monday.getUTCDate() - weekday + 1);
+      key = monday.toISOString().slice(0, 10);
+    }
+
+    const current = grouped.at(-1);
+    if (period === "day" || key !== lastKey || !current) {
+      grouped.push({
+        date: row.date,
+        open: row.open,
+        high: row.high,
+        low: row.low,
+        close: row.close,
+        volume: row.volume,
+      });
+      lastKey = key;
+      continue;
+    }
+
+    current.date = row.date;
+    current.high = Math.max(current.high, row.high);
+    current.low = Math.min(current.low, row.low);
+    current.close = row.close;
+    current.volume += row.volume;
+  }
+
+  const closes = grouped.map((row) => row.close);
+  const movingAverage = (index: number, window: number) => {
+    if (index + 1 < window) return null;
+    const values = closes.slice(index + 1 - window, index + 1);
+    return values.reduce((sum, value) => sum + value, 0) / window;
+  };
+
+  return grouped.map((row, index) => ({
+    ...row,
+    ma5: movingAverage(index, 5),
+    ma20: movingAverage(index, 20),
+    ma60: movingAverage(index, 60),
+  }));
 }

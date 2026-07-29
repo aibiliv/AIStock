@@ -22,7 +22,15 @@ import {
   Star,
   type Icon,
 } from "@phosphor-icons/react";
-import { buildTradeCycles, calculatePortfolio, localIsoDate, type Trade, type TradeCycle } from "../lib/domain";
+import {
+  aggregateMarketHistory,
+  buildTradeCycles,
+  calculatePortfolio,
+  localIsoDate,
+  type MarketPeriod,
+  type Trade,
+  type TradeCycle,
+} from "../lib/domain";
 import type { SectorHeatmap as SectorHeatmapData } from "../lib/sectors";
 
 type View = "home" | "watchlist" | "trades" | "settings";
@@ -869,9 +877,9 @@ function SectorHeatmap() {
     <section className="panel sector-heatmap-card" aria-labelledby="sector-heatmap-title">
       <div className="sector-heatmap-head">
         <div>
-          <span className="eyebrow">申万一级行业 · 前5名</span>
+          <span className="eyebrow">{data?.basis === "etf-proxy" ? "行业主题ETF代理 · 前5名" : "板块异动 · 前5名"}</span>
           <h3 id="sector-heatmap-title">板块异动热力图</h3>
-          <p>按当日涨跌幅绝对值排序，红色上涨、绿色下跌。</p>
+          <p>以代表性行业ETF观察板块强弱，按涨跌幅绝对值排序。</p>
         </div>
         <form className="sector-date-form" onSubmit={submit}>
           <label htmlFor="sector-date">查看日期</label>
@@ -915,7 +923,7 @@ function SectorHeatmap() {
             })}
           </div>
           <div className="sector-heatmap-foot">
-            <span>{data.date} · 覆盖 {data.sampleSize} 个一级行业</span>
+            <span>{data.date} · 覆盖 {data.sampleSize} 只代表性行业ETF</span>
             <a href={data.source.url} target="_blank" rel="noreferrer">数据来源：{data.source.name} ↗</a>
           </div>
         </>
@@ -1071,8 +1079,12 @@ function AnalysisView({ analysis, watched, canSell, onWatch, onBuy, onSell }: {
 }
 
 function MarketChart({ analysis }: { analysis: Analysis }) {
-  const rows = analysis.history.slice(-60);
+  const [period, setPeriod] = useState<MarketPeriod>("day");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const rows = useMemo(
+    () => aggregateMarketHistory(analysis.history, period).slice(-60),
+    [analysis.history, period],
+  );
   const width = 900;
   const priceHeight = 190;
   const volumeTop = 215;
@@ -1100,6 +1112,8 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
   const tooltipX = selectedIndex === null
     ? 0
     : x(selectedIndex) > width / 2 ? x(selectedIndex) - 230 : x(selectedIndex) + 12;
+  const periodLabel = period === "day" ? "日K" : period === "week" ? "周K" : "月K";
+  const latestRow = rows.at(-1);
 
   function selectAtPointer(event: ReactPointerEvent<SVGSVGElement>) {
     const matrix = event.currentTarget.getScreenCTM();
@@ -1123,11 +1137,31 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
     setSelectedIndex(Math.max(0, Math.min(rows.length - 1, current + (event.key === "ArrowLeft" ? -1 : 1))));
   }
 
+  function changePeriod(nextPeriod: MarketPeriod) {
+    setPeriod(nextPeriod);
+    setSelectedIndex(null);
+  }
+
   return (
     <section className="panel market-chart-card">
       <div className="chart-heading">
-        <div><span className="eyebrow">近60个交易日</span><h3>K线与成交量</h3></div>
-        <div className="chart-legend"><span className="ma5">5日</span><span className="ma20">20日</span><span className="ma60">60日</span></div>
+        <div><span className="eyebrow">{periodLabel} · 近{rows.length}根</span><h3>K线与成交量</h3></div>
+        <div className="chart-heading-actions">
+          <div className="chart-period-tabs" aria-label="K线周期">
+            {(["day", "week", "month"] as MarketPeriod[]).map((item) => (
+              <button
+                type="button"
+                key={item}
+                className={period === item ? "active" : ""}
+                aria-pressed={period === item}
+                onClick={() => changePeriod(item)}
+              >
+                {item === "day" ? "日K" : item === "week" ? "周K" : "月K"}
+              </button>
+            ))}
+          </div>
+          <div className="chart-legend"><span className="ma5">MA5</span><span className="ma20">MA20</span><span className="ma60">MA60</span></div>
+        </div>
       </div>
       <p className="chart-interaction-hint">移动鼠标或点按图表查看当天明细，键盘可使用左右方向键。</p>
       <svg
@@ -1135,7 +1169,7 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
         viewBox={`0 0 ${width} 280`}
         role="img"
         tabIndex={0}
-        aria-label={`${analysis.stock.name}近60个交易日K线、成交量和均线。移动鼠标、点按或使用左右方向键查看每日数据。`}
+        aria-label={`${analysis.stock.name}${periodLabel}、成交量和均线。移动鼠标、点按或使用左右方向键查看每根K线数据。`}
         onPointerMove={selectAtPointer}
         onPointerDown={selectAtPointer}
         onPointerLeave={(event) => { if (event.pointerType !== "touch") setSelectedIndex(null); }}
@@ -1190,9 +1224,9 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
           </>
         ) : (
           <>
-            <span>5日均线 <b>{price(analysis.quote.ma5)}</b></span>
-            <span>20日均线 <b>{price(analysis.quote.ma20)}</b></span>
-            <span>60日均线 <b>{price(analysis.quote.ma60)}</b></span>
+            <span>MA5 <b>{latestRow?.ma5 === null || latestRow?.ma5 === undefined ? "暂无" : price(latestRow.ma5)}</b></span>
+            <span>MA20 <b>{latestRow?.ma20 === null || latestRow?.ma20 === undefined ? "暂无" : price(latestRow.ma20)}</b></span>
+            <span>MA60 <b>{latestRow?.ma60 === null || latestRow?.ma60 === undefined ? "暂无" : price(latestRow.ma60)}</b></span>
             <span>最大成交量日 <b>{volumeHighlight?.date ?? "暂无"}</b></span>
           </>
         )}

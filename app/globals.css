@@ -1346,6 +1346,29 @@ svg { display: block; }
 }
 
 .chart-heading h3 { font-size: var(--fs-md); margin: 3px 0 0; }
+.chart-heading-actions { align-items: flex-end; display: flex; flex-direction: column; gap: 8px; }
+.chart-period-tabs {
+  background: var(--surface-soft);
+  border-radius: 8px;
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+}
+.chart-period-tabs button {
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: var(--fs-2xs);
+  font-weight: 700;
+  min-width: 42px;
+  padding: 5px 8px;
+}
+.chart-period-tabs button.active {
+  background: var(--surface);
+  box-shadow: 0 1px 4px rgba(20, 28, 37, .1);
+  color: var(--accent-ink);
+}
 .chart-legend { display: flex; gap: 12px; }
 .chart-legend span { align-items: center; color: var(--text-soft); display: flex; font-size: var(--fs-2xs); font-weight: 700; gap: 5px; }
 .chart-interaction-hint { color: var(--muted); font-size: var(--fs-2xs); margin: 5px 0 0; }
@@ -2089,6 +2112,8 @@ svg { display: block; }
   .summary-actions { grid-column: 1 / -1; }
   .price-scenarios { grid-template-columns: 1fr; }
   .chart-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .chart-heading { align-items: flex-start; gap: 12px; }
+  .chart-heading-actions { align-items: flex-end; }
   .market-chart { min-height: 190px; }
   .history-item > div,
   .announcement-list article > div { align-items: flex-start; flex-direction: column; gap: 3px; }

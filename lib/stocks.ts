@@ -214,7 +214,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 
 async function getChart(code: string) {
   const symbol = yahooSymbol(code);
-  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=6mo&interval=1d`;
+  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=3y&interval=1d`;
 
   try {
     const data = await fetchJson<YahooChart>(yahooUrl);
@@ -247,7 +247,7 @@ async function getChart(code: string) {
     };
   } catch {
     const tencentCode = tencentSymbol(code);
-    const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tencentCode},day,,,120,qfq`;
+    const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tencentCode},day,,,800,qfq`;
     const data = await fetchJson<{
       data?: Record<string, { qfqday?: string[][]; day?: string[][] }>;
     }>(url);
@@ -472,7 +472,7 @@ export async function analyzeStockData(query: string) {
       operatingCashflow: profile.operatingCashflow,
       series: fundamentals,
     },
-    history: history.slice(-90),
+    history: history.slice(-800),
     volumeHighlight: history.length
       ? history.reduce((largest, row) => row.volume > largest.volume ? row : largest)
       : null,
