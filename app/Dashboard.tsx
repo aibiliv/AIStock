@@ -221,7 +221,12 @@ function latestWeekday() {
 }
 
 async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, init);
+  let response: Response;
+  try {
+    response = await fetch(url, init);
+  } catch {
+    throw new Error("网络连接中断，请稍后重试");
+  }
   const payload = await response.json() as T & { error?: string };
   if (!response.ok) throw new Error(payload.error ?? "请求失败");
   return payload;
@@ -320,7 +325,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       const result = await jsonRequest<Analysis>("/api/analyze", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ query: stockQuery, saveHistory: showResult }),
+        body: JSON.stringify({ query: stockQuery, saveHistory: showResult, explain: showResult }),
       });
       setQuotes((current) => ({ ...current, [result.stock.code]: result }));
       if (showResult) {
@@ -351,7 +356,6 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   useEffect(() => {
     const symbols = new Set([
       ...portfolio.positions.map((position) => position.symbol),
-      ...trades.map((trade) => trade.symbol),
       ...alerts.filter((alert) => alert.enabled).map((alert) => alert.symbol),
     ]);
     const timer = window.setTimeout(() => {
@@ -360,7 +364,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [alerts, portfolio.positions, quotes, refreshQuote, trades]);
+  }, [alerts, portfolio.positions, quotes, refreshQuote]);
 
   const checkAlerts = useCallback(() => {
     for (const alert of alerts) {

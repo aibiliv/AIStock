@@ -11,6 +11,7 @@ const STOCK_NAMES: Record<string, string> = {
   "300308": "中际旭创",
   "300476": "胜宏科技",
   "300750": "宁德时代",
+  "159583": "富国中证通信设备主题ETF",
   "513180": "华夏恒生科技ETF（QDII）",
   "600036": "招商银行",
   "600276": "恒瑞医药",
@@ -38,6 +39,7 @@ const INDUSTRIES: Record<string, string> = {
   "300308": "光通信",
   "300476": "PCB · AI算力",
   "300750": "动力电池",
+  "159583": "通信设备主题指数",
   "513180": "恒生科技指数",
   "600036": "银行",
   "600276": "创新药",
@@ -69,6 +71,15 @@ const ETF_PROFILES: Record<string, {
     inceptionDate: "2021-05-18",
     sourceName: "华夏基金",
     sourceUrl: "https://www.chinaamc.com.cn/fund/513180/index.shtml",
+  },
+  "159583": {
+    manager: "富国基金管理有限公司",
+    trackingIndex: "中证通信设备主题指数",
+    exchange: "深圳证券交易所",
+    category: "股票型指数ETF",
+    inceptionDate: "2024-06-28",
+    sourceName: "富国基金",
+    sourceUrl: "https://www.fullgoal.com.cn/fundDetail/159583/index.html",
   },
 };
 
@@ -147,7 +158,8 @@ export function parseStockSuggestions(content: string) {
 
   return decoded.split("^").flatMap((item) => {
     const [market, code, name, , type] = item.split("~");
-    if (!["sh", "sz", "bj"].includes(market) || !/^\d{6}$/.test(code) || !type?.startsWith("GP-A")) {
+    const supportedType = type?.startsWith("GP-A") || type?.includes("ETF");
+    if (!["sh", "sz", "bj"].includes(market) || !/^\d{6}$/.test(code) || !supportedType) {
       return [];
     }
     return [{ code, name }];
