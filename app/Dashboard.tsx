@@ -32,6 +32,7 @@ import {
   type TradeCycle,
 } from "../lib/domain";
 import type { SectorHeatmap as SectorHeatmapData } from "../lib/sectors";
+import { calculatePortfolioInsights, type PortfolioInsights } from "../lib/portfolio-insights";
 
 type View = "home" | "watchlist" | "trades" | "settings";
 type TradeMode = "buy" | "sell";
@@ -236,6 +237,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const [alerts, setAlerts] = useState<AlertRule[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [status, setStatus] = useState<Status | null>(null);
+  const [initialCapitalCents, setInitialCapitalCents] = useState<number | null>(null);
   const [tradeMode, setTradeMode] = useState<TradeMode | null>(null);
   const [reviewCycleEndTradeId, setReviewCycleEndTradeId] = useState<number | null>(null);
   const [settingsSection, setSettingsSection] = useState<string | null>(null);
@@ -252,6 +254,12 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   }
 
   const portfolio = useMemo(() => calculatePortfolio(trades), [trades]);
+  const portfolioInsights = useMemo(() => calculatePortfolioInsights(
+    trades,
+    Object.fromEntries(Object.entries(quotes).map(([symbol, item]) => [symbol, item.quote.price])),
+    Object.fromEntries(Object.entries(quotes).map(([symbol, item]) => [symbol, item.history])),
+    initialCapitalCents,
+  ), [initialCapitalCents, quotes, trades]);
   const tradeCycles = useMemo(() => buildTradeCycles(trades), [trades]);
   const closedCycles = tradeCycles.filter((cycle) => cycle.endTradeId !== null);
   const reviewedCycleIds = useMemo(() => {
@@ -275,18 +283,20 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
 
   const loadData = useCallback(async () => {
     try {
-      const [tradeData, watchData, alertData, reviewData, statusData] = await Promise.all([
+      const [tradeData, watchData, alertData, reviewData, statusData, accountData] = await Promise.all([
         jsonRequest<{ trades: Trade[] }>("/api/trades"),
         jsonRequest<{ items: WatchItem[] }>("/api/watchlist"),
         jsonRequest<{ alerts: AlertRule[] }>("/api/alerts"),
         jsonRequest<{ reviews: Review[] }>("/api/reviews"),
         jsonRequest<Status>("/api/status"),
+        jsonRequest<{ initialCapitalCents: number | null }>("/api/account"),
       ]);
       setTrades(tradeData.trades);
       setWatchlist(watchData.items);
       setAlerts(alertData.alerts);
       setReviews(reviewData.reviews);
       setStatus(statusData);
+      setInitialCapitalCents(accountData.initialCapitalCents);
       setError("");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "个人数据暂时无法读取");
@@ -341,6 +351,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   useEffect(() => {
     const symbols = new Set([
       ...portfolio.positions.map((position) => position.symbol),
+      ...trades.map((trade) => trade.symbol),
       ...alerts.filter((alert) => alert.enabled).map((alert) => alert.symbol),
     ]);
     const timer = window.setTimeout(() => {
@@ -349,7 +360,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [alerts, portfolio.positions, quotes, refreshQuote]);
+  }, [alerts, portfolio.positions, quotes, refreshQuote, trades]);
 
   const checkAlerts = useCallback(() => {
     for (const alert of alerts) {
@@ -480,6 +491,16 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     setSettingsSection("alerts");
   }
 
+  async function saveInitialCapital(initialCapital: number) {
+    const result = await jsonRequest<{ initialCapitalCents: number }>("/api/account", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ initialCapital }),
+    });
+    setInitialCapitalCents(result.initialCapitalCents);
+    flash("账户初始资金已保存");
+  }
+
   const analyzedPosition = portfolio.positions.find((position) => position.symbol === analysis?.stock.code);
   const currentTradeStock = tradeMode === "sell"
     ? analyzedPosition ?? portfolio.positions[0] ?? null
@@ -539,6 +560,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 analysis={analysis}
                 analyzing={analyzing}
                 portfolio={portfolio}
+                portfolioInsights={portfolioInsights}
                 quotes={quotes}
                 alerts={alerts}
                 pendingReviews={pendingReviews}
@@ -553,6 +575,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 onReview={setReviewCycleEndTradeId}
                 onAlertPlan={() => { setSettingsSection("alerts"); setView("settings"); }}
                 onAcknowledge={(id) => void updateAlert(id)}
+                onCapitalSettings={() => { setSettingsSection("account"); setView("settings"); }}
               />
             )}
             {view === "watchlist" && (
@@ -577,11 +600,13 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
             {view === "settings" && (
               <Settings
                 status={status}
+                initialCapitalCents={initialCapitalCents}
                 alerts={alerts}
                 section={settingsSection}
                 onSection={setSettingsSection}
                 onDisable={(id) => void updateAlert(id, "disable")}
                 onNotifications={() => void requestNotifications()}
+                onSaveCapital={saveInitialCapital}
               />
             )}
           </>
@@ -621,15 +646,16 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
 }
 
 function Home({
-  query, setQuery, analysis, analyzing, portfolio, quotes, alerts, pendingReviews,
+  query, setQuery, analysis, analyzing, portfolio, portfolioInsights, quotes, alerts, pendingReviews,
   trades, reviews, watched, onAnalyze, onBuy, onSell, onWatch, onNavigate,
-  onReview, onAlertPlan, onAcknowledge,
+  onReview, onAlertPlan, onAcknowledge, onCapitalSettings,
 }: {
   query: string;
   setQuery: (value: string) => void;
   analysis: Analysis | null;
   analyzing: boolean;
   portfolio: ReturnType<typeof calculatePortfolio>;
+  portfolioInsights: PortfolioInsights;
   quotes: Record<string, Analysis>;
   alerts: AlertRule[];
   pendingReviews: TradeCycle[];
@@ -644,6 +670,7 @@ function Home({
   onReview: (cycleEndTradeId: number) => void;
   onAlertPlan: () => void;
   onAcknowledge: (id: number) => void;
+  onCapitalSettings: () => void;
 }) {
   const activeAlerts = alerts.filter((alert) => alert.enabled && !alert.acknowledgedAt);
   const completedCycles = buildTradeCycles(trades).filter((cycle) => cycle.endTradeId !== null);
@@ -669,6 +696,7 @@ function Home({
         <AnalysisView
           analysis={analysis}
           position={portfolio.positions.find((position) => position.symbol === analysis.stock.code) ?? null}
+          portfolioInsights={portfolioInsights}
           watched={watched}
           canSell={portfolio.positions.some((position) => position.symbol === analysis.stock.code)}
           onWatch={onWatch}
@@ -678,14 +706,16 @@ function Home({
       ) : (
         <>
           {!trades.length && <BeginnerStart onBuy={onBuy} />}
+          <PortfolioOverview insights={portfolioInsights} onConfigure={onCapitalSettings} />
           <SectorHeatmap />
           <section className="quick-title"><div><span className="eyebrow">今天只处理重要的事</span><h3>我的持仓</h3></div><button onClick={() => onNavigate("trades")}>查看交易记录 →</button></section>
           {portfolio.positions.length ? (
             <div className="holding-grid">
               {portfolio.positions.map((position) => {
                 const quote = quotes[position.symbol]?.quote.price;
-                const profitCents = quote ? ((quote * 1000 - position.averageCostMillis) * position.quantity) / 10 : 0;
-                const rate = quote ? ((quote * 1000 / position.averageCostMillis) - 1) * 100 : null;
+                const insight = portfolioInsights.positions.find((item) => item.symbol === position.symbol);
+                const profitCents = insight?.unrealizedCents ?? 0;
+                const rate = quote ? insight?.returnPercent ?? null : null;
                 const stop = activeAlerts.find((item) => item.symbol === position.symbol && item.type === "止损");
                 return (
                   <article className="holding-card" key={position.symbol}>
@@ -694,7 +724,7 @@ function Home({
                       <div><h4>{position.name}<small>{position.symbol}</small></h4><p>{position.quantity}股 · 成本{position.legacyPrecision ? "约" : ""}{millisPrice(position.averageCostMillis)}</p></div>
                       <strong className={(rate ?? 0) >= 0 ? "up" : "down"}>{rate === null ? "行情更新中" : `${rate >= 0 ? "+" : ""}${rate.toFixed(2)}%`}</strong>
                     </div>
-                    <div className="risk-line"><span>按当前参考价计算</span><b>{quote ? money(profitCents) : "暂无"}</b></div>
+                    <div className="risk-line"><span>{insight?.allocationPercent !== null && insight?.allocationPercent !== undefined ? `${portfolioInsights.configured ? "账户仓位" : "持仓内部占比"} ${insight.allocationPercent.toFixed(1)}%` : "按当前参考价计算"}</span><b>{quote ? money(profitCents) : "暂无"}</b></div>
                     <div className={`holding-status ${stop ? "amber" : ""}`}><i />{stop ? `止损提醒 ${alertPrice(stop)}` : "尚未设置止损提醒"}</div>
                   </article>
                 );
@@ -749,6 +779,53 @@ function Home({
         </>
       )}
     </div>
+  );
+}
+
+function PortfolioOverview({ insights, onConfigure }: { insights: PortfolioInsights; onConfigure: () => void }) {
+  const points = insights.history;
+  const width = 900;
+  const height = 210;
+  const assets = points.map((point) => point.totalAssetsCents);
+  const minAssets = Math.min(...assets, 0);
+  const maxAssets = Math.max(...assets, 1);
+  const assetRange = Math.max(maxAssets - minAssets, 1);
+  const x = (index: number) => points.length <= 1 ? 0 : index / (points.length - 1) * width;
+  const assetY = (value: number) => 12 + (maxAssets - value) / assetRange * 150;
+  const positionY = (value: number) => 12 + (100 - Math.max(0, Math.min(100, value))) / 100 * 150;
+  const assetLine = points.map((point, index) => `${x(index).toFixed(1)},${assetY(point.totalAssetsCents).toFixed(1)}`).join(" ");
+  const positionLine = points.map((point, index) => `${x(index).toFixed(1)},${positionY(point.positionPercent).toFixed(1)}`).join(" ");
+
+  return (
+    <section className="panel portfolio-overview">
+      <div className="portfolio-overview-head">
+        <div><span className="eyebrow">账户全景</span><h3>我的仓位与盈亏</h3></div>
+        {!insights.configured && <button className="primary-button" onClick={onConfigure}>设置账户初始资金</button>}
+      </div>
+      <div className="portfolio-metrics">
+        <div><span>总资产</span><strong>{insights.totalAssetsCents === null ? "待设置" : money(insights.totalAssetsCents)}</strong><small>现金 + 当前持仓市值</small></div>
+        <div><span>总仓位</span><strong>{insights.totalPositionPercent === null ? "待设置" : `${insights.totalPositionPercent.toFixed(1)}%`}</strong><small>持仓市值 ÷ 总资产</small></div>
+        <div><span>持仓市值</span><strong>{money(insights.marketValueCents)}</strong><small>{insights.completePrices ? "按当前参考价" : "部分行情仍在更新"}</small></div>
+        <div><span>可用现金</span><strong>{insights.cashCents === null ? "待设置" : money(insights.cashCents)}</strong><small>按初始资金和交易流水估算</small></div>
+        <div><span>持仓浮盈亏</span><strong className={insights.unrealizedCents >= 0 ? "up" : "down"}>{money(insights.unrealizedCents)}</strong><small>当前市值 - 持仓成本</small></div>
+        <div><span>账户总盈亏</span><strong className={(insights.totalProfitCents ?? 0) >= 0 ? "up" : "down"}>{insights.totalProfitCents === null ? "待设置" : money(insights.totalProfitCents)}</strong><small>{insights.totalProfitPercent === null ? "需要资金基准" : `${insights.totalProfitPercent >= 0 ? "+" : ""}${insights.totalProfitPercent.toFixed(2)}%`}</small></div>
+      </div>
+      {points.length >= 2 ? (
+        <div className="portfolio-chart-wrap">
+          <div className="portfolio-chart-legend"><span className="asset">总资产</span><span className="position">总仓位</span></div>
+          <svg className="portfolio-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="账户总资产和总仓位历史走势图">
+            <line x1="0" y1="162" x2={width} y2="162" className="portfolio-axis" />
+            <polyline points={assetLine} className="portfolio-asset-line" />
+            <polyline points={positionLine} className="portfolio-position-line" />
+            <text x="0" y="190">{points[0].date}</text>
+            <text x={width} y="190" textAnchor="end">{points.at(-1)?.date}</text>
+          </svg>
+        </div>
+      ) : (
+        <p className="portfolio-chart-empty">{insights.configured ? "持仓行情加载后生成资产与仓位走势。" : "设置初始资金后，系统会根据交易流水生成总资产和仓位走势。"}</p>
+      )}
+      <p className="portfolio-method">计算口径：初始资金减买入、加卖出并扣除费用，再叠加当前持仓市值。若有场外转入转出，请更新资金基准。</p>
+    </section>
   );
 }
 
@@ -940,9 +1017,10 @@ function SectorHeatmap() {
   );
 }
 
-function AnalysisView({ analysis, position, watched, canSell, onWatch, onBuy, onSell }: {
+function AnalysisView({ analysis, position, portfolioInsights, watched, canSell, onWatch, onBuy, onSell }: {
   analysis: Analysis;
   position: Position | null;
+  portfolioInsights: PortfolioInsights;
   watched: boolean;
   canSell: boolean;
   onWatch: () => void;
@@ -983,7 +1061,7 @@ function AnalysisView({ analysis, position, watched, canSell, onWatch, onBuy, on
       </section>
 
       <EvidencePanel analysis={analysis} position={position} />
-      <SmartAssistant key={stock.code} analysis={analysis} position={position} />
+      <SmartAssistant key={stock.code} analysis={analysis} position={position} portfolioInsights={portfolioInsights} />
 
       <MarketChart analysis={analysis} />
 
@@ -1147,7 +1225,11 @@ function EvidencePanel({ analysis, position }: { analysis: Analysis; position: P
   );
 }
 
-function SmartAssistant({ analysis, position }: { analysis: Analysis; position: Position | null }) {
+function SmartAssistant({ analysis, position, portfolioInsights }: {
+  analysis: Analysis;
+  position: Position | null;
+  portfolioInsights: PortfolioInsights;
+}) {
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [messages, setMessages] = useState<AssistantMessage[]>([{
@@ -1159,6 +1241,7 @@ function SmartAssistant({ analysis, position }: { analysis: Analysis; position: 
     quantity: position.quantity,
     averageCost: position.averageCostMillis / 1000,
     returnPercent: ((analysis.quote.price * 1000 / position.averageCostMillis) - 1) * 100,
+    stockPositionPercent: portfolioInsights.positions.find((item) => item.symbol === position.symbol)?.allocationPercent ?? null,
   } : null;
 
   async function ask(text: string) {
@@ -1204,6 +1287,12 @@ function SmartAssistant({ analysis, position }: { analysis: Analysis; position: 
             missingInformation: analysis.explanation.missingInformation,
             source: analysis.source,
             position: positionContext,
+            portfolio: {
+              totalAssets: portfolioInsights.totalAssetsCents === null ? null : portfolioInsights.totalAssetsCents / 100,
+              cash: portfolioInsights.cashCents === null ? null : portfolioInsights.cashCents / 100,
+              totalPositionPercent: portfolioInsights.totalPositionPercent,
+              totalProfitPercent: portfolioInsights.totalProfitPercent,
+            },
           },
         }),
       });
@@ -1224,8 +1313,8 @@ function SmartAssistant({ analysis, position }: { analysis: Analysis; position: 
   }
 
   const prompts = position
-    ? ["结合我的成本怎么看？", "主要风险是什么？", "财务数据说明了什么？"]
-    : ["主要风险是什么？", "为什么说波动较高？", "财务数据说明了什么？"];
+    ? ["当前仓位是否允许加仓？", "结合我的成本怎么看？", "主要风险是什么？"]
+    : ["当前仓位是否允许买入？", "主要风险是什么？", "财务数据说明了什么？"];
 
   return (
     <section className="panel smart-assistant">
@@ -1748,16 +1837,19 @@ function Trades({ trades, reviews, onBuy, onSell, onReview }: {
   );
 }
 
-function Settings({ status, alerts, section, onSection, onDisable, onNotifications }: {
+function Settings({ status, initialCapitalCents, alerts, section, onSection, onDisable, onNotifications, onSaveCapital }: {
   status: Status | null;
+  initialCapitalCents: number | null;
   alerts: AlertRule[];
   section: string | null;
   onSection: (section: string | null) => void;
   onDisable: (id: number) => void;
   onNotifications: () => void;
+  onSaveCapital: (initialCapital: number) => Promise<void>;
 }) {
   const notificationState = typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported";
   const cards = [
+    { id: "account", icon: "仓", title: "账户资金", text: "设置初始资金后，系统才能计算现金、总仓位和账户总盈亏。", state: initialCapitalCents === null ? "待设置" : money(initialCapitalCents) },
     { id: "ai", icon: "AI", title: "AI分析", text: status?.deepseekConfigured ? "AI分析已由服务端安全配置。" : "当前未配置AI密钥，使用基于真实数据的自动解释。", state: status?.deepseekConfigured ? "已连接" : "自动模式" },
     { id: "data", icon: "数", title: "数据来源", text: `${status?.dataSource ?? "公开行情"}。结果显示获取时间，失败时不会伪装成最新。`, state: "无需账号" },
     { id: "alerts", icon: "醒", title: "提醒管理", text: `${status?.reminderMode ?? "页面打开期间检查"}。重要止损仍需在券商App重复设置。`, state: `${alerts.filter((item) => item.enabled).length}条启用` },
@@ -1776,6 +1868,7 @@ function Settings({ status, alerts, section, onSection, onDisable, onNotificatio
           </article>
         ))}
       </div>
+      {section === "account" && <CapitalSettings initialCapitalCents={initialCapitalCents} onSave={onSaveCapital} />}
       {section === "ai" && <section className="panel settings-detail"><h3>AI连接状态</h3><p>{status?.deepseekConfigured ? "AI API密钥只在服务端读取，浏览器无法看到。" : "没有AI密钥时，系统不会假装调用AI，而是明确显示“自动解释”。"}</p></section>}
       {section === "data" && <section className="panel settings-detail"><h3>数据原则</h3><p>行情来自公开接口，可能延迟或暂时不可用。每次分析都记录来源、行情时间和获取时间；财务数据缺失时显示“暂无”，不会补数字。</p></section>}
       {section === "alerts" && (
@@ -1790,6 +1883,41 @@ function Settings({ status, alerts, section, onSection, onDisable, onNotificatio
         <div><p><CheckCircle size={14} />不自动交易</p><p><CheckCircle size={14} />不荐股</p><p><CheckCircle size={14} />不承诺提醒必达</p><p><CheckCircle size={14} />数据缺失会明说</p><p><CheckCircle size={14} />最终决定由你作出</p><p><CheckCircle size={14} />重要止损在券商App重复设置</p></div>
       </section>
     </div>
+  );
+}
+
+function CapitalSettings({ initialCapitalCents, onSave }: {
+  initialCapitalCents: number | null;
+  onSave: (initialCapital: number) => Promise<void>;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const value = Number(new FormData(event.currentTarget).get("initialCapital"));
+    setSaving(true);
+    setMessage("");
+    try {
+      await onSave(value);
+      setMessage("已保存，首页仓位与盈亏将按新的资金基准重新计算。");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section className="panel settings-detail">
+      <h3>账户初始资金</h3>
+      <p>填写开始使用本软件时账户内用于股票交易的总资金。现金按交易流水自动推算；发生场外转入或转出后，请在这里更新资金基准。</p>
+      <form className="capital-form" onSubmit={submit}>
+        <label>初始资金（元）<input name="initialCapital" type="number" min="100" max="1000000000" step="0.01" defaultValue={initialCapitalCents === null ? "" : initialCapitalCents / 100} placeholder="例如 100000" required /></label>
+        <button className="primary-button" type="submit" disabled={saving}>{saving ? "保存中…" : "保存资金基准"}</button>
+      </form>
+      {message && <p className="form-message" role="status">{message}</p>}
+    </section>
   );
 }
 

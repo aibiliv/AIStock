@@ -98,3 +98,9 @@ export const announcementNotes = sqliteTable("announcement_notes", {
   mode: text("mode", { enum: ["deepseek", "automatic"] }).notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const accountSettings = sqliteTable("account_settings", {
+  id: integer("id").primaryKey(),
+  initialCapitalCents: integer("initial_capital_cents").notNull(),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});

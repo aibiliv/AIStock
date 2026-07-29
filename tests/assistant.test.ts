@@ -25,7 +25,8 @@ const context: AssistantContext = {
   risks: ["近期波动可能放大"],
   missingInformation: ["最新公告"],
   source: { name: "腾讯证券", fetchedAt: "2026-07-29T15:01:00+08:00" },
-  position: { quantity: 100, averageCost: 1450, returnPercent: 3.45 },
+  position: { quantity: 100, averageCost: 1450, returnPercent: 3.45, stockPositionPercent: 18 },
+  portfolio: { totalAssets: 200000, cash: 60000, totalPositionPercent: 70, totalProfitPercent: 4 },
 };
 
 test("持仓问题会结合用户成本回答", () => {
@@ -38,4 +39,10 @@ test("风险问题会引用观察线和数据缺口", () => {
   const answer = buildFallbackAnswer("主要风险是什么？", context);
   assert.match(answer, /1400\.000/);
   assert.match(answer, /最新公告/);
+});
+
+test("买入问题先检查总仓位和个股集中度", () => {
+  const answer = buildFallbackAnswer("现在是否可以买入？", context);
+  assert.match(answer, /总仓位70\.00%/);
+  assert.match(answer, /仓位层面仍有空间/);
 });

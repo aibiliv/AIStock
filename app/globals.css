@@ -778,6 +778,82 @@ svg { display: block; }
 .holding-status.amber { background: var(--amber-soft); color: var(--amber); }
 .holding-status.amber i { background: var(--amber); }
 
+.portfolio-overview {
+  margin-top: 14px;
+  padding: 20px;
+}
+
+.portfolio-overview-head {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.portfolio-overview-head h3 { font-size: var(--fs-lg); margin: 3px 0 0; }
+
+.portfolio-metrics {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.portfolio-metrics > div {
+  background: var(--surface-soft);
+  border-radius: 9px;
+  min-width: 0;
+  padding: 11px;
+}
+
+.portfolio-metrics span,
+.portfolio-metrics small { color: var(--muted); display: block; font-size: var(--fs-2xs); }
+.portfolio-metrics strong {
+  display: block;
+  font-size: var(--fs-md);
+  font-variant-numeric: tabular-nums;
+  margin: 6px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.portfolio-chart-wrap {
+  background: var(--surface-soft);
+  border-radius: 10px;
+  margin-top: 10px;
+  padding: 10px 12px 2px;
+}
+
+.portfolio-chart-legend { display: flex; gap: 14px; }
+.portfolio-chart-legend span { color: var(--muted); font-size: var(--fs-2xs); }
+.portfolio-chart-legend span::before {
+  border-radius: 50%;
+  content: "";
+  display: inline-block;
+  height: 7px;
+  margin-right: 5px;
+  width: 7px;
+}
+.portfolio-chart-legend .asset::before { background: var(--accent); }
+.portfolio-chart-legend .position::before { background: var(--amber); }
+.portfolio-chart { display: block; height: auto; width: 100%; }
+.portfolio-chart text { fill: var(--muted); font-size: 11px; }
+.portfolio-axis { stroke: var(--line-strong); stroke-width: 1; }
+.portfolio-asset-line,
+.portfolio-position-line { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
+.portfolio-asset-line { stroke: var(--accent); }
+.portfolio-position-line { stroke: var(--amber); stroke-dasharray: 7 5; }
+.portfolio-chart-empty,
+.portfolio-method {
+  background: var(--surface-soft);
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: var(--fs-2xs);
+  line-height: 1.6;
+  margin: 10px 0 0;
+  padding: 10px;
+}
+.portfolio-method { background: transparent; margin-bottom: 0; padding-bottom: 0; }
+
 .sector-heatmap-card {
   margin-top: 14px;
   padding: 18px;
@@ -1819,6 +1895,26 @@ svg { display: block; }
 .boundary-card p svg { color: var(--green); flex: 0 0 auto; }
 .download-link { display: inline-flex; margin-top: 8px; text-decoration: none; }
 
+.capital-form {
+  align-items: flex-end;
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.capital-form label { color: var(--text-soft); flex: 1; font-size: var(--fs-xs); font-weight: 700; }
+.capital-form input {
+  background: var(--surface-soft);
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  display: block;
+  height: 42px;
+  margin-top: 6px;
+  padding: 0 11px;
+  width: 100%;
+}
+.capital-form button { height: 42px; }
+
 .login-page {
   align-items: center;
   background:
@@ -2183,6 +2279,7 @@ svg { display: block; }
   .analysis-grid,
   .research-grid { grid-template-columns: 1fr; }
   .evidence-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .portfolio-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .watch-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .setting-card { grid-template-columns: auto 1fr; }
   .setting-card > button { grid-column: 2; justify-self: start; }
@@ -2230,6 +2327,8 @@ svg { display: block; }
   .evidence-heading,
   .assistant-heading { align-items: flex-start; flex-direction: column; gap: 8px; }
   .assistant-message { max-width: 100%; }
+  .portfolio-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .portfolio-overview-head { align-items: flex-start; flex-direction: column; gap: 10px; }
   .beginner-steps { grid-template-columns: 1fr; }
   .behavior-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .weekly-advice { grid-template-columns: 1fr auto; }
@@ -2334,6 +2433,7 @@ svg { display: block; }
   .review-item > button { grid-column: 2; justify-self: start; }
   .card-actions { align-items: flex-start; flex-direction: column; gap: 2px; }
   .summary-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  .capital-form { align-items: stretch; flex-direction: column; }
 }
 
 @media (prefers-reduced-motion: no-preference) {
