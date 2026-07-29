@@ -2,6 +2,7 @@ import { ensureSchema, getDb } from "../../../db";
 import { analysisReports } from "../../../db/schema";
 import { analyzeStockData, automaticExplanation } from "../../../lib/stocks";
 import { getAiConfig } from "../../../lib/ai-config";
+import { requireApiUser } from "../../../lib/auth";
 
 type DeepSeekResponse = {
   choices?: Array<{ message?: { content?: string } }>;
@@ -102,6 +103,8 @@ async function getDeepSeekExplanation(facts: Awaited<ReturnType<typeof analyzeSt
 }
 
 export async function POST(request: Request) {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
   try {
     const payload = await request.json() as { query?: string; saveHistory?: boolean };
     const query = payload.query?.trim() ?? "";

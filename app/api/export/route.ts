@@ -8,8 +8,11 @@ import {
   watchDetails,
   watchItems,
 } from "../../../db/schema";
+import { requireApiUser } from "../../../lib/auth";
 
 export async function GET() {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
   try {
     await ensureSchema();
     const db = getDb();

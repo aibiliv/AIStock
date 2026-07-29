@@ -2,8 +2,11 @@ import { and, desc, eq } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { analysisReports } from "../../../db/schema";
 import { isStockCode } from "../../../lib/domain";
+import { requireApiUser } from "../../../lib/auth";
 
 export async function GET(request: Request) {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
   try {
     const symbol = new URL(request.url).searchParams.get("symbol")?.trim() ?? "";
     if (!isStockCode(symbol)) {
@@ -33,6 +36,8 @@ export async function GET(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
   try {
     const url = new URL(request.url);
     const symbol = url.searchParams.get("symbol")?.trim() ?? "";
