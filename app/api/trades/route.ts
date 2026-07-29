@@ -1,7 +1,7 @@
 import { desc } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { alertRules, tradeRecords } from "../../../db/schema";
-import { findInvalidSell, isIsoDate, isStockCode, isTradeSide, toCents, toMillis } from "../../../lib/domain";
+import { findInvalidSell, isIsoDate, isStockCode, isTradeSide, toCents, toTenThousandths } from "../../../lib/domain";
 import { requireApiUser } from "../../../lib/auth";
 
 export async function GET() {
@@ -37,8 +37,9 @@ export async function POST(request: Request) {
     const rawFee = payload.fee === undefined || payload.fee === null || payload.fee === ""
       ? 0
       : Number(payload.fee);
-    const priceMillis = toMillis(rawPrice);
-    const priceCents = Math.round(priceMillis / 10);
+    const priceTenThousandths = toTenThousandths(rawPrice);
+    const priceMillis = Math.round(priceTenThousandths / 10);
+    const priceCents = Math.round(priceTenThousandths / 100);
     const quantity = Number(payload.quantity);
     const tradeDate = payload.tradeDate;
     const reason = String(payload.reason ?? "").trim();
@@ -53,11 +54,11 @@ export async function POST(request: Request) {
     }
     if (
       !Number.isFinite(rawPrice) ||
-      priceMillis <= 0 ||
-      !Number.isSafeInteger(priceMillis) ||
+      priceTenThousandths <= 0 ||
+      !Number.isSafeInteger(priceTenThousandths) ||
       !Number.isSafeInteger(quantity) ||
       quantity <= 0 ||
-      !Number.isSafeInteger(priceMillis * quantity)
+      !Number.isSafeInteger(priceTenThousandths * quantity)
     ) {
       return Response.json({ error: "价格和数量必须是有效的正数，且交易金额不能超出安全范围" }, { status: 400 });
     }
@@ -80,8 +81,13 @@ export async function POST(request: Request) {
     ) {
       return Response.json({ error: "最大亏损和费用必须是安全范围内的非负数" }, { status: 400 });
     }
-    const riskPerShareMillis = maxLossCents === null ? null : Math.round(maxLossCents * 10 / quantity);
-    if (side === "买入" && riskPerShareMillis !== null && riskPerShareMillis >= priceMillis) {
+    const riskPerShareTenThousandths =
+      maxLossCents === null ? null : Math.round(maxLossCents * 100 / quantity);
+    if (
+      side === "买入" &&
+      riskPerShareTenThousandths !== null &&
+      riskPerShareTenThousandths >= priceTenThousandths
+    ) {
       return Response.json({ error: "最大亏损必须小于本次买入金额" }, { status: 400 });
     }
 
@@ -97,6 +103,7 @@ export async function POST(request: Request) {
           side,
           priceCents,
           priceMillis,
+          priceTenThousandths,
           quantity,
           tradeDate,
           reason,
@@ -115,6 +122,7 @@ export async function POST(request: Request) {
       side,
       priceCents,
       priceMillis,
+      priceTenThousandths,
       quantity,
       tradeDate,
       reason,
@@ -122,11 +130,11 @@ export async function POST(request: Request) {
       feeCents,
     };
     let trade;
-    if (side === "买入" && riskPerShareMillis !== null) {
+    if (side === "买入" && riskPerShareTenThousandths !== null) {
       const targets = [
-        { type: "止损" as const, price: priceMillis - riskPerShareMillis },
-        { type: "止盈一" as const, price: priceMillis + riskPerShareMillis },
-        { type: "止盈二" as const, price: priceMillis + riskPerShareMillis * 2 },
+        { type: "止损" as const, price: priceTenThousandths - riskPerShareTenThousandths },
+        { type: "止盈一" as const, price: priceTenThousandths + riskPerShareTenThousandths },
+        { type: "止盈二" as const, price: priceTenThousandths + riskPerShareTenThousandths * 2 },
       ];
       const [tradeRows] = await db.batch([
         db.insert(tradeRecords).values(tradeValues).returning(),
@@ -134,8 +142,8 @@ export async function POST(request: Request) {
           symbol,
           name,
           type: target.type,
-          targetPriceCents: Math.round(target.price / 10),
-          targetPriceMillis: target.price,
+          targetPriceCents: Math.round(target.price / 100),
+          targetPriceMillis: Math.round(target.price / 10),
         }))),
       ]);
       trade = tradeRows[0];

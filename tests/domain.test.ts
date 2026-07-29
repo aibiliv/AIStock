@@ -10,6 +10,7 @@ import {
   localIsoDate,
   toCents,
   toMillis,
+  toTenThousandths,
   type Trade,
 } from "../lib/domain";
 import { tencentSymbol, yahooSymbol } from "../lib/stocks";
@@ -81,12 +82,28 @@ test("完全卖出后不会把毫厘舍入残差带入下一次持仓", () => {
 test("金额和基础字段验证保持严格", () => {
   assert.equal(toCents("12.345"), 1235);
   assert.equal(toMillis("0.615"), 615);
+  assert.equal(toTenThousandths("1.4821"), 14821);
   assert.equal(toCents("bad"), 0);
   assert.equal(isStockCode("600519"), true);
   assert.equal(isStockCode("60051"), false);
   assert.equal(isIsoDate("2026-07-29"), true);
   assert.equal(isIsoDate("2026-02-30"), false);
   assert.equal(isIsoDate("29/07/2026"), false);
+});
+
+test("四位小数成交均价会原样参与持仓计算", () => {
+  const result = calculatePortfolio([
+    trade({
+      id: 1,
+      priceCents: 148,
+      priceMillis: 1482,
+      priceTenThousandths: 14821,
+      quantity: 1090,
+    }),
+  ]);
+
+  assert.equal(result.positions[0].averageCostTenThousandths, 14821);
+  assert.equal(result.positions[0].costTenThousandths, 16_154_890);
 });
 
 test("ETF价格按千分之一元保存并计算持仓", () => {

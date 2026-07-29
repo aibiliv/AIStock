@@ -30,7 +30,9 @@ export type PortfolioInsights = {
 };
 
 function tradeValueCents(trade: Trade) {
-  return Math.round((trade.priceMillis ?? trade.priceCents * 10) * trade.quantity / 10);
+  const priceTenThousandths =
+    trade.priceTenThousandths ?? (trade.priceMillis ?? trade.priceCents * 10) * 10;
+  return Math.round(priceTenThousandths * trade.quantity / 100);
 }
 
 export function calculatePortfolioInsights(
@@ -42,9 +44,9 @@ export function calculatePortfolioInsights(
   const portfolio = calculatePortfolio(trades);
   const completePrices = portfolio.positions.every((position) => Number.isFinite(currentPrices[position.symbol]));
   const positions: PortfolioInsights["positions"] = portfolio.positions.map((position) => {
-    const currentPrice = currentPrices[position.symbol] ?? position.averageCostMillis / 1000;
+    const currentPrice = currentPrices[position.symbol] ?? position.averageCostTenThousandths / 10_000;
     const marketValueCents = Math.round(currentPrice * 100 * position.quantity);
-    const costCents = Math.round(position.costMillis / 10);
+    const costCents = Math.round(position.costTenThousandths / 100);
     return {
       symbol: position.symbol,
       name: position.name,

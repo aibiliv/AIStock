@@ -23,6 +23,7 @@ export const tradeRecords = sqliteTable("trade_records", {
   side: text("side", { enum: ["买入", "卖出"] }).notNull(),
   priceCents: integer("price_cents").notNull(),
   priceMillis: integer("price_millis"),
+  priceTenThousandths: integer("price_ten_thousandths"),
   quantity: integer("quantity").notNull(),
   tradeDate: text("trade_date").notNull(),
   reason: text("reason").notNull(),

@@ -43,6 +43,7 @@ export async function ensureSchema() {
         side TEXT NOT NULL CHECK(side IN ('买入', '卖出')),
         price_cents INTEGER NOT NULL CHECK(price_cents > 0),
         price_millis INTEGER,
+        price_ten_thousandths INTEGER,
         quantity INTEGER NOT NULL CHECK(quantity > 0),
         trade_date TEXT NOT NULL,
         reason TEXT NOT NULL,
@@ -124,6 +125,7 @@ export async function ensureSchema() {
       db.prepare("CREATE INDEX IF NOT EXISTS announcement_notes_symbol_idx ON announcement_notes(symbol)"),
     ]);
     await addColumnIfMissing("trade_records", "price_millis", "price_millis INTEGER");
+    await addColumnIfMissing("trade_records", "price_ten_thousandths", "price_ten_thousandths INTEGER");
     await addColumnIfMissing("alert_rules", "target_price_millis", "target_price_millis INTEGER");
     await addColumnIfMissing("analysis_reports", "price_millis", "price_millis INTEGER");
   })().catch((error) => {
