@@ -7,12 +7,10 @@ import {
   GearSix,
   House,
   MagnifyingGlass,
-  Moon,
   Plus,
   ShieldCheck,
   SignOut,
   Star,
-  Sun,
   type Icon,
 } from "@phosphor-icons/react";
 import { buildTradeCycles, calculatePortfolio, localIsoDate, type Trade, type TradeCycle } from "../lib/domain";
@@ -151,7 +149,6 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
 
 export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string }) {
   const [view, setView] = useState<View>("home");
-  const [darkMode, setDarkMode] = useState(false);
   const [query, setQuery] = useState("");
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [quotes, setQuotes] = useState<Record<string, Analysis>>({});
@@ -169,25 +166,6 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const [error, setError] = useState("");
   const notified = useRef(new Set<number>());
   const pendingQuotes = useRef(new Set<string>());
-
-  useEffect(() => {
-    const colorScheme = window.matchMedia("(prefers-color-scheme: dark)");
-    const updateTheme = (event: MediaQueryListEvent) => setDarkMode(event.matches);
-    const timer = window.setTimeout(() => setDarkMode(colorScheme.matches), 0);
-    colorScheme.addEventListener("change", updateTheme);
-    return () => {
-      window.clearTimeout(timer);
-      colorScheme.removeEventListener("change", updateTheme);
-    };
-  }, []);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = darkMode ? "dark" : "light";
-  }, [darkMode]);
-
-  function toggleTheme() {
-    setDarkMode((current) => !current);
-  }
 
   function navigate(nextView: View) {
     setView(nextView);
@@ -462,9 +440,6 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
           <div><span className="mobile-brand">我的股票助手</span><h1>{navItems.find((item) => item.id === view)?.label}</h1></div>
           <div className="top-actions">
             <span className="privacy-pill"><ShieldCheck size={15} weight="fill" />私有个人空间</span>
-            <button className="icon-button" onClick={toggleTheme} aria-label={darkMode ? "切换到浅色模式" : "切换到深色模式"} title={darkMode ? "浅色模式" : "深色模式"}>
-              {darkMode ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
             <a className="account-button" href={signOutUrl} title={`当前账号：${user.email}`}>
               <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
               <b>{user.displayName}</b>
