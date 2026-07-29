@@ -27,33 +27,47 @@ type IndustryBoard = {
   name: string;
 };
 
-type BoardRow = {
-  f12?: string;
-  f14?: string;
-};
-
-type BoardListResponse = {
-  data?: {
-    total?: number;
-    diff?: BoardRow[] | Record<string, BoardRow>;
-  };
-};
-
 type KlineResponse = {
   data?: {
     klines?: string[];
   };
 };
 
-const INDUSTRY_NAMES = new Set([
-  "农林牧渔", "基础化工", "钢铁", "有色金属", "电子", "汽车", "家用电器", "食品饮料",
-  "纺织服饰", "轻工制造", "医药生物", "公用事业", "交通运输", "房地产", "商贸零售",
-  "社会服务", "银行", "非银金融", "综合", "建筑材料", "建筑装饰", "电力设备", "机械设备",
-  "国防军工", "计算机", "传媒", "通信", "煤炭", "石油石化", "环保", "美容护理",
-]);
+const INDUSTRY_BOARDS: IndustryBoard[] = [
+  { code: "BK0433", name: "农林牧渔" },
+  { code: "BK1206", name: "基础化工" },
+  { code: "BK0479", name: "钢铁" },
+  { code: "BK0478", name: "有色金属" },
+  { code: "BK1201", name: "电子" },
+  { code: "BK1211", name: "汽车" },
+  { code: "BK0456", name: "家用电器" },
+  { code: "BK0438", name: "食品饮料" },
+  { code: "BK0436", name: "纺织服饰" },
+  { code: "BK1212", name: "轻工制造" },
+  { code: "BK1216", name: "医药生物" },
+  { code: "BK0427", name: "公用事业" },
+  { code: "BK1210", name: "交通运输" },
+  { code: "BK1202", name: "房地产" },
+  { code: "BK1213", name: "商贸零售" },
+  { code: "BK1214", name: "社会服务" },
+  { code: "BK1283", name: "银行" },
+  { code: "BK1203", name: "非银金融" },
+  { code: "BK1217", name: "综合" },
+  { code: "BK1208", name: "建筑材料" },
+  { code: "BK1209", name: "建筑装饰" },
+  { code: "BK1200", name: "电力设备" },
+  { code: "BK1205", name: "机械设备" },
+  { code: "BK1204", name: "国防军工" },
+  { code: "BK1207", name: "计算机" },
+  { code: "BK0486", name: "传媒" },
+  { code: "BK1215", name: "通信" },
+  { code: "BK0437", name: "煤炭" },
+  { code: "BK0464", name: "石油石化" },
+  { code: "BK0728", name: "环保" },
+  { code: "BK1035", name: "美容护理" },
+];
 
 const SOURCE_URL = "https://quote.eastmoney.com/center/boardlist.html#industry_board";
-let boardCache: { expiresAt: number; boards: IndustryBoard[] } | null = null;
 
 function shanghaiDate() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date());
@@ -106,45 +120,6 @@ async function fetchJson<T>(url: string): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-function normalizeBoards(value: BoardRow[] | Record<string, BoardRow> | undefined) {
-  if (!value) return [];
-  return Array.isArray(value) ? value : Object.values(value);
-}
-
-async function loadIndustryBoards() {
-  if (boardCache && boardCache.expiresAt > Date.now()) return boardCache.boards;
-
-  const boards: IndustryBoard[] = [];
-  for (let page = 1; page <= 5; page += 1) {
-    const params = new URLSearchParams({
-      pn: String(page),
-      pz: "100",
-      po: "0",
-      np: "1",
-      fltt: "2",
-      invt: "2",
-      fid: "f12",
-      fs: "m:90+t:2+f:!50",
-      fields: "f12,f14",
-    });
-    const payload = await fetchJson<BoardListResponse>(
-      `https://push2.eastmoney.com/api/qt/clist/get?${params}`,
-    );
-    const rows = normalizeBoards(payload.data?.diff);
-    for (const row of rows) {
-      const code = row.f12?.trim() ?? "";
-      const name = row.f14?.trim() ?? "";
-      if (/^BK\d+$/.test(code) && INDUSTRY_NAMES.has(name)) boards.push({ code, name });
-    }
-    if (rows.length < 100 || page * 100 >= (payload.data?.total ?? 0)) break;
-  }
-
-  const unique = [...new Map(boards.map((board) => [board.name, board])).values()];
-  if (unique.length < 20) throw new Error("行业板块列表暂时不完整，请稍后重试");
-  boardCache = { boards: unique, expiresAt: Date.now() + 12 * 60 * 60 * 1000 };
-  return unique;
-}
-
 async function loadSectorMove(board: IndustryBoard, date: string) {
   const compactDate = date.replace(/-/g, "");
   const params = new URLSearchParams({
@@ -182,8 +157,7 @@ export async function getSectorHeatmap(date: string): Promise<SectorHeatmap> {
   const validationError = validateSectorDate(date);
   if (validationError) throw new Error(validationError);
 
-  const boards = await loadIndustryBoards();
-  const moves = await loadMoves(boards, date);
+  const moves = await loadMoves(INDUSTRY_BOARDS, date);
   if (moves.length < 5) {
     throw new Error("该日期没有完整的行业行情，可能是非交易日或数据源暂不可用");
   }
