@@ -1,7 +1,7 @@
 import { desc } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
-import { reviews } from "../../../db/schema";
-import { isStockCode, toCents } from "../../../lib/domain";
+import { reviews, tradeRecords } from "../../../db/schema";
+import { buildTradeCycles, isStockCode } from "../../../lib/domain";
 
 export async function GET() {
   try {
@@ -21,22 +21,38 @@ export async function POST(request: Request) {
     const sellReason = String(payload.sellReason ?? "").trim();
     const lesson = String(payload.lesson ?? "").trim();
     const followedPlan = payload.followedPlan === true;
-    const resultCents = toCents(payload.result);
+    const cycleEndTradeId = Number(payload.cycleEndTradeId);
     if (!isStockCode(symbol) || !name || !buyReason || !sellReason || !lesson) {
       return Response.json({ error: "请完整填写复盘内容" }, { status: 400 });
+    }
+    if (!Number.isInteger(cycleEndTradeId) || cycleEndTradeId <= 0) {
+      return Response.json({ error: "复盘对应的持仓周期不正确" }, { status: 400 });
     }
     if (buyReason.length > 300 || sellReason.length > 300 || lesson.length > 500) {
       return Response.json({ error: "复盘内容过长" }, { status: 400 });
     }
     await ensureSchema();
-    const [review] = await getDb().insert(reviews).values({
+    const db = getDb();
+    const trades = await db.select().from(tradeRecords);
+    const cycle = buildTradeCycles(trades).find((item) =>
+      item.symbol === symbol && item.endTradeId === cycleEndTradeId
+    );
+    if (!cycle) {
+      return Response.json({ error: "没有找到已经清仓的对应交易" }, { status: 400 });
+    }
+    const duplicate = await db.select().from(reviews);
+    if (duplicate.some((review) => review.cycleEndTradeId === cycleEndTradeId)) {
+      return Response.json({ error: "这次持仓周期已经完成复盘" }, { status: 409 });
+    }
+    const [review] = await db.insert(reviews).values({
       symbol,
-      name,
+      name: cycle.name,
+      cycleEndTradeId,
       buyReason,
       sellReason,
       followedPlan,
       lesson,
-      resultCents,
+      resultCents: cycle.realizedCents,
     }).returning();
     return Response.json({ review }, { status: 201 });
   } catch {

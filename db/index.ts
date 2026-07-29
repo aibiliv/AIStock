@@ -63,6 +63,7 @@ export async function ensureSchema() {
         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
         symbol TEXT NOT NULL,
         name TEXT NOT NULL,
+        cycle_end_trade_id INTEGER,
         buy_reason TEXT NOT NULL,
         sell_reason TEXT NOT NULL,
         followed_plan INTEGER NOT NULL,
