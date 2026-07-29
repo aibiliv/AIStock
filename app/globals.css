@@ -844,11 +844,7 @@ svg { display: block; }
 .sector-heatmap-grid {
   display: grid;
   gap: 8px;
-  grid-template-areas:
-    "first first first second second second"
-    "first first first third third fourth"
-    "fifth fifth fifth third third fourth";
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   min-height: 272px;
 }
 
@@ -862,11 +858,7 @@ svg { display: block; }
   padding: 14px;
 }
 
-.sector-tile.rank-1 { grid-area: first; padding: 18px; }
-.sector-tile.rank-2 { grid-area: second; }
-.sector-tile.rank-3 { grid-area: third; }
-.sector-tile.rank-4 { grid-area: fourth; }
-.sector-tile.rank-5 { grid-area: fifth; }
+.sector-tile.rank-1 { padding: 18px; }
 .sector-tile.up-sector { background: color-mix(in srgb, var(--red) 13%, var(--surface)); color: var(--red); }
 .sector-tile.down-sector { background: color-mix(in srgb, var(--green) 13%, var(--surface)); color: var(--green); }
 .sector-tile.flat-sector { background: var(--surface-soft); color: var(--text-soft); }
@@ -2222,10 +2214,6 @@ svg { display: block; }
   .sector-date-form { align-items: center; }
   .sector-date-form label { padding-bottom: 0; }
   .sector-heatmap-grid {
-    grid-template-areas:
-      "first first"
-      "second third"
-      "fourth fifth";
     grid-template-columns: repeat(2, minmax(0, 1fr));
     min-height: 0;
   }

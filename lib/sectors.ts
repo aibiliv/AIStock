@@ -95,7 +95,7 @@ export function parseEtfKlines(proxy: IndustryProxy, rows: string[][], date: str
   };
 }
 
-export function rankSectorMoves(moves: SectorMove[], limit = 5) {
+export function rankSectorMoves(moves: SectorMove[], limit = 10) {
   return [...moves]
     .sort((left, right) =>
       Math.abs(right.changePercent) - Math.abs(left.changePercent) ||
