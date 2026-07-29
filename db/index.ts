@@ -11,6 +11,20 @@ export function getDb() {
   return drizzle(env.DB, { schema });
 }
 
+async function addColumnIfMissing(table: string, column: string, definition: string) {
+  const db = env.DB;
+  const info = await db.prepare(`PRAGMA table_info(${table})`).all();
+  const columns = info.results as Array<{ name?: string }>;
+  if (columns.some((item) => item.name === column)) return;
+
+  try {
+    await db.prepare(`ALTER TABLE ${table} ADD COLUMN ${definition}`).run();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!message.toLowerCase().includes("duplicate column")) throw error;
+  }
+}
+
 export async function ensureSchema() {
   if (!env.DB) {
     throw new Error("数据库暂不可用");
@@ -104,6 +118,9 @@ export async function ensureSchema() {
       db.prepare("CREATE INDEX IF NOT EXISTS analysis_reports_symbol_idx ON analysis_reports(symbol)"),
       db.prepare("CREATE INDEX IF NOT EXISTS announcement_notes_symbol_idx ON announcement_notes(symbol)"),
     ]);
+    await addColumnIfMissing("trade_records", "price_millis", "price_millis INTEGER");
+    await addColumnIfMissing("alert_rules", "target_price_millis", "target_price_millis INTEGER");
+    await addColumnIfMissing("analysis_reports", "price_millis", "price_millis INTEGER");
   })().catch((error) => {
     schemaReady = null;
     throw error;

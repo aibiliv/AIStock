@@ -71,6 +71,7 @@ type FundProfile = {
 };
 
 type Analysis = {
+  historyWarning?: string;
   stock: {
     code: string;
     name: string;
@@ -286,6 +287,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         setAnalysis(result);
         setQuery(result.stock.code);
         setView("home");
+        if (result.historyWarning) flash(result.historyWarning);
       }
       return result;
     } catch (analyzeError) {
