@@ -98,6 +98,11 @@ type Status = {
   reminderMode: string;
 };
 
+type User = {
+  displayName: string;
+  email: string;
+};
+
 const navItems: Array<{ id: View; label: string; icon: string }> = [
   { id: "home", label: "首页", icon: "⌂" },
   { id: "watchlist", label: "关注", icon: "☆" },
@@ -123,7 +128,7 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
   return payload;
 }
 
-export function Dashboard() {
+export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string }) {
   const [view, setView] = useState<View>("home");
   const [query, setQuery] = useState("");
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
@@ -397,6 +402,11 @@ export function Dashboard() {
           <div><span className="mobile-brand">我的股票助手</span><h1>{navItems.find((item) => item.id === view)?.label}</h1></div>
           <div className="top-actions">
             <span className="privacy-pill">● 私有个人空间</span>
+            <a className="account-button" href={signOutUrl} title={`当前账号：${user.email}`}>
+              <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
+              <b>{user.displayName}</b>
+              <small>退出</small>
+            </a>
             <button className="primary-button" onClick={() => setTradeMode("buy")}>＋ 记录买入</button>
           </div>
         </header>

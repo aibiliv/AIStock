@@ -2,8 +2,11 @@ import { eq } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { watchDetails, watchItems } from "../../../db/schema";
 import { isStockCode } from "../../../lib/domain";
+import { requireApiUser } from "../../../lib/auth";
 
 export async function GET() {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
   try {
     await ensureSchema();
     const db = getDb();
@@ -27,6 +30,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
   try {
     const payload = await request.json() as { symbol?: string; name?: string; note?: string; conditionText?: string };
     const symbol = payload.symbol?.trim() ?? "";
@@ -62,6 +67,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
   try {
     const payload = await request.json() as {
       symbol?: string;
@@ -94,6 +101,8 @@ export async function PATCH(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
   try {
     const symbol = new URL(request.url).searchParams.get("symbol")?.trim() ?? "";
     if (!isStockCode(symbol)) {

@@ -1,6 +1,9 @@
 import { getAiConfig } from "../../../lib/ai-config";
+import { requireApiUser } from "../../../lib/auth";
 
 export async function GET() {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
   const ai = getAiConfig();
   return Response.json({
     deepseekConfigured: ai.configured,

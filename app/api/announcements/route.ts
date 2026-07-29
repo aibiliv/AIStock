@@ -4,6 +4,7 @@ import { ensureSchema, getDb } from "../../../db";
 import { announcementNotes } from "../../../db/schema";
 import { isStockCode } from "../../../lib/domain";
 import { getAiConfig } from "../../../lib/ai-config";
+import { requireApiUser } from "../../../lib/auth";
 
 const allowedHosts = new Set([
   "static.cninfo.com.cn",
@@ -142,6 +143,8 @@ async function loadPdf(form: FormData) {
 }
 
 export async function GET(request: Request) {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
   try {
     const symbol = new URL(request.url).searchParams.get("symbol")?.trim() ?? "";
     if (!isStockCode(symbol)) return Response.json({ error: "股票代码不正确" }, { status: 400 });
@@ -161,6 +164,8 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
   try {
     const form = await request.formData();
     const symbol = String(form.get("symbol") ?? "").trim();
@@ -211,6 +216,8 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
   try {
     const url = new URL(request.url);
     const symbol = url.searchParams.get("symbol")?.trim() ?? "";

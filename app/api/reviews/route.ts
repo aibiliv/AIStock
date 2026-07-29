@@ -2,8 +2,11 @@ import { desc } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { reviews, tradeRecords } from "../../../db/schema";
 import { buildTradeCycles, isStockCode } from "../../../lib/domain";
+import { requireApiUser } from "../../../lib/auth";
 
 export async function GET() {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
   try {
     await ensureSchema();
     return Response.json({ reviews: await getDb().select().from(reviews).orderBy(desc(reviews.id)) });
@@ -13,6 +16,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
   try {
     const payload = await request.json() as Record<string, unknown>;
     const symbol = String(payload.symbol ?? "").trim();

@@ -2,10 +2,13 @@ import { desc, eq } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { alertRules } from "../../../db/schema";
 import { isStockCode, toCents } from "../../../lib/domain";
+import { requireApiUser } from "../../../lib/auth";
 
 const alertTypes = new Set(["止损", "止盈一", "止盈二"]);
 
 export async function GET() {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
   try {
     await ensureSchema();
     const alerts = await getDb().select().from(alertRules).orderBy(desc(alertRules.id));
@@ -16,6 +19,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
   try {
     const payload = await request.json() as { symbol?: string; name?: string; type?: string; targetPrice?: number };
     const symbol = payload.symbol?.trim() ?? "";
@@ -40,6 +45,8 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
   try {
     const payload = await request.json() as { id?: number; action?: string };
     const id = Number(payload.id);
