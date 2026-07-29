@@ -1220,6 +1220,36 @@ svg { display: block; }
 
 .metric-row strong.neutral { color: var(--green); }
 
+.fund-facts {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.fund-facts > div {
+  background: var(--surface-soft);
+  border-radius: 9px;
+  padding: 12px;
+}
+
+.fund-facts span {
+  color: var(--muted);
+  display: block;
+  font-size: var(--fs-2xs);
+}
+
+.fund-facts strong {
+  display: block;
+  font-size: var(--fs-sm);
+  margin-top: 5px;
+}
+
+.fund-source-link {
+  display: inline-block;
+  margin-top: 8px;
+  text-decoration: none;
+}
+
 .card-note,
 .source-warning,
 .risk-unit-note {
@@ -1366,6 +1396,7 @@ svg { display: block; }
 .history-item b,
 .history-item span { font-size: var(--fs-2xs); }
 .history-item > div > span { color: var(--muted); }
+.legacy-precision { color: var(--amber); font-style: normal; font-weight: 700; }
 .history-item p { color: var(--text-soft); font-size: var(--fs-2xs); line-height: 1.55; margin: 6px 0 0; }
 
 .official-links {
@@ -2116,6 +2147,7 @@ svg { display: block; }
   .sector-tile strong,
   .sector-tile.rank-1 strong { font-size: var(--fs-xl); }
   .metric-row { grid-template-columns: 1fr; }
+  .fund-facts { grid-template-columns: 1fr; }
   .beginner-start,
   .behavior-coach { padding: 17px; }
   .beginner-actions { align-items: flex-start; flex-direction: column; gap: 8px; }

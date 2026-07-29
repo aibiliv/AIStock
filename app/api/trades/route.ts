@@ -1,7 +1,7 @@
 import { desc } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { alertRules, tradeRecords } from "../../../db/schema";
-import { calculatePortfolio, isIsoDate, isStockCode, isTradeSide, toCents } from "../../../lib/domain";
+import { calculatePortfolio, isIsoDate, isStockCode, isTradeSide, toCents, toMillis } from "../../../lib/domain";
 import { requireApiUser } from "../../../lib/auth";
 
 export async function GET() {
@@ -37,7 +37,8 @@ export async function POST(request: Request) {
     const rawFee = payload.fee === undefined || payload.fee === null || payload.fee === ""
       ? 0
       : Number(payload.fee);
-    const priceCents = toCents(rawPrice);
+    const priceMillis = toMillis(rawPrice);
+    const priceCents = Math.round(priceMillis / 10);
     const quantity = Number(payload.quantity);
     const tradeDate = payload.tradeDate;
     const reason = String(payload.reason ?? "").trim();
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
     if (!isTradeSide(side)) {
       return Response.json({ error: "买卖方向不正确" }, { status: 400 });
     }
-    if (!Number.isFinite(rawPrice) || priceCents <= 0 || !Number.isInteger(quantity) || quantity <= 0) {
+    if (!Number.isFinite(rawPrice) || priceMillis <= 0 || !Number.isInteger(quantity) || quantity <= 0) {
       return Response.json({ error: "价格和数量必须大于0" }, { status: 400 });
     }
     if (!isIsoDate(tradeDate)) {
@@ -70,8 +71,8 @@ export async function POST(request: Request) {
     ) {
       return Response.json({ error: "最大亏损和费用不能为负数" }, { status: 400 });
     }
-    const riskPerShareCents = maxLossCents === null ? null : Math.round(maxLossCents / quantity);
-    if (side === "买入" && riskPerShareCents !== null && riskPerShareCents >= priceCents) {
+    const riskPerShareMillis = maxLossCents === null ? null : Math.round(maxLossCents * 10 / quantity);
+    if (side === "买入" && riskPerShareMillis !== null && riskPerShareMillis >= priceMillis) {
       return Response.json({ error: "最大亏损必须小于本次买入金额" }, { status: 400 });
     }
 
@@ -89,6 +90,7 @@ export async function POST(request: Request) {
       name,
       side,
       priceCents,
+      priceMillis,
       quantity,
       tradeDate,
       reason,
@@ -96,14 +98,21 @@ export async function POST(request: Request) {
       feeCents,
     };
     let trade;
-    if (side === "买入" && riskPerShareCents !== null) {
+    if (side === "买入" && riskPerShareMillis !== null) {
+      const targets = [
+        { type: "止损" as const, price: priceMillis - riskPerShareMillis },
+        { type: "止盈一" as const, price: priceMillis + riskPerShareMillis },
+        { type: "止盈二" as const, price: priceMillis + riskPerShareMillis * 2 },
+      ];
       const [tradeRows] = await db.batch([
         db.insert(tradeRecords).values(tradeValues).returning(),
-        db.insert(alertRules).values([
-          { symbol, name, type: "止损", targetPriceCents: priceCents - riskPerShareCents },
-          { symbol, name, type: "止盈一", targetPriceCents: priceCents + riskPerShareCents },
-          { symbol, name, type: "止盈二", targetPriceCents: priceCents + riskPerShareCents * 2 },
-        ]),
+        db.insert(alertRules).values(targets.map((target) => ({
+          symbol,
+          name,
+          type: target.type,
+          targetPriceCents: Math.round(target.price / 10),
+          targetPriceMillis: target.price,
+        }))),
       ]);
       trade = tradeRows[0];
     } else {

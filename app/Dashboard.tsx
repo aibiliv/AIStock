@@ -37,6 +37,7 @@ type AlertRule = {
   name: string;
   type: "止损" | "止盈一" | "止盈二";
   targetPriceCents: number;
+  targetPriceMillis: number | null;
   enabled: boolean;
   acknowledgedAt: string | null;
 };
@@ -59,8 +60,27 @@ type Explanation = {
   missingInformation: string[];
 };
 
+type FundProfile = {
+  manager: string;
+  trackingIndex: string;
+  exchange: string;
+  category: string;
+  inceptionDate: string;
+  sourceName: string;
+  sourceUrl: string;
+};
+
 type Analysis = {
-  stock: { code: string; name: string; industry: string; marketSymbol: string; sector?: string | null; businessSummary?: string | null };
+  stock: {
+    code: string;
+    name: string;
+    industry: string;
+    instrumentType: "stock" | "etf";
+    fund: FundProfile | null;
+    marketSymbol: string;
+    sector?: string | null;
+    businessSummary?: string | null;
+  };
   quote: {
     price: number;
     previousClose: number;
@@ -138,7 +158,22 @@ function money(cents: number) {
 }
 
 function price(value: number) {
-  return `¥${value.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const digits = Math.abs(value) < 10 ? 3 : 2;
+  return `¥${value.toLocaleString("zh-CN", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+}
+
+function millisPrice(millis: number) {
+  return price(millis / 1000);
+}
+
+function alertPrice(alert: AlertRule) {
+  const value = millisPrice(alert.targetPriceMillis ?? alert.targetPriceCents * 10);
+  return alert.targetPriceMillis === null || alert.targetPriceMillis === undefined ? `约${value}` : value;
+}
+
+function tradePrice(trade: Trade) {
+  const value = millisPrice(trade.priceMillis ?? trade.priceCents * 10);
+  return trade.priceMillis === null || trade.priceMillis === undefined ? `约${value}` : value;
 }
 
 function compactAmount(value: number) {
@@ -289,7 +324,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       if (!alert.enabled || alert.acknowledgedAt || notified.current.has(alert.id)) continue;
       const current = quotes[alert.symbol]?.quote.price;
       if (!current) continue;
-      const target = alert.targetPriceCents / 100;
+      const target = (alert.targetPriceMillis ?? alert.targetPriceCents * 10) / 1000;
       const triggered = alert.type === "止损" ? current <= target : current >= target;
       if (!triggered) continue;
       notified.current.add(alert.id);
@@ -616,18 +651,18 @@ function Home({
             <div className="holding-grid">
               {portfolio.positions.map((position) => {
                 const quote = quotes[position.symbol]?.quote.price;
-                const profit = quote ? (quote * 100 - position.averageCostCents) * position.quantity : 0;
-                const rate = quote ? ((quote * 100 / position.averageCostCents) - 1) * 100 : null;
+                const profitCents = quote ? ((quote * 1000 - position.averageCostMillis) * position.quantity) / 10 : 0;
+                const rate = quote ? ((quote * 1000 / position.averageCostMillis) - 1) * 100 : null;
                 const stop = activeAlerts.find((item) => item.symbol === position.symbol && item.type === "止损");
                 return (
                   <article className="holding-card" key={position.symbol}>
                     <div className="holding-top">
                       <span className="stock-avatar">{position.name.slice(0, 1)}</span>
-                      <div><h4>{position.name}<small>{position.symbol}</small></h4><p>{position.quantity}股 · 成本{money(position.averageCostCents)}</p></div>
+                      <div><h4>{position.name}<small>{position.symbol}</small></h4><p>{position.quantity}股 · 成本{position.legacyPrecision ? "约" : ""}{millisPrice(position.averageCostMillis)}</p></div>
                       <strong className={(rate ?? 0) >= 0 ? "up" : "down"}>{rate === null ? "行情更新中" : `${rate >= 0 ? "+" : ""}${rate.toFixed(2)}%`}</strong>
                     </div>
-                    <div className="risk-line"><span>按当前参考价计算</span><b>{quote ? money(profit) : "暂无"}</b></div>
-                    <div className={`holding-status ${stop ? "amber" : ""}`}><i />{stop ? `止损提醒 ${money(stop.targetPriceCents)}` : "尚未设置止损提醒"}</div>
+                    <div className="risk-line"><span>按当前参考价计算</span><b>{quote ? money(profitCents) : "暂无"}</b></div>
+                    <div className={`holding-status ${stop ? "amber" : ""}`}><i />{stop ? `止损提醒 ${alertPrice(stop)}` : "尚未设置止损提醒"}</div>
                   </article>
                 );
               })}
@@ -657,7 +692,7 @@ function Home({
               {activeAlerts.slice(0, 3).map((alert) => (
                 <div className="reminder" key={alert.id}>
                   <span className={`reminder-icon ${alert.type === "止损" ? "red" : "amber"}`}>!</span>
-                  <div><b>{alert.name} · {alert.type}</b><p>目标价 {money(alert.targetPriceCents)} · 免费行情可能延迟</p></div>
+                  <div><b>{alert.name} · {alert.type}</b><p>目标价 {alertPrice(alert)} · 免费行情可能延迟</p></div>
                   <div className="reminder-actions"><button onClick={onAlertPlan}>查看计划</button><button onClick={() => onAcknowledge(alert.id)}>我知道了</button></div>
                 </div>
               ))}
@@ -882,6 +917,10 @@ function AnalysisView({ analysis, watched, canSell, onWatch, onBuy, onSell }: {
 }) {
   const [showRaw, setShowRaw] = useState(false);
   const { stock, quote, financials, explanation } = analysis;
+  const isEtf = stock.instrumentType === "etf" && stock.fund;
+  const companyLabels = isEtf
+    ? ["基金产品", "跟踪指数", "基金管理人", "交易属性"]
+    : ["是什么", "数据代码", "还要核验", "板块"];
   const quoteDate = quote.marketTime ? new Date(quote.marketTime).toLocaleString("zh-CN") : "数据源未提供";
 
   return (
@@ -913,40 +952,55 @@ function AnalysisView({ analysis, watched, canSell, onWatch, onBuy, onSell }: {
 
       <div className="analysis-grid">
         <section className="panel analysis-card">
-          <CardTitle number="01" title="公司与行业" source="通俗解释" />
+          <CardTitle number="01" title={isEtf ? "基金与指数" : "公司与行业"} source={isEtf ? "基金官方资料" : "通俗解释"} />
           <div className="plain-points">
-            {explanation.company.map((item, index) => <p key={item}><b>{["是什么", "数据代码", "还要核验", "板块"][index] ?? "信息"}</b><span>{item}</span></p>)}
+            {explanation.company.map((item, index) => <p key={item}><b>{companyLabels[index] ?? "信息"}</b><span>{item}</span></p>)}
           </div>
-          {stock.businessSummary && (
+          {!isEtf && stock.businessSummary && (
             <p className="company-brief">公司简介：{stock.businessSummary.length > 90 ? `${stock.businessSummary.slice(0, 90)}…` : stock.businessSummary}</p>
           )}
         </section>
 
         <section className="panel analysis-card">
-          <CardTitle number="02" title="财务体检" source="公开财务接口" />
-          <div className="metric-row">
-            <Metric label="营收变化" value={financials.revenueGrowth} suffix="%" />
-            <Metric label="利润变化" value={financials.profitGrowth} suffix="%" />
-            <Metric label="负债率" value={financials.debtRatio} suffix="%" />
-          </div>
-          <div className="metric-row">
-            <Metric label="总市值" value={financials.marketCap} marketCapValue />
-            <Metric label="市盈率" value={financials.pe} suffix="" help="股价相对公司利润的倍数" />
-            <Metric label="市净率" value={financials.pb} suffix="" help="股价相对净资产的倍数" />
-          </div>
-          <div className="metric-row">
-            <Metric label="ROE" value={financials.roe} percentValue help="公司使用股东资金赚钱的能力" />
-            <Metric label="毛利率" value={financials.grossMargin} percentValue />
-            <Metric label="净利率" value={financials.profitMargin} percentValue />
-          </div>
-          <button className="text-button" onClick={() => setShowRaw((value) => !value)}>{showRaw ? "收起原始数字 ↑" : "展开查看原始数字 →"}</button>
-          {showRaw && (
-            <div className="raw-data">
-              {Object.entries(financials.series).map(([key, rows]) => (
-                <div key={key}><b>{key}</b>{rows.length ? rows.map((row) => <span key={row.date}>{row.date}: {row.value.toLocaleString("zh-CN")}</span>) : <span>暂无数据</span>}</div>
-              ))}
-              {!Object.keys(financials.series).length && <p>数据源暂未返回财务明细。</p>}
-            </div>
+          <CardTitle number="02" title={isEtf ? "基金资料" : "财务体检"} source={isEtf ? "基金官方资料" : "公开财务接口"} />
+          {isEtf ? (
+            <>
+              <div className="fund-facts">
+                <div><span>基金管理人</span><strong>{stock.fund!.manager}</strong></div>
+                <div><span>标的指数</span><strong>{stock.fund!.trackingIndex}</strong></div>
+                <div><span>产品类型</span><strong>{stock.fund!.category}</strong></div>
+                <div><span>上市市场</span><strong>{stock.fund!.exchange}</strong></div>
+              </div>
+              <p className="source-warning">净值、折溢价、规模和跟踪误差尚未接入，页面不会用公司财务指标代替。</p>
+              <a className="text-button fund-source-link" href={stock.fund!.sourceUrl} target="_blank" rel="noreferrer">查看{stock.fund!.sourceName}官方资料 ↗</a>
+            </>
+          ) : (
+            <>
+              <div className="metric-row">
+                <Metric label="营收变化" value={financials.revenueGrowth} suffix="%" />
+                <Metric label="利润变化" value={financials.profitGrowth} suffix="%" />
+                <Metric label="负债率" value={financials.debtRatio} suffix="%" />
+              </div>
+              <div className="metric-row">
+                <Metric label="总市值" value={financials.marketCap} marketCapValue />
+                <Metric label="市盈率" value={financials.pe} suffix="" help="股价相对公司利润的倍数" />
+                <Metric label="市净率" value={financials.pb} suffix="" help="股价相对净资产的倍数" />
+              </div>
+              <div className="metric-row">
+                <Metric label="ROE" value={financials.roe} percentValue help="公司使用股东资金赚钱的能力" />
+                <Metric label="毛利率" value={financials.grossMargin} percentValue />
+                <Metric label="净利率" value={financials.profitMargin} percentValue />
+              </div>
+              <button className="text-button" onClick={() => setShowRaw((value) => !value)}>{showRaw ? "收起原始数字 ↑" : "展开查看原始数字 →"}</button>
+              {showRaw && (
+                <div className="raw-data">
+                  {Object.entries(financials.series).map(([key, rows]) => (
+                    <div key={key}><b>{key}</b>{rows.length ? rows.map((row) => <span key={row.date}>{row.date}: {row.value.toLocaleString("zh-CN")}</span>) : <span>暂无数据</span>}</div>
+                  ))}
+                  {!Object.keys(financials.series).length && <p>数据源暂未返回财务明细。</p>}
+                </div>
+              )}
+            </>
           )}
         </section>
 
@@ -961,11 +1015,11 @@ function AnalysisView({ analysis, watched, canSell, onWatch, onBuy, onSell }: {
         </section>
 
         <section className="panel analysis-card">
-          <CardTitle number="04" title="题材信息" source="候选信息 · 需核验" />
+          <CardTitle number="04" title={isEtf ? "指数与产品特征" : "题材信息"} source={isEtf ? "基金资料已核验" : "候选信息 · 需核验"} />
           <div className="theme-list">
             {explanation.themes.map((theme) => <div key={theme.name}><b>{theme.name}</b><span className="confidence high">{theme.confidence}</span><p>{theme.reason}</p></div>)}
           </div>
-          <p className="source-warning">题材不等于业绩事实，请结合公司公告核验。</p>
+          <p className="source-warning">{isEtf ? "指数成份不等于基金实时持仓，请结合基金定期报告和指数编制方案核验。" : "题材不等于业绩事实，请结合公司公告核验。"}</p>
         </section>
 
         <section className="panel analysis-card risks-card">
@@ -1059,6 +1113,7 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
 type HistoryReport = {
   id: number;
   priceCents: number;
+  priceMillis: number | null;
   marketTime: string | null;
   source: string;
   mode: string;
@@ -1086,10 +1141,15 @@ function AnalysisHistory({ symbol, currentPrice }: { symbol: string; currentPric
     <section className="panel research-card">
       <CardTitle number="07" title="历史分析" source="保存当时的价格与判断" />
       {reports.length ? reports.slice(0, 5).map((report) => {
-        const change = ((currentPrice * 100 / report.priceCents) - 1) * 100;
+        const change = report.priceMillis === null
+          ? null
+          : ((currentPrice * 1000 / report.priceMillis) - 1) * 100;
         return (
           <article className="history-item" key={report.id}>
-            <div><b>{new Date(report.createdAt).toLocaleString("zh-CN")}</b><span>{report.mode === "deepseek" ? "AI" : "自动解释"} · 当时{money(report.priceCents)} · 至今<span className={change >= 0 ? "up" : "down"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span></span></div>
+            <div><b>{new Date(report.createdAt).toLocaleString("zh-CN")}</b><span>{report.mode === "deepseek" ? "AI" : "自动解释"} · {report.priceMillis === null
+              ? <>旧记录约{money(report.priceCents)} · <i className="legacy-precision">精度不足，不计算涨跌</i></>
+              : <>当时{millisPrice(report.priceMillis)} · 至今<span className={(change ?? 0) >= 0 ? "up" : "down"}>{(change ?? 0) >= 0 ? "+" : ""}{(change ?? 0).toFixed(2)}%</span></>
+            }</span></div>
             <p>{report.summary}</p>
           </article>
         );
@@ -1326,7 +1386,7 @@ function Trades({ trades, reviews, onBuy, onSell, onReview }: {
               <div className="trade-row" key={trade.id}>
                 <span><b>{trade.tradeDate}</b><small>{trade.quantity}股</small></span>
                 <span><b>{trade.name}</b><small>{trade.symbol}</small></span>
-                <span><b className={`side ${trade.side === "买入" ? "buy" : "sell"}`}>{trade.side}</b><small>{money(trade.priceCents)}</small></span>
+                <span><b className={`side ${trade.side === "买入" ? "buy" : "sell"}`}>{trade.side}</b><small>{tradePrice(trade)}</small></span>
                 <span className="trade-reason">{trade.reason}</span>
                 <span>
                   {cycle?.endTradeId === null
@@ -1379,7 +1439,7 @@ function Settings({ status, alerts, section, onSection, onDisable, onNotificatio
       {section === "alerts" && (
         <section className="panel settings-detail">
           <div className="settings-detail-head"><div><h3>提醒管理</h3><p>浏览器权限：{notificationState}</p></div><button className="primary-button" onClick={onNotifications}>申请浏览器通知</button></div>
-          {alerts.length ? alerts.map((alert) => <div className="alert-row" key={alert.id}><span><b>{alert.name} · {alert.type}</b><small>{money(alert.targetPriceCents)} · {alert.enabled ? "启用" : "已停用"}</small></span>{alert.enabled && <button className="danger-link" onClick={() => onDisable(alert.id)}>停用</button>}</div>) : <p>暂无提醒规则。</p>}
+          {alerts.length ? alerts.map((alert) => <div className="alert-row" key={alert.id}><span><b>{alert.name} · {alert.type}</b><small>{alertPrice(alert)} · {alert.enabled ? "启用" : "已停用"}</small></span>{alert.enabled && <button className="danger-link" onClick={() => onDisable(alert.id)}>停用</button>}</div>) : <p>暂无提醒规则。</p>}
         </section>
       )}
       {section === "privacy" && <section className="panel settings-detail"><h3>导出个人数据</h3><p>备份包含交易、关注、提醒与复盘，不包含任何API密钥。</p><a className="primary-button download-link" href="/api/export">下载JSON备份</a></section>}
@@ -1458,7 +1518,6 @@ function ReviewModal({ cycle, onClose, onSaved }: {
   const name = cycle.name;
   const buyReason = related.find((trade) => trade.side === "买入")?.reason ?? "";
   const sellReason = [...related].reverse().find((trade) => trade.side === "卖出")?.reason ?? "";
-  const result = cycle.realizedCents / 100;
 
   useEffect(() => {
     firstInput.current?.focus();
@@ -1503,7 +1562,7 @@ function ReviewModal({ cycle, onClose, onSaved }: {
           <label>为什么卖？<textarea name="sellReason" defaultValue={sellReason} required maxLength={300} /></label>
           <fieldset><legend>有没有按计划执行？</legend><div className="reason-options"><label><input className="visually-hidden" type="radio" name="followedPlan" value="yes" required /><span>有，按计划</span></label><label><input className="visually-hidden" type="radio" name="followedPlan" value="no" required /><span>没有</span></label></div></fieldset>
           <label>下一次只改进哪一件事？<textarea name="lesson" required maxLength={500} placeholder="例如：触发止损后当天执行，不再向下移动止损线。" /></label>
-          <div className="calculation-tip">程序按成交记录计算本次已实现盈亏：{price(result)}</div>
+          <div className="calculation-tip">程序按成交记录计算本次已实现盈亏：{money(cycle.realizedCents)}</div>
           {message && <p className="form-message" role="alert">{message}</p>}
           <div className="modal-actions"><button type="button" onClick={onClose}>取消</button><button className="primary-button" type="submit" disabled={saving}>{saving ? "正在保存…" : "保存复盘"}</button></div>
         </form>

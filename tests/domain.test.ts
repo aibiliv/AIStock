@@ -7,8 +7,10 @@ import {
   isStockCode,
   localIsoDate,
   toCents,
+  toMillis,
   type Trade,
 } from "../lib/domain";
+import { tencentSymbol, yahooSymbol } from "../lib/stocks";
 
 function trade(values: Partial<Trade>): Trade {
   return {
@@ -51,12 +53,28 @@ test("超出持仓数量的卖出不会制造负持仓", () => {
 
 test("金额和基础字段验证保持严格", () => {
   assert.equal(toCents("12.345"), 1235);
+  assert.equal(toMillis("0.615"), 615);
   assert.equal(toCents("bad"), 0);
   assert.equal(isStockCode("600519"), true);
   assert.equal(isStockCode("60051"), false);
   assert.equal(isIsoDate("2026-07-29"), true);
   assert.equal(isIsoDate("2026-02-30"), false);
   assert.equal(isIsoDate("29/07/2026"), false);
+});
+
+test("ETF价格按千分之一元保存并计算持仓", () => {
+  const summary = calculatePortfolio([
+    trade({ id: 1, priceCents: 62, priceMillis: 615, quantity: 100 }),
+    trade({ id: 2, side: "卖出", priceCents: 63, priceMillis: 630, quantity: 100, tradeDate: "2026-07-02" }),
+  ]);
+
+  assert.equal(summary.positions.length, 0);
+  assert.equal(summary.realizedCents, 150);
+});
+
+test("5开头ETF映射到上海市场", () => {
+  assert.equal(yahooSymbol("513180"), "513180.SS");
+  assert.equal(tencentSymbol("513180"), "sh513180");
 });
 
 test("部分卖出不会提前生成待复盘周期", () => {

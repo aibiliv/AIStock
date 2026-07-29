@@ -114,7 +114,9 @@ export async function POST(request: Request) {
     }
 
     const facts = await analyzeStockData(query);
-    const analysis = await getDeepSeekExplanation(facts);
+    const analysis = facts.stock.instrumentType === "etf"
+      ? { mode: "automatic" as const, explanation: automaticExplanation(facts) }
+      : await getDeepSeekExplanation(facts);
     const result = { ...facts, ...analysis };
     if (payload.saveHistory) {
       await ensureSchema();
@@ -122,6 +124,7 @@ export async function POST(request: Request) {
         symbol: facts.stock.code,
         name: facts.stock.name,
         priceCents: Math.round(facts.quote.price * 100),
+        priceMillis: Math.round(facts.quote.price * 1000),
         marketTime: facts.quote.marketTime,
         source: facts.source.name,
         mode: analysis.mode,

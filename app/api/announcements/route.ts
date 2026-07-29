@@ -5,6 +5,7 @@ import { announcementNotes } from "../../../db/schema";
 import { isStockCode } from "../../../lib/domain";
 import { getAiConfig } from "../../../lib/ai-config";
 import { requireApiUser } from "../../../lib/auth";
+import { isEtfCode } from "../../../lib/stocks";
 
 const allowedHosts = new Set([
   "static.cninfo.com.cn",
@@ -54,7 +55,7 @@ function automaticSummary(text: string): SummaryResult {
   };
 }
 
-async function summarizeWithDeepSeek(text: string): Promise<SummaryResult> {
+async function summarizeWithDeepSeek(text: string, isEtf: boolean): Promise<SummaryResult> {
   const ai = getAiConfig();
   if (!ai.configured) return automaticSummary(text);
 
@@ -74,7 +75,9 @@ async function summarizeWithDeepSeek(text: string): Promise<SummaryResult> {
           {
             role: "system",
             content: [
-              "你是上市公司公告摘要助手，只能使用输入的公告文字。",
+              isEtf
+                ? "你是公募基金公告摘要助手，只能使用输入的基金公告文字。使用基金管理人、标的指数、净值、份额、持仓、跟踪误差等基金术语，不使用公司主营、管理层或公司业绩等个股术语。"
+                : "你是上市公司公告摘要助手，只能使用输入的公告文字。",
               "输出json对象，包含summary字符串和risks字符串数组。",
               "summary用不超过300字的中文解释公告做了什么、涉及金额或时间、投资者需要关注什么。",
               "不提供买卖建议，缺失信息明确写不确定。",
@@ -196,7 +199,7 @@ export async function POST(request: Request) {
       }, { status: 422 });
     }
 
-    const result = await summarizeWithDeepSeek(text);
+    const result = await summarizeWithDeepSeek(text, isEtfCode(symbol));
     await ensureSchema();
     const [note] = await getDb().insert(announcementNotes).values({
       symbol,

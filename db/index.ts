@@ -28,6 +28,7 @@ export async function ensureSchema() {
         name TEXT NOT NULL,
         side TEXT NOT NULL CHECK(side IN ('买入', '卖出')),
         price_cents INTEGER NOT NULL CHECK(price_cents > 0),
+        price_millis INTEGER,
         quantity INTEGER NOT NULL CHECK(quantity > 0),
         trade_date TEXT NOT NULL,
         reason TEXT NOT NULL,
@@ -55,6 +56,7 @@ export async function ensureSchema() {
         name TEXT NOT NULL,
         type TEXT NOT NULL CHECK(type IN ('止损', '止盈一', '止盈二')),
         target_price_cents INTEGER NOT NULL CHECK(target_price_cents > 0),
+        target_price_millis INTEGER,
         enabled INTEGER NOT NULL DEFAULT 1,
         acknowledged_at TEXT,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -76,6 +78,7 @@ export async function ensureSchema() {
         symbol TEXT NOT NULL,
         name TEXT NOT NULL,
         price_cents INTEGER NOT NULL,
+        price_millis INTEGER,
         market_time TEXT,
         source TEXT NOT NULL,
         mode TEXT NOT NULL,
