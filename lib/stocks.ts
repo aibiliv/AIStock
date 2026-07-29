@@ -142,7 +142,11 @@ async function fetchJson<T>(url: string): Promise<T> {
   if (!response.ok) {
     throw new Error(`数据源返回 ${response.status}`);
   }
-  return response.json() as Promise<T>;
+  try {
+    return await response.json() as Promise<T>;
+  } catch {
+    throw new Error("数据源返回内容无法解析，可能是接口限流，请稍后重试");
+  }
 }
 
 async function getChart(code: string) {
@@ -247,6 +251,89 @@ function growth(series: Array<{ value: number }> | undefined) {
   return previous ? ((current - previous) / Math.abs(previous)) * 100 : null;
 }
 
+type ProfileSummary = {
+  name: string | null;
+  marketCap: number | null;
+  pe: number | null;
+  pb: number | null;
+  roe: number | null;
+  grossMargin: number | null;
+  profitMargin: number | null;
+  operatingCashflow: number | null;
+  sector: string | null;
+  industry: string | null;
+  businessSummary: string | null;
+};
+
+async function getQuoteSummary(symbol: string): Promise<ProfileSummary> {
+  const empty: ProfileSummary = {
+    name: null, marketCap: null, pe: null, pb: null, roe: null,
+    grossMargin: null, profitMargin: null, operatingCashflow: null,
+    sector: null, industry: null, businessSummary: null,
+  };
+  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=price,defaultKeyStatistics,financialData,assetProfile`;
+  try {
+    const res = await fetch(url, {
+      headers: { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return empty;
+    const data = await res.json() as {
+      quoteSummary?: { result?: Array<{
+        price?: { marketCap?: { raw?: number }; trailingPE?: { raw?: number }; priceToBook?: { raw?: number }; shortName?: string; longName?: string };
+        financialData?: { returnOnEquity?: { raw?: number }; grossMargins?: { raw?: number }; profitMargins?: { raw?: number }; operatingCashflow?: { raw?: number } };
+        assetProfile?: { industry?: string; sector?: string; longBusinessSummary?: string };
+      }> | null };
+    };
+    const result = data.quoteSummary?.result?.[0];
+    if (!result) return empty;
+    const num = (value?: { raw?: number }) => (typeof value?.raw === "number" ? value.raw : null);
+    return {
+      name: result.price?.longName || result.price?.shortName || null,
+      marketCap: num(result.price?.marketCap),
+      pe: num(result.price?.trailingPE),
+      pb: num(result.price?.priceToBook),
+      roe: num(result.financialData?.returnOnEquity),
+      grossMargin: num(result.financialData?.grossMargins),
+      profitMargin: num(result.financialData?.profitMargins),
+      operatingCashflow: num(result.financialData?.operatingCashflow),
+      sector: result.assetProfile?.sector ?? null,
+      industry: result.assetProfile?.industry ?? null,
+      businessSummary: result.assetProfile?.longBusinessSummary ?? null,
+    };
+  } catch {
+    return empty;
+  }
+}
+
+const THEME_HINTS: Record<string, string[]> = {
+  "白酒": ["白酒", "消费"],
+  "电池": ["新能源", "锂电池"],
+  "半导体设备": ["半导体", "国产替代"],
+  "新能源汽车": ["新能源车", "锂电池"],
+  "动力电池": ["新能源", "锂电池"],
+  "人工智能软件": ["人工智能", "信创"],
+  "创新药": ["创新药", "医药"],
+  "银行": ["金融", "高股息"],
+  "保险": ["金融", "高股息"],
+  "黄金·有色": ["黄金", "有色金属"],
+  "AI服务器": ["人工智能", "算力"],
+  "光通信": ["人工智能", "算力", "光模块"],
+  "PCB·AI算力": ["人工智能", "PCB", "算力"],
+  "国产算力芯片": ["半导体", "国产替代", "人工智能"],
+  "AI芯片": ["半导体", "人工智能"],
+  "半导体制造": ["半导体", "国产替代"],
+  "互联网金融": ["金融", "互联网"],
+  "办公软件": ["信创", "软件"],
+  "家用电器": ["消费", "家电"],
+  "新能源整车": ["新能源车", "锂电池"],
+  "化学制药": ["医药", "化学制药"],
+  "医疗服务": ["医药", "医疗服务"],
+  "医疗器械": ["医药", "医疗器械"],
+  "乳制品": ["消费", "食品饮料"],
+  "工程机械": ["高端制造", "基建"],
+};
+
 export async function analyzeStockData(query: string) {
   const stock = resolveStock(query);
   if (!stock) {
@@ -267,18 +354,26 @@ export async function analyzeStockData(query: string) {
   const support = Math.min(...lows.slice(-20));
   const resistance = Math.max(...highs.slice(-60));
   const riskPerShare = Math.max(currentPrice - support, currentPrice * 0.03);
-  const fundamentals = await getFundamentals(symbol);
+  const [fundamentals, profile] = await Promise.all([
+    getFundamentals(symbol),
+    getQuoteSummary(symbol),
+  ]);
   const revenueGrowth = growth(fundamentals.quarterlyTotalRevenue);
   const profitGrowth = growth(fundamentals.quarterlyNetIncome);
   const assets = fundamentals.quarterlyTotalAssets?.at(-1)?.value ?? 0;
   const debt = fundamentals.quarterlyTotalDebt?.at(-1)?.value ?? 0;
   const debtRatio = assets ? (debt / assets) * 100 : null;
 
+  const resolvedName = STOCK_NAMES[stock.code] ?? profile.name ?? stock.name;
+  const resolvedIndustry = INDUSTRIES[stock.code] ?? profile.industry ?? profile.sector ?? "行业信息待补充";
+
   return {
     stock: {
       code: stock.code,
-      name: STOCK_NAMES[stock.code] ?? stock.name,
-      industry: INDUSTRIES[stock.code] ?? "行业信息待补充",
+      name: resolvedName,
+      industry: resolvedIndustry,
+      sector: profile.sector,
+      businessSummary: profile.businessSummary,
       marketSymbol: symbol,
     },
     quote: {
@@ -301,6 +396,13 @@ export async function analyzeStockData(query: string) {
       revenueGrowth,
       profitGrowth,
       debtRatio,
+      marketCap: profile.marketCap,
+      pe: profile.pe,
+      pb: profile.pb,
+      roe: profile.roe,
+      grossMargin: profile.grossMargin,
+      profitMargin: profile.profitMargin,
+      operatingCashflow: profile.operatingCashflow,
       series: fundamentals,
     },
     history: history.slice(-90),
@@ -323,21 +425,44 @@ export function automaticExplanation(data: Awaited<ReturnType<typeof analyzeStoc
     : `最近两期利润变化约为 ${financials.profitGrowth.toFixed(1)}%`;
   const volatilityText = quote.volatility > 3 ? "近期波动较大" : "近期波动处于相对温和区间";
 
+  const themeSet = new Set<string>();
+  const builtThemes: Array<{ name: string; confidence: string; reason: string }> = [];
+  const pushTheme = (name: string, confidence: string, reason: string) => {
+    if (!name || themeSet.has(name)) return;
+    themeSet.add(name);
+    builtThemes.push({ name, confidence, reason });
+  };
+  if (stock.industry && stock.industry !== "行业信息待补充") {
+    pushTheme(stock.industry, "较强", `${stock.name}主营所属行业为${stock.industry}。`);
+  }
+  if (stock.sector) {
+    pushTheme(stock.sector, "中", `所属板块分类为${stock.sector}。`);
+  }
+  for (const hint of THEME_HINTS[stock.industry] ?? []) {
+    pushTheme(hint, "待核验", `与${stock.industry}相关的常见概念题材，需以公司公告为准。`);
+  }
+  if (builtThemes.length === 0) {
+    pushTheme(stock.industry || "待补充", "待核验", "暂无题材信息，建议结合公告核验。");
+  }
+
+  const company = [
+    `${stock.name}的行业分类为${stock.industry}。`,
+    `当前公开数据代码为${stock.code}，行情使用不需要账号的公开接口获取。`,
+    "公司具体业务与客户结构需要结合最新年报和官方公告继续核验。",
+  ];
+  if (stock.sector) {
+    company.push(`所属板块分类为${stock.sector}。`);
+  }
+
   return {
     summary: `${stock.name}属于${stock.industry}，${trend}，${volatilityText}。先检查基本面变化，再结合自己能承受的亏损设置计划。`,
-    company: [
-      `${stock.name}的行业分类为${stock.industry}。`,
-      `当前公开数据代码为${stock.code}，行情使用不需要账号的公开接口获取。`,
-      "公司具体业务与客户结构需要结合最新年报和官方公告继续核验。",
-    ],
+    company,
     risks: [
       profitText,
       `20日平均日波动约 ${quote.volatility.toFixed(2)}%，价格提醒可能被短期波动触发。`,
       "免费公开行情可能延迟，重要止损必须同时在券商App设置。",
     ],
-    themes: [
-      { name: stock.industry, confidence: "较强", reason: "来自内置行业分类，需要以公司公告为准。" },
-    ],
+    themes: builtThemes,
     missingInformation: [
       financials.revenueGrowth === null ? "营收可比数据" : "",
       financials.profitGrowth === null ? "利润可比数据" : "",
