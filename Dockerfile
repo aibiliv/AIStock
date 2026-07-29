@@ -15,10 +15,14 @@ RUN sed -i 's/deb.debian.org/mirrors.ustc.edu.cn/g' /etc/apt/sources.list.d/debi
 RUN apt-get update && apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/*
 
-# 安装全部依赖（build 需要 vinext/vite，运行需要 wrangler/workerd）
-# 使用淘宝镜像加速 npm 下载
+# 混合镜像源策略：
+# - 默认走 npmmirror 国内镜像加速
+# - @cloudflare/* 始终走官方源（镜像未缓存 Cloudflare 包）
+# - 若 wrangler 等包在 npmmirror 缺失（404），自动回退到官方源全量安装
 COPY package.json package-lock.json ./
-RUN npm install --no-audit --no-fund && \
+RUN npm config set @cloudflare:registry https://registry.npmjs.org && \
+    (npm install --no-audit --no-fund --registry=https://registry.npmmirror.com || \
+     npm install --no-audit --no-fund --registry=https://registry.npmjs.org) && \
     npm cache clean --force
 
 # 复制源码并构建（vinext build 产出 dist/）
