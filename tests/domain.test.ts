@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  aggregateMarketHistory,
   buildTradeCycles,
   calculatePortfolio,
   isIsoDate,
@@ -103,4 +104,27 @@ test("同一股票的多次完整持仓分别形成复盘周期", () => {
 
 test("表单默认日期使用本地年月日而不是UTC截断", () => {
   assert.equal(localIsoDate(new Date(2026, 6, 29, 0, 30)), "2026-07-29");
+});
+
+test("日线可以聚合为周K和月K并重新计算均线", () => {
+  const history = [
+    { date: "2026-06-29", open: 10, high: 12, low: 9, close: 11, volume: 100 },
+    { date: "2026-06-30", open: 11, high: 13, low: 10, close: 12, volume: 200 },
+    { date: "2026-07-01", open: 12, high: 14, low: 11, close: 13, volume: 300 },
+    { date: "2026-07-06", open: 13, high: 15, low: 12, close: 14, volume: 400 },
+    { date: "2026-07-07", open: 14, high: 16, low: 13, close: 15, volume: 500 },
+  ];
+
+  const weekly = aggregateMarketHistory(history, "week");
+  assert.deepEqual(weekly.map(({ date, open, high, low, close, volume }) => (
+    { date, open, high, low, close, volume }
+  )), [
+    { date: "2026-07-01", open: 10, high: 14, low: 9, close: 13, volume: 600 },
+    { date: "2026-07-07", open: 13, high: 16, low: 12, close: 15, volume: 900 },
+  ]);
+
+  const monthly = aggregateMarketHistory(history, "month");
+  assert.equal(monthly.length, 2);
+  assert.equal(monthly[0].close, 12);
+  assert.equal(monthly[1].open, 12);
 });
