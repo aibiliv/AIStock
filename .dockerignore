@@ -1,0 +1,23 @@
+# 依赖与构建缓存（由镜像内重新安装/构建）
+node_modules
+dist
+outputs
+.wrangler
+.next
+.vinext
+out
+coverage
+
+# 版本控制
+.git
+.gitignore
+
+# 本地数据卷（运行时由容器挂载，不要复制进镜像）
+data
+
+# 日志与本地环境
+*.log
+npm-debug.log*
+.dev-*.log
+.env
+.env.*
