@@ -12,7 +12,7 @@ docker compose up -d --build
 
 echo ""
 echo "==> 部署完成"
-echo "    访问地址: http://120.48.87.170:9001"
+echo "    访问地址: http://120.48.87.170:9003"
 echo "    查看日志: docker compose logs -f"
 echo "    停止服务: docker compose down"
 echo "    数据库数据持久化在 ./data 目录"
