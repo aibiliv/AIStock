@@ -134,7 +134,7 @@ async function loadSectorMoves(date: string) {
   return moves;
 }
 
-export async function getSectorHeatmap(date: string): Promise<SectorHeatmap> {
+export async function getSectorHeatmap(date: string, limit = 10): Promise<SectorHeatmap> {
   const validationError = validateSectorDate(date);
   if (validationError) throw new Error(validationError);
 
@@ -145,7 +145,7 @@ export async function getSectorHeatmap(date: string): Promise<SectorHeatmap> {
 
   return {
     date,
-    sectors: rankSectorMoves(moves),
+    sectors: rankSectorMoves(moves, limit),
     sampleSize: moves.length,
     basis: "etf-proxy",
     source: {

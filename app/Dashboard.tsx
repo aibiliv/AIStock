@@ -860,7 +860,7 @@ function SectorHeatmap() {
     setMessage("");
     try {
       const heatmap = await jsonRequest<SectorHeatmapData>(
-        `/api/sector-heatmap?date=${encodeURIComponent(selectedDate)}`,
+        `/api/sector-heatmap?date=${encodeURIComponent(selectedDate)}&limit=10`,
       );
       setData(heatmap);
     } catch (loadError) {
