@@ -1,28 +1,47 @@
-# 复盘簿
+# 我的股票助手
 
-一个面向个人投资者的股票交易复盘工作台。
+面向个人使用的 A 股记录与复盘工具。它负责整理公开行情、记录交易、触发价格提醒并辅助复盘，不提供荐股或自动交易。
 
-它把交易流水、止盈止损计划、重点关注、题材脉络、每日复盘和交易统计放在同一条工作流里，核心目标不是预测行情，而是帮助使用者判断自己是否持续按计划交易。
+## 主要功能
 
-## 当前版本
-
-- 今日概览与收盘待办
-- 持仓止盈止损状态
-- 交易记录与交易依据
-- 重点关注及题材归类
-- 五分钟每日复盘
-- 胜率、盈亏比、纪律和亏损原因洞察
-- D1 云端交易记录存储
+- 单用户账号登录，页面和数据接口均受保护
+- 公开渠道行情、财务和题材信息整理
+- DeepSeek 或 OpenAI 兼容模型解释
+- 关注股票、买卖记录、持仓与盈亏计算
+- 止盈止损提醒、公告摘要和交易复盘
+- JSON 数据备份
 
 ## 本地运行
+
+需要 Node.js 22.13 或更高版本。
 
 ```bash
 npm install
 npm run dev
 ```
 
-构建检查：
+访问终端显示的本地地址。登录与 AI 配置放在不会提交到 Git 的 `.env` 或 `.env.local` 中：
+
+```dotenv
+APP_USERNAME=owner
+APP_PASSWORD=至少12位密码
+APP_AUTH_SECRET=至少32位随机字符
+
+DEEPSEEK_API_KEY=
+```
+
+完整字段说明见 `.env.example`。
+
+## 检查
 
 ```bash
-npm run build
+npm run lint
+npm test
 ```
+
+## 部署
+
+- Sites：使用 `.openai/hosting.json`、`worker/` 和 `build/`。
+- Docker：使用 `Dockerfile`、`docker-compose.yml`、`start.sh` 和 `deploy.sh`。
+
+数据库迁移位于 `drizzle/`，不要手工删除或重新编号。

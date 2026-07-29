@@ -17,6 +17,9 @@ append_var AI_API_KEY "$AI_API_KEY"
 append_var AI_PROVIDER "$AI_PROVIDER"
 append_var AI_API_BASE "$AI_API_BASE"
 append_var AI_MODEL "$AI_MODEL"
+append_var APP_USERNAME "$APP_USERNAME"
+append_var APP_PASSWORD "$APP_PASSWORD"
+append_var APP_AUTH_SECRET "$APP_AUTH_SECRET"
 
 exec npx wrangler dev --local \
   --config wrangler.json --no-bundle \
