@@ -1102,9 +1102,14 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
     : x(selectedIndex) > width / 2 ? x(selectedIndex) - 230 : x(selectedIndex) + 12;
 
   function selectAtPointer(event: ReactPointerEvent<SVGSVGElement>) {
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const position = Math.max(0, Math.min(bounds.width, event.clientX - bounds.left));
-    const index = Math.min(rows.length - 1, Math.floor(position / bounds.width * rows.length));
+    const matrix = event.currentTarget.getScreenCTM();
+    if (!matrix) return;
+    const point = event.currentTarget.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const pointer = point.matrixTransform(matrix.inverse());
+    if (pointer.x < 0 || pointer.x > width) return setSelectedIndex(null);
+    const index = Math.min(rows.length - 1, Math.floor(Math.min(pointer.x, width - Number.EPSILON) / step));
     setSelectedIndex(index);
   }
 
