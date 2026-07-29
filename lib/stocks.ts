@@ -134,6 +134,43 @@ export function resolveStock(query: string) {
   return match ? { code: match[0], name: match[1] } : null;
 }
 
+export function parseStockSuggestions(content: string) {
+  const match = content.match(/^v_hint="([\s\S]*)";?\s*$/);
+  if (!match || match[1] === "N") return [];
+
+  let decoded = "";
+  try {
+    decoded = JSON.parse(`"${match[1]}"`) as string;
+  } catch {
+    return [];
+  }
+
+  return decoded.split("^").flatMap((item) => {
+    const [market, code, name, , type] = item.split("~");
+    if (!["sh", "sz", "bj"].includes(market) || !/^\d{6}$/.test(code) || !type?.startsWith("GP-A")) {
+      return [];
+    }
+    return [{ code, name }];
+  });
+}
+
+async function searchStockByName(query: string) {
+  try {
+    const url = `https://smartbox.gtimg.cn/s3/?q=${encodeURIComponent(query)}&t=all`;
+    const response = await fetch(url, {
+      headers: { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) return null;
+
+    const suggestions = parseStockSuggestions(await response.text());
+    const exact = suggestions.find((item) => item.name.toLowerCase() === query.toLowerCase());
+    return exact ?? suggestions[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function average(values: number[]) {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 }
@@ -361,7 +398,8 @@ const THEME_HINTS: Record<string, string[]> = {
 };
 
 export async function analyzeStockData(query: string) {
-  const stock = resolveStock(query);
+  const clean = query.trim();
+  const stock = resolveStock(clean) ?? await searchStockByName(clean);
   if (!stock) {
     throw new Error("暂时无法按名称识别这只股票，请输入6位股票代码");
   }
