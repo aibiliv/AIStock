@@ -15,6 +15,7 @@ export type SectorHeatmap = {
   date: string;
   sectors: SectorMove[];
   sampleSize: number;
+  basis: "etf-proxy";
   source: {
     name: string;
     url: string;
@@ -22,52 +23,41 @@ export type SectorHeatmap = {
   };
 };
 
-type IndustryBoard = {
+type IndustryProxy = {
   code: string;
   name: string;
+  symbol: string;
 };
 
-type KlineResponse = {
-  data?: {
-    klines?: string[];
-  };
+type TencentKlineResponse = {
+  data?: Record<string, {
+    qfqday?: string[][];
+    day?: string[][];
+  }>;
 };
 
-const INDUSTRY_BOARDS: IndustryBoard[] = [
-  { code: "BK0433", name: "农林牧渔" },
-  { code: "BK1206", name: "基础化工" },
-  { code: "BK0479", name: "钢铁" },
-  { code: "BK0478", name: "有色金属" },
-  { code: "BK1201", name: "电子" },
-  { code: "BK1211", name: "汽车" },
-  { code: "BK0456", name: "家用电器" },
-  { code: "BK0438", name: "食品饮料" },
-  { code: "BK0436", name: "纺织服饰" },
-  { code: "BK1212", name: "轻工制造" },
-  { code: "BK1216", name: "医药生物" },
-  { code: "BK0427", name: "公用事业" },
-  { code: "BK1210", name: "交通运输" },
-  { code: "BK1202", name: "房地产" },
-  { code: "BK1213", name: "商贸零售" },
-  { code: "BK1214", name: "社会服务" },
-  { code: "BK1283", name: "银行" },
-  { code: "BK1203", name: "非银金融" },
-  { code: "BK1217", name: "综合" },
-  { code: "BK1208", name: "建筑材料" },
-  { code: "BK1209", name: "建筑装饰" },
-  { code: "BK1200", name: "电力设备" },
-  { code: "BK1205", name: "机械设备" },
-  { code: "BK1204", name: "国防军工" },
-  { code: "BK1207", name: "计算机" },
-  { code: "BK0486", name: "传媒" },
-  { code: "BK1215", name: "通信" },
-  { code: "BK0437", name: "煤炭" },
-  { code: "BK0464", name: "石油石化" },
-  { code: "BK0728", name: "环保" },
-  { code: "BK1035", name: "美容护理" },
+const INDUSTRY_PROXIES: IndustryProxy[] = [
+  { code: "512480", name: "半导体", symbol: "sh512480" },
+  { code: "515030", name: "新能源汽车", symbol: "sh515030" },
+  { code: "512010", name: "医药", symbol: "sh512010" },
+  { code: "512800", name: "银行", symbol: "sh512800" },
+  { code: "512880", name: "证券", symbol: "sh512880" },
+  { code: "512200", name: "房地产", symbol: "sh512200" },
+  { code: "512660", name: "国防军工", symbol: "sh512660" },
+  { code: "512980", name: "传媒", symbol: "sh512980" },
+  { code: "515050", name: "通信", symbol: "sh515050" },
+  { code: "512400", name: "有色金属", symbol: "sh512400" },
+  { code: "515220", name: "煤炭", symbol: "sh515220" },
+  { code: "515210", name: "钢铁", symbol: "sh515210" },
+  { code: "159928", name: "消费", symbol: "sz159928" },
+  { code: "159996", name: "家用电器", symbol: "sz159996" },
+  { code: "516950", name: "基础设施", symbol: "sh516950" },
+  { code: "159870", name: "基础化工", symbol: "sz159870" },
+  { code: "516960", name: "机械设备", symbol: "sh516960" },
+  { code: "159611", name: "电力", symbol: "sz159611" },
 ];
 
-const SOURCE_URL = "https://quote.eastmoney.com/center/boardlist.html#industry_board";
+const SOURCE_URL = "https://gu.qq.com/";
 
 function shanghaiDate() {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date());
@@ -80,21 +70,28 @@ export function validateSectorDate(value: string) {
   return null;
 }
 
-export function parseSectorKline(board: IndustryBoard, line: string): SectorMove | null {
-  const fields = line.split(",");
-  const close = Number(fields[2]);
-  const changePercent = Number(fields[8]);
-  const amount = Number(fields[6]);
-  if (!isIsoDate(fields[0]) || !Number.isFinite(close) || !Number.isFinite(changePercent)) return null;
+export function parseEtfKlines(proxy: IndustryProxy, rows: string[][], date: string): SectorMove | null {
+  const index = rows.findIndex((row) => row[0] === date);
+  if (index < 1) return null;
+
+  const row = rows[index];
+  const previous = rows[index - 1];
+  const close = Number(row[2]);
+  const previousClose = Number(previous[2]);
+  const high = Number(row[3]);
+  const low = Number(row[4]);
+  const volume = Number(row[5]);
+  if (![close, previousClose, high, low].every(Number.isFinite) || previousClose <= 0) return null;
+
   return {
-    code: board.code,
-    name: board.name,
-    date: fields[0],
+    code: proxy.code,
+    name: proxy.name,
+    date,
     close,
-    changePercent,
-    amount: Number.isFinite(amount) ? amount : 0,
-    amplitude: Number.isFinite(Number(fields[7])) ? Number(fields[7]) : 0,
-    turnover: Number.isFinite(Number(fields[10])) ? Number(fields[10]) : 0,
+    changePercent: ((close - previousClose) / previousClose) * 100,
+    amount: Number.isFinite(volume) ? close * volume : 0,
+    amplitude: ((high - low) / previousClose) * 100,
+    turnover: 0,
   };
 }
 
@@ -108,45 +105,29 @@ export function rankSectorMoves(moves: SectorMove[], limit = 5) {
     .slice(0, limit);
 }
 
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, {
-    headers: {
-      referer: "https://quote.eastmoney.com/",
-      "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0",
-    },
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!response.ok) throw new Error(`板块数据源返回 ${response.status}`);
-  return response.json() as Promise<T>;
-}
-
-async function loadSectorMove(board: IndustryBoard, date: string) {
-  const compactDate = date.replace(/-/g, "");
-  const params = new URLSearchParams({
-    secid: `90.${board.code}`,
-    fields1: "f1,f2,f3,f4,f5,f6",
-    fields2: "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61",
-    klt: "101",
-    fqt: "1",
-    beg: compactDate,
-    end: compactDate,
-  });
+async function loadSectorMove(proxy: IndustryProxy, date: string) {
   try {
-    const payload = await fetchJson<KlineResponse>(
-      `https://push2his.eastmoney.com/api/qt/stock/kline/get?${params}`,
+    const response = await fetch(
+      `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${proxy.symbol},day,,,800,qfq`,
+      {
+        headers: { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" },
+        signal: AbortSignal.timeout(8_000),
+      },
     );
-    const line = payload.data?.klines?.find((item) => item.startsWith(date));
-    return line ? parseSectorKline(board, line) : null;
+    if (!response.ok) return null;
+    const payload = await response.json() as TencentKlineResponse;
+    const rows = payload.data?.[proxy.symbol]?.qfqday ?? payload.data?.[proxy.symbol]?.day ?? [];
+    return parseEtfKlines(proxy, rows, date);
   } catch {
     return null;
   }
 }
 
-async function loadMoves(boards: IndustryBoard[], date: string) {
+async function loadSectorMoves(date: string) {
   const moves: SectorMove[] = [];
-  for (let index = 0; index < boards.length; index += 6) {
+  for (let index = 0; index < INDUSTRY_PROXIES.length; index += 4) {
     const batch = await Promise.all(
-      boards.slice(index, index + 6).map((board) => loadSectorMove(board, date)),
+      INDUSTRY_PROXIES.slice(index, index + 4).map((proxy) => loadSectorMove(proxy, date)),
     );
     moves.push(...batch.filter((move): move is SectorMove => move !== null));
   }
@@ -157,17 +138,18 @@ export async function getSectorHeatmap(date: string): Promise<SectorHeatmap> {
   const validationError = validateSectorDate(date);
   if (validationError) throw new Error(validationError);
 
-  const moves = await loadMoves(INDUSTRY_BOARDS, date);
+  const moves = await loadSectorMoves(date);
   if (moves.length < 5) {
-    throw new Error("该日期没有完整的行业行情，可能是非交易日或数据源暂不可用");
+    throw new Error("该日期可能是非交易日，或备用行情源暂时不可用");
   }
 
   return {
     date,
     sectors: rankSectorMoves(moves),
     sampleSize: moves.length,
+    basis: "etf-proxy",
     source: {
-      name: "东方财富行业板块公开行情",
+      name: "腾讯证券行业主题ETF行情",
       url: SOURCE_URL,
       fetchedAt: new Date().toISOString(),
     },
