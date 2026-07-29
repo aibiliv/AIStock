@@ -13,7 +13,7 @@ export default async function LoginPage({
   return (
     <main className="login-page">
       <section className="login-card">
-        <div className="login-brand"><span>股</span><b>我的股票助手</b></div>
+        <div className="login-brand"><span>股</span><b>我的复盘助手</b></div>
         <div className="login-copy">
           <span className="eyebrow">PRIVATE WORKSPACE</span>
           <h1>登录你的个人空间</h1>
