@@ -11,6 +11,10 @@ type WatchItem = {
   symbol: string;
   name: string;
   note: string;
+  conditionText: string;
+  status: "研究中" | "等待条件" | "已买入" | "暂停";
+  lastReviewedAt: string | null;
+  updatedAt: string;
   createdAt: string;
 };
 
@@ -47,7 +51,9 @@ type Analysis = {
     price: number;
     previousClose: number;
     changePercent: number;
+    ma5: number;
     ma20: number;
+    ma60: number;
     recentHigh: number;
     recentLow: number;
     support: number;
@@ -63,6 +69,22 @@ type Analysis = {
     debtRatio: number | null;
     series: Record<string, Array<{ date: string; value: number }>>;
   };
+  history: Array<{
+    date: string;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+    ma5: number | null;
+    ma20: number | null;
+    ma60: number | null;
+  }>;
+  volumeHighlight: {
+    date: string;
+    close: number;
+    volume: number;
+  } | null;
   source: { name: string; url: string; fetchedAt: string };
   mode: "deepseek" | "automatic";
   explanation: Explanation;
@@ -165,7 +187,7 @@ export function Dashboard() {
       const result = await jsonRequest<Analysis>("/api/analyze", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ query: stockQuery }),
+        body: JSON.stringify({ query: stockQuery, saveHistory: showResult }),
       });
       setQuotes((current) => ({ ...current, [result.stock.code]: result }));
       if (showResult) {
@@ -413,6 +435,7 @@ export function Dashboard() {
                 onSearch={() => setView("home")}
                 onAnalyze={(symbol) => void fetchAnalysis(symbol)}
                 onRemove={(symbol) => void removeWatch(symbol)}
+                onSaved={() => void loadData()}
               />
             )}
             {view === "trades" && (
@@ -614,6 +637,8 @@ function AnalysisView({ analysis, watched, onWatch, onBuy, onSell }: {
         <div><span>一句话看懂</span><h3>{explanation.summary}</h3><p>只基于页面所列公开数据整理，不构成投资建议。</p></div>
       </section>
 
+      <MarketChart analysis={analysis} />
+
       <div className="analysis-grid">
         <section className="panel analysis-card">
           <CardTitle number="01" title="公司与行业" source="通俗解释" />
@@ -675,6 +700,11 @@ function AnalysisView({ analysis, watched, onWatch, onBuy, onSell }: {
         </section>
       </div>
 
+      <div className="research-grid">
+        <AnalysisHistory symbol={stock.code} currentPrice={quote.price} />
+        <AnnouncementPanel stock={stock} />
+      </div>
+
       <section className="decision-bar">
         <div><span className="eyebrow">现在由你决定</span><h3>这只股票下一步怎么处理？</h3></div>
         <div><button className="soft-button" onClick={onWatch}>{watched ? "✓ 已关注" : "☆ 加入关注"}</button><button className="soft-button" onClick={onSell}>记录卖出</button><button className="primary-button" onClick={onBuy}>我已买入</button></div>
@@ -683,18 +713,219 @@ function AnalysisView({ analysis, watched, onWatch, onBuy, onSell }: {
   );
 }
 
+function MarketChart({ analysis }: { analysis: Analysis }) {
+  const rows = analysis.history.slice(-60);
+  const width = 900;
+  const priceHeight = 190;
+  const volumeTop = 215;
+  const chartVolumeHeight = 55;
+  const minPrice = Math.min(...rows.map((row) => row.low));
+  const maxPrice = Math.max(...rows.map((row) => row.high));
+  const priceRange = Math.max(maxPrice - minPrice, 0.01);
+  const maxVolume = Math.max(...rows.map((row) => row.volume), 1);
+  const step = width / Math.max(rows.length, 1);
+  const candleWidth = Math.max(2, step * 0.55);
+  const x = (index: number) => index * step + step / 2;
+  const y = (value: number) => 12 + ((maxPrice - value) / priceRange) * (priceHeight - 24);
+  const linePoints = (key: "ma5" | "ma20" | "ma60") => rows
+    .map((row, index) => row[key] === null ? null : `${x(index).toFixed(1)},${y(row[key] as number).toFixed(1)}`)
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <section className="panel market-chart-card">
+      <div className="chart-heading">
+        <div><span className="eyebrow">近60个交易日</span><h3>K线与成交量</h3></div>
+        <div className="chart-legend"><span className="ma5">5日</span><span className="ma20">20日</span><span className="ma60">60日</span></div>
+      </div>
+      <svg className="market-chart" viewBox={`0 0 ${width} 280`} role="img" aria-label={`${analysis.stock.name}近60个交易日K线、成交量和均线`}>
+        <line x1="0" y1={priceHeight} x2={width} y2={priceHeight} className="chart-axis" />
+        {rows.map((row, index) => {
+          const rising = row.close >= row.open;
+          const candleY = Math.min(y(row.open), y(row.close));
+          const candleHeight = Math.max(1.5, Math.abs(y(row.open) - y(row.close)));
+          const barHeight = row.volume / maxVolume * chartVolumeHeight;
+          return (
+            <g key={row.date}>
+              <line x1={x(index)} x2={x(index)} y1={y(row.high)} y2={y(row.low)} className={rising ? "candle-up" : "candle-down"} />
+              <rect x={x(index) - candleWidth / 2} y={candleY} width={candleWidth} height={candleHeight} className={rising ? "candle-up" : "candle-down"} />
+              <rect x={x(index) - candleWidth / 2} y={volumeTop + chartVolumeHeight - barHeight} width={candleWidth} height={barHeight} className={rising ? "volume-up" : "volume-down"} />
+            </g>
+          );
+        })}
+        <polyline points={linePoints("ma5")} className="ma-line ma5-line" />
+        <polyline points={linePoints("ma20")} className="ma-line ma20-line" />
+        <polyline points={linePoints("ma60")} className="ma-line ma60-line" />
+      </svg>
+      <div className="chart-summary">
+        <span>5日均线 <b>{price(analysis.quote.ma5)}</b></span>
+        <span>20日均线 <b>{price(analysis.quote.ma20)}</b></span>
+        <span>60日均线 <b>{price(analysis.quote.ma60)}</b></span>
+        <span>最大成交量日 <b>{analysis.volumeHighlight?.date ?? "暂无"}</b></span>
+      </div>
+    </section>
+  );
+}
+
+type HistoryReport = {
+  id: number;
+  priceCents: number;
+  marketTime: string | null;
+  source: string;
+  mode: string;
+  summary: string;
+  createdAt: string;
+};
+
+function AnalysisHistory({ symbol, currentPrice }: { symbol: string; currentPrice: number }) {
+  const [reports, setReports] = useState<HistoryReport[]>([]);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const timer = window.setTimeout(async () => {
+      try {
+        const result = await jsonRequest<{ reports: HistoryReport[] }>(`/api/analysis-history?symbol=${symbol}`);
+        setReports(result.reports);
+      } catch (historyError) {
+        setError(historyError instanceof Error ? historyError.message : "分析历史读取失败");
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [symbol]);
+
+  return (
+    <section className="panel research-card">
+      <CardTitle number="07" title="历史分析" source="保存当时的价格与判断" />
+      {reports.length ? reports.slice(0, 5).map((report) => {
+        const change = ((currentPrice * 100 / report.priceCents) - 1) * 100;
+        return (
+          <article className="history-item" key={report.id}>
+            <div><b>{new Date(report.createdAt).toLocaleString("zh-CN")}</b><span>{report.mode === "deepseek" ? "DeepSeek" : "自动解释"} · 当时{money(report.priceCents)} · 至今<span className={change >= 0 ? "up" : "down"}>{change >= 0 ? "+" : ""}{change.toFixed(2)}%</span></span></div>
+            <p>{report.summary}</p>
+          </article>
+        );
+      }) : <div className="empty-inline">{error || "首次分析已保存，重新进入后可在这里对比。"}</div>}
+    </section>
+  );
+}
+
+type AnnouncementNote = {
+  id: number;
+  title: string;
+  sourceUrl: string;
+  totalPages: number;
+  summary: string;
+  risks: string[];
+  mode: string;
+  createdAt: string;
+};
+
+function AnnouncementPanel({ stock }: { stock: Analysis["stock"] }) {
+  const [notes, setNotes] = useState<AnnouncementNote[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [message, setMessage] = useState("");
+
+  const loadNotes = useCallback(async () => {
+    try {
+      const result = await jsonRequest<{ notes: AnnouncementNote[] }>(`/api/announcements?symbol=${stock.code}`);
+      setNotes(result.notes);
+    } catch (noteError) {
+      setMessage(noteError instanceof Error ? noteError.message : "公告摘要读取失败");
+    }
+  }, [stock.code]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadNotes(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadNotes]);
+
+  async function summarize(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setUploading(true);
+    setMessage("");
+    const form = new FormData(event.currentTarget);
+    form.set("symbol", stock.code);
+    form.set("name", stock.name);
+    try {
+      const response = await fetch("/api/announcements", { method: "POST", body: form });
+      const payload = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "公告摘要失败");
+      event.currentTarget.reset();
+      await loadNotes();
+      setMessage("公告摘要已保存");
+    } catch (summaryError) {
+      setMessage(summaryError instanceof Error ? summaryError.message : "公告摘要失败");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <section className="panel research-card announcement-card">
+      <CardTitle number="08" title="官方公告" source="官方原文优先 · AI只做摘要" />
+      <div className="official-links">
+        <a href={`https://www.cninfo.com.cn/new/fulltextSearch?keyWord=${stock.code}`} target="_blank" rel="noreferrer">巨潮资讯</a>
+        <a href="https://www.sse.com.cn/disclosure/listedinfo/announcement/" target="_blank" rel="noreferrer">上交所公告</a>
+        <a href="https://www.szse.cn/disclosure/listed/notice/index.html" target="_blank" rel="noreferrer">深交所公告</a>
+      </div>
+      <form className="announcement-form" onSubmit={summarize}>
+        <label>公告标题<input name="title" required maxLength={120} placeholder="例如：2026年半年度报告" /></label>
+        <label>官方PDF链接（可选）<input name="sourceUrl" type="url" placeholder="仅支持巨潮、上交所、深交所HTTPS链接" /></label>
+        <label>或上传PDF（8MB以内）<input name="file" type="file" accept="application/pdf" /></label>
+        <button className="primary-button" disabled={uploading}>{uploading ? "正在提取并总结…" : "生成公告摘要"}</button>
+      </form>
+      {message && <p className="form-message" role="status">{message}</p>}
+      <div className="announcement-list">
+        {notes.slice(0, 3).map((note) => (
+          <article key={note.id}>
+            <div><b>{note.title}</b><span>{note.mode === "deepseek" ? "DeepSeek摘要" : "自动摘要"} · {note.totalPages}页</span></div>
+            <p>{note.summary}</p>
+            {note.risks.length > 0 && <small>需要核验：{note.risks.join("；")}</small>}
+            {note.sourceUrl && <a href={note.sourceUrl} target="_blank" rel="noreferrer">查看原文 →</a>}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function Metric({ label, value, suffix = "", moneyValue = false }: { label: string; value: number | null; suffix?: string; moneyValue?: boolean }) {
   const content = value === null ? "暂无" : moneyValue ? price(value) : `${value >= 0 && suffix === "%" ? "+" : ""}${value.toFixed(1)}${suffix}`;
   return <div><span>{label}</span><strong className={value !== null && value < 0 ? "down" : "neutral"}>{content}</strong><small>{value === null ? "数据不足" : "最新可用数据"}</small></div>;
 }
 
-function Watchlist({ items, quotes, onSearch, onAnalyze, onRemove }: {
+function Watchlist({ items, quotes, onSearch, onAnalyze, onRemove, onSaved }: {
   items: WatchItem[];
   quotes: Record<string, Analysis>;
   onSearch: () => void;
   onAnalyze: (symbol: string) => void;
   onRemove: (symbol: string) => void;
+  onSaved: () => void;
 }) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [message, setMessage] = useState("");
+
+  async function saveCondition(event: FormEvent<HTMLFormElement>, symbol: string) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    try {
+      await jsonRequest("/api/watchlist", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          symbol,
+          conditionText: data.get("conditionText"),
+          status: data.get("status"),
+        }),
+      });
+      setEditing(null);
+      setMessage("观察条件已更新");
+      onSaved();
+    } catch (saveError) {
+      setMessage(saveError instanceof Error ? saveError.message : "观察条件保存失败");
+    }
+  }
+
   return (
     <div className="page-content inner-page">
       <section className="page-intro"><div><span className="eyebrow">先研究，再决定</span><h2>我的关注</h2><p>每只股票都保留一个明确的等待条件。</p></div><button className="primary-button" onClick={onSearch}>＋ 查找股票</button></section>
@@ -704,16 +935,28 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onRemove }: {
             const quote = quotes[item.symbol]?.quote;
             return (
               <article className="panel watch-card" key={item.symbol}>
-                <div className="watch-card-top"><span className="stock-avatar">{item.name.slice(0, 1)}</span><span className="watch-state">关注中</span></div>
+                <div className="watch-card-top"><span className="stock-avatar">{item.name.slice(0, 1)}</span><span className={`watch-state ${item.status === "暂停" ? "paused" : ""}`}>{item.status}</span></div>
                 <h3>{item.name}</h3><p>{item.symbol} · {quotes[item.symbol]?.stock.industry ?? "行业信息更新中"}</p>
                 <div className="watch-price"><strong>{quote ? price(quote.price) : "行情待更新"}</strong>{quote && <span className={quote.changePercent >= 0 ? "up" : "down"}>{quote.changePercent.toFixed(2)}%</span>}</div>
-                <div className="watch-note"><span>我的条件</span><p>{item.note || "等待自己的买入条件"}</p></div>
-                <div className="card-actions"><button className="text-button" onClick={() => onAnalyze(item.symbol)}>查看分析 →</button><button className="danger-link" onClick={() => onRemove(item.symbol)}>移出关注</button></div>
+                {editing === item.symbol ? (
+                  <form className="watch-edit-form" onSubmit={(event) => void saveCondition(event, item.symbol)}>
+                    <label>观察状态<select name="status" defaultValue={item.status}><option>研究中</option><option>等待条件</option><option>已买入</option><option>暂停</option></select></label>
+                    <label>行动条件<textarea name="conditionText" defaultValue={item.conditionText} required maxLength={300} /></label>
+                    <div><button type="button" onClick={() => setEditing(null)}>取消</button><button className="primary-button">保存</button></div>
+                  </form>
+                ) : (
+                  <>
+                    <div className="watch-note"><span>我的条件</span><p>{item.conditionText}</p></div>
+                    <small className="reviewed-time">{item.lastReviewedAt ? `最近检查：${new Date(item.lastReviewedAt).toLocaleDateString("zh-CN")}` : "尚未检查"}</small>
+                    <div className="card-actions"><button className="text-button" onClick={() => onAnalyze(item.symbol)}>查看分析 →</button><button className="text-button" onClick={() => setEditing(item.symbol)}>编辑条件</button><button className="danger-link" onClick={() => onRemove(item.symbol)}>移出关注</button></div>
+                  </>
+                )}
               </article>
             );
           })}
         </div>
       ) : <div className="empty-state">关注列表还是空的。查一只股票后点击“加入关注”。</div>}
+      {message && <div className="toast inline-toast" role="status">{message}</div>}
     </div>
   );
 }

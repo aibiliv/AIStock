@@ -15,6 +15,13 @@
       "when": 1785313044189,
       "tag": "0001_square_deadpool",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1785314762112,
+      "tag": "0002_youthful_pyro",
+      "breakpoints": true
     }
   ]
 }

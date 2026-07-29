@@ -65,9 +65,11 @@ type YahooChart = {
       timestamp?: number[];
       indicators?: {
         quote?: Array<{
+          open?: Array<number | null>;
           close?: Array<number | null>;
           high?: Array<number | null>;
           low?: Array<number | null>;
+          volume?: Array<number | null>;
         }>;
       };
     }>;
@@ -106,12 +108,30 @@ export function resolveStock(query: string) {
   return match ? { code: match[0], name: match[1] } : null;
 }
 
-function finiteValues(values: Array<number | null> | undefined) {
-  return (values ?? []).filter((value): value is number => Number.isFinite(value));
-}
-
 function average(values: number[]) {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
+}
+
+function movingAverage(values: number[], window: number, index: number) {
+  if (index + 1 < window) return null;
+  return average(values.slice(index + 1 - window, index + 1));
+}
+
+function buildHistory(rows: Array<{
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}>) {
+  const closes = rows.map((row) => row.close);
+  return rows.map((row, index) => ({
+    ...row,
+    ma5: movingAverage(closes, 5, index),
+    ma20: movingAverage(closes, 20, index),
+    ma60: movingAverage(closes, 60, index),
+  }));
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
@@ -131,14 +151,24 @@ async function getChart(code: string) {
   try {
     const data = await fetchJson<YahooChart>(yahooUrl);
     const result = data.chart?.result?.[0];
-    const closes = finiteValues(result?.indicators?.quote?.[0]?.close);
-    const highs = finiteValues(result?.indicators?.quote?.[0]?.high);
-    const lows = finiteValues(result?.indicators?.quote?.[0]?.low);
-    if (!result || closes.length < 20) throw new Error("Yahoo行情不足");
+    const quote = result?.indicators?.quote?.[0];
+    const rows = (result?.timestamp ?? []).flatMap((timestamp, index) => {
+      const close = quote?.close?.[index];
+      if (!Number.isFinite(close)) return [];
+      return [{
+        date: new Date(timestamp * 1000).toISOString().slice(0, 10),
+        open: Number(quote?.open?.[index] ?? close),
+        high: Number(quote?.high?.[index] ?? close),
+        low: Number(quote?.low?.[index] ?? close),
+        close: Number(close),
+        volume: Number(quote?.volume?.[index] ?? 0),
+      }];
+    });
+    if (!result || rows.length < 20) throw new Error("Yahoo行情不足");
+    const history = buildHistory(rows);
+    const closes = history.map((row) => row.close);
     return {
-      closes,
-      highs,
-      lows,
+      history,
       currentPrice: result.meta?.regularMarketPrice ?? closes.at(-1) ?? 0,
       previousClose: closes.at(-2) ?? result.meta?.chartPreviousClose ?? closes.at(-1) ?? 0,
       marketTime: result.meta?.regularMarketTime
@@ -156,11 +186,17 @@ async function getChart(code: string) {
     const rows = data.data?.[tencentCode]?.qfqday ?? data.data?.[tencentCode]?.day ?? [];
     const validRows = rows.filter((row) => row.length >= 5 && Number.isFinite(Number(row[2])));
     if (validRows.length < 20) throw new Error("公开行情暂时不可用，请稍后重试");
-    const closes = validRows.map((row) => Number(row[2]));
+    const history = buildHistory(validRows.map((row) => ({
+      date: row[0],
+      open: Number(row[1]),
+      close: Number(row[2]),
+      high: Number(row[3]),
+      low: Number(row[4]),
+      volume: Number(row[5] ?? 0),
+    })));
+    const closes = history.map((row) => row.close);
     return {
-      closes,
-      highs: validRows.map((row) => Number(row[3])),
-      lows: validRows.map((row) => Number(row[4])),
+      history,
       currentPrice: closes.at(-1) ?? 0,
       previousClose: closes.at(-2) ?? closes.at(-1) ?? 0,
       marketTime: `${validRows.at(-1)?.[0]}T15:00:00+08:00`,
@@ -218,7 +254,10 @@ export async function analyzeStockData(query: string) {
 
   const symbol = yahooSymbol(stock.code);
   const chart = await getChart(stock.code);
-  const { closes, highs, lows, currentPrice, previousClose } = chart;
+  const { history, currentPrice, previousClose } = chart;
+  const closes = history.map((row) => row.close);
+  const highs = history.map((row) => row.high);
+  const lows = history.map((row) => row.low);
   const recent20 = closes.slice(-20);
   const recent60 = closes.slice(-60);
   const dailyMoves = closes.slice(1).map((value, index) =>
@@ -245,7 +284,9 @@ export async function analyzeStockData(query: string) {
       price: currentPrice,
       previousClose,
       changePercent: previousClose ? ((currentPrice - previousClose) / previousClose) * 100 : 0,
+      ma5: average(closes.slice(-5)),
       ma20: average(recent20),
+      ma60: average(recent60),
       recentHigh: Math.max(...recent60),
       recentLow: Math.min(...recent60),
       support,
@@ -261,6 +302,10 @@ export async function analyzeStockData(query: string) {
       debtRatio,
       series: fundamentals,
     },
+    history: history.slice(-90),
+    volumeHighlight: history.length
+      ? history.reduce((largest, row) => row.volume > largest.volume ? row : largest)
+      : null,
     source: {
       name: chart.sourceName,
       url: chart.sourceUrl,

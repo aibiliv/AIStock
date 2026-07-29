@@ -1,4 +1,6 @@
 import { env } from "cloudflare:workers";
+import { ensureSchema, getDb } from "../../../db";
+import { analysisReports } from "../../../db/schema";
 import { analyzeStockData, automaticExplanation } from "../../../lib/stocks";
 
 type DeepSeekResponse = {
@@ -58,7 +60,7 @@ async function getDeepSeekExplanation(facts: Awaited<ReturnType<typeof analyzeSt
 
 export async function POST(request: Request) {
   try {
-    const payload = await request.json() as { query?: string };
+    const payload = await request.json() as { query?: string; saveHistory?: boolean };
     const query = payload.query?.trim() ?? "";
     if (!query || query.length > 30) {
       return Response.json({ error: "请输入有效的股票代码或名称" }, { status: 400 });
@@ -66,7 +68,21 @@ export async function POST(request: Request) {
 
     const facts = await analyzeStockData(query);
     const analysis = await getDeepSeekExplanation(facts);
-    return Response.json({ ...facts, ...analysis });
+    const result = { ...facts, ...analysis };
+    if (payload.saveHistory) {
+      await ensureSchema();
+      await getDb().insert(analysisReports).values({
+        symbol: facts.stock.code,
+        name: facts.stock.name,
+        priceCents: Math.round(facts.quote.price * 100),
+        marketTime: facts.quote.marketTime,
+        source: facts.source.name,
+        mode: analysis.mode,
+        summary: analysis.explanation.summary,
+        reportJson: JSON.stringify(result),
+      });
+    }
+    return Response.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "股票分析暂时不可用";
     return Response.json({ error: message }, { status: 502 });
