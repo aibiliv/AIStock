@@ -8,6 +8,10 @@ FROM node:22-bookworm
 
 WORKDIR /app
 
+# 安装运行时依赖（curl 用于健康检查）
+RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
+
 # 安装全部依赖（build 需要 vinext/vite，运行需要 wrangler/workerd）
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund && npm cache clean --force

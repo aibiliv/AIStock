@@ -1,3 +1,9 @@
+# 复盘簿（fupanbu-trading-journal）Docker Compose 配置
+# 目标环境：Ubuntu 24 + Docker 26+
+#
+# 首次部署前请先在项目根目录创建 .env 文件：
+#   cp .env.example .env   # 然后编辑填写 AI 密钥和登录凭据
+
 services:
   fupanbu:
     build:
@@ -5,22 +11,40 @@ services:
       dockerfile: Dockerfile
     image: fupanbu-trading-journal:latest
     container_name: fupanbu
-    # 生产访问地址：http://120.48.87.170:9003
-    # 容器内 workerd 监听 8787，映射到宿主 9003
+
     ports:
       - "9003:8787"
+
     volumes:
-      # 持久化 D1（本地 SQLite）数据，容器重建不丢数据
+      # D1 数据持久化（本地 SQLite），容器重建不丢
       - ./data:/data
+
     restart: unless-stopped
-    # AI 模型源配置（可选）：不配置则应用自动降级为"自动解释"模式。
-    # 值从宿主环境变量或同级 .env 文件读取（docker compose 自动加载 .env）。
+
+    # 资源限制（Ubuntu 24 默认 cgroup v2，自动生效）
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
+
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8787/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+    # AI 模型源（可选）；不配置则自动降级为"自动解释"模式
+    # docker compose 自动加载同级 .env 文件的值
     environment:
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
       - AI_PROVIDER=${AI_PROVIDER:-}
       - AI_API_KEY=${AI_API_KEY:-}
       - AI_API_BASE=${AI_API_BASE:-}
       - AI_MODEL=${AI_MODEL:-}
-      - APP_USERNAME=${APP_USERNAME}
-      - APP_PASSWORD=${APP_PASSWORD}
-      - APP_AUTH_SECRET=${APP_AUTH_SECRET}
+      - APP_USERNAME=${APP_USERNAME:?请先在 .env 中设置 APP_USERNAME}
+      - APP_PASSWORD=${APP_PASSWORD:?请先在 .env 中设置 APP_PASSWORD}
+      - APP_AUTH_SECRET=${APP_AUTH_SECRET:?请先在 .env 中设置 APP_AUTH_SECRET}
