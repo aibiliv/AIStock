@@ -19,6 +19,7 @@ export async function GET(request: Request) {
         symbol: analysisReports.symbol,
         name: analysisReports.name,
         priceCents: analysisReports.priceCents,
+        priceMillis: analysisReports.priceMillis,
         marketTime: analysisReports.marketTime,
         source: analysisReports.source,
         mode: analysisReports.mode,

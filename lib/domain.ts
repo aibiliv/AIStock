@@ -4,6 +4,7 @@ export type Trade = {
   name: string;
   side: "买入" | "卖出";
   priceCents: number;
+  priceMillis?: number | null;
   quantity: number;
   tradeDate: string;
   reason: string;
@@ -17,7 +18,10 @@ export type Position = {
   name: string;
   quantity: number;
   costCents: number;
+  costMillis: number;
   averageCostCents: number;
+  averageCostMillis: number;
+  legacyPrecision: boolean;
 };
 
 export type PortfolioSummary = {
@@ -47,7 +51,7 @@ function orderedTrades(trades: Trade[]) {
 
 export function calculatePortfolio(trades: Trade[]): PortfolioSummary {
   const positions = new Map<string, Position>();
-  let realizedCents = 0;
+  let realizedMillis = 0;
   let winningSells = 0;
   let losingSells = 0;
 
@@ -57,13 +61,20 @@ export function calculatePortfolio(trades: Trade[]): PortfolioSummary {
       name: trade.name,
       quantity: 0,
       costCents: 0,
+      costMillis: 0,
       averageCostCents: 0,
+      averageCostMillis: 0,
+      legacyPrecision: false,
     };
+    const priceMillis = trade.priceMillis ?? trade.priceCents * 10;
+    current.legacyPrecision ||= trade.priceMillis === null || trade.priceMillis === undefined;
 
     if (trade.side === "买入") {
       current.quantity += trade.quantity;
-      current.costCents += trade.priceCents * trade.quantity + trade.feeCents;
-      current.averageCostCents = Math.round(current.costCents / current.quantity);
+      current.costMillis += priceMillis * trade.quantity + trade.feeCents * 10;
+      current.costCents = Math.round(current.costMillis / 10);
+      current.averageCostMillis = Math.round(current.costMillis / current.quantity);
+      current.averageCostCents = Math.round(current.averageCostMillis / 10);
       positions.set(trade.symbol, current);
       continue;
     }
@@ -73,25 +84,27 @@ export function calculatePortfolio(trades: Trade[]): PortfolioSummary {
       continue;
     }
 
-    const saleProfit =
-      trade.priceCents * soldQuantity -
-      current.averageCostCents * soldQuantity -
-      trade.feeCents;
-    realizedCents += saleProfit;
-    if (saleProfit > 0) winningSells += 1;
-    if (saleProfit < 0) losingSells += 1;
+    const saleProfitMillis =
+      priceMillis * soldQuantity -
+      current.averageCostMillis * soldQuantity -
+      trade.feeCents * 10;
+    realizedMillis += saleProfitMillis;
+    if (saleProfitMillis > 0) winningSells += 1;
+    if (saleProfitMillis < 0) losingSells += 1;
 
     current.quantity -= soldQuantity;
-    current.costCents = Math.max(0, current.costCents - current.averageCostCents * soldQuantity);
-    current.averageCostCents = current.quantity > 0
-      ? Math.round(current.costCents / current.quantity)
+    current.costMillis = Math.max(0, current.costMillis - current.averageCostMillis * soldQuantity);
+    current.costCents = Math.round(current.costMillis / 10);
+    current.averageCostMillis = current.quantity > 0
+      ? Math.round(current.costMillis / current.quantity)
       : 0;
+    current.averageCostCents = Math.round(current.averageCostMillis / 10);
     positions.set(trade.symbol, current);
   }
 
   return {
     positions: [...positions.values()].filter((position) => position.quantity > 0),
-    realizedCents,
+    realizedCents: Math.round(realizedMillis / 10),
     winningSells,
     losingSells,
   };
@@ -156,6 +169,11 @@ export function localIsoDate(date = new Date()) {
 export function toCents(value: unknown) {
   const number = Number(value);
   return Number.isFinite(number) ? Math.round(number * 100) : 0;
+}
+
+export function toMillis(value: unknown) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.round(number * 1000) : 0;
 }
 
 export function isStockCode(value: string) {

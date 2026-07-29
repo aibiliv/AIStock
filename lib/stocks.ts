@@ -11,6 +11,7 @@ const STOCK_NAMES: Record<string, string> = {
   "300308": "中际旭创",
   "300476": "胜宏科技",
   "300750": "宁德时代",
+  "513180": "华夏恒生科技ETF（QDII）",
   "600036": "招商银行",
   "600276": "恒瑞医药",
   "600519": "贵州茅台",
@@ -37,6 +38,7 @@ const INDUSTRIES: Record<string, string> = {
   "300308": "光通信",
   "300476": "PCB · AI算力",
   "300750": "动力电池",
+  "513180": "恒生科技指数",
   "600036": "银行",
   "600276": "创新药",
   "600519": "白酒",
@@ -49,6 +51,30 @@ const INDUSTRIES: Record<string, string> = {
   "688256": "AI芯片",
   "688981": "半导体制造",
 };
+
+const ETF_PROFILES: Record<string, {
+  manager: string;
+  trackingIndex: string;
+  exchange: string;
+  category: string;
+  inceptionDate: string;
+  sourceName: string;
+  sourceUrl: string;
+}> = {
+  "513180": {
+    manager: "华夏基金管理有限公司",
+    trackingIndex: "恒生科技指数",
+    exchange: "上海证券交易所",
+    category: "跨境股票指数ETF（QDII）",
+    inceptionDate: "2021-05-18",
+    sourceName: "华夏基金",
+    sourceUrl: "https://www.chinaamc.com.cn/fund/513180/index.shtml",
+  },
+};
+
+export function isEtfCode(code: string) {
+  return Boolean(ETF_PROFILES[code]);
+}
 
 type YahooChart = {
   chart?: {
@@ -83,15 +109,15 @@ type FundamentalSeries = {
   [key: string]: unknown;
 };
 
-function yahooSymbol(code: string) {
-  if (/^(6|68)/.test(code)) return `${code}.SS`;
+export function yahooSymbol(code: string) {
+  if (/^(5|6)/.test(code)) return `${code}.SS`;
   if (/^(0|3)/.test(code)) return `${code}.SZ`;
   if (/^(4|8)/.test(code)) return `${code}.BJ`;
   return `${code}.SZ`;
 }
 
-function tencentSymbol(code: string) {
-  if (/^(6|68)/.test(code)) return `sh${code}`;
+export function tencentSymbol(code: string) {
+  if (/^(5|6)/.test(code)) return `sh${code}`;
   if (/^(4|8)/.test(code)) return `bj${code}`;
   return `sz${code}`;
 }
@@ -341,6 +367,7 @@ export async function analyzeStockData(query: string) {
   }
 
   const symbol = yahooSymbol(stock.code);
+  const fund = ETF_PROFILES[stock.code] ?? null;
   const chart = await getChart(stock.code);
   const { history, currentPrice, previousClose } = chart;
   const closes = history.map((row) => row.close);
@@ -372,6 +399,8 @@ export async function analyzeStockData(query: string) {
       code: stock.code,
       name: resolvedName,
       industry: resolvedIndustry,
+      instrumentType: fund ? "etf" as const : "stock" as const,
+      fund,
       sector: profile.sector,
       businessSummary: profile.businessSummary,
       marketSymbol: symbol,
@@ -383,7 +412,7 @@ export async function analyzeStockData(query: string) {
       ma5: average(closes.slice(-5)),
       ma20: average(recent20),
       ma60: average(recent60),
-      recentHigh: Math.max(...recent60),
+      recentHigh: resistance,
       recentLow: Math.min(...recent60),
       support,
       resistance,
@@ -424,6 +453,34 @@ export function automaticExplanation(data: Awaited<ReturnType<typeof analyzeStoc
     ? "公开接口暂未返回可比较的利润数据"
     : `最近两期利润变化约为 ${financials.profitGrowth.toFixed(1)}%`;
   const volatilityText = quote.volatility > 3 ? "近期波动较大" : "近期波动处于相对温和区间";
+
+  if (stock.instrumentType === "etf" && stock.fund) {
+    return {
+      summary: `${stock.name}跟踪${stock.fund.trackingIndex}，${trend}；近20日平均绝对涨跌幅约${quote.volatility.toFixed(2)}%。ETF价格还会受到指数表现、汇率、跟踪误差和场内折溢价影响。`,
+      company: [
+        `${stock.name}是${stock.fund.category}，不是单一上市公司。`,
+        `跟踪标的为${stock.fund.trackingIndex}，目标是尽量减小跟踪偏离和跟踪误差。`,
+        `基金管理人为${stock.fund.manager}。`,
+        `在${stock.fund.exchange}交易，基金合同生效日为${stock.fund.inceptionDate}。`,
+      ],
+      risks: [
+        "基金集中跟踪香港科技板块，指数成份股整体下跌时会承受市场风险。",
+        "作为QDII产品，人民币与港币等汇率变化可能影响基金回报。",
+        "内地与香港交易日、交易时段不同，场内价格可能出现折价或溢价。",
+        "基金表现可能因费用、申赎和复制方式与标的指数存在跟踪偏离。",
+        `近20日平均绝对涨跌幅约 ${quote.volatility.toFixed(2)}%，请结合自己的承受能力设置计划。`,
+      ],
+      themes: [
+        { name: stock.fund.trackingIndex, confidence: "已核验", reason: "基金产品资料明确列示的标的指数。" },
+        { name: "跨境指数投资", confidence: "已核验", reason: `${stock.fund.category}，主要风险来自指数、汇率和跨市场交易差异。` },
+      ],
+      missingInformation: [
+        "最新基金净值与场内折溢价",
+        "最新基金规模、份额和跟踪误差",
+        "最新成份股持仓与权重",
+      ],
+    };
+  }
 
   const themeSet = new Set<string>();
   const builtThemes: Array<{ name: string; confidence: string; reason: string }> = [];

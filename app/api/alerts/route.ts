@@ -1,7 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { alertRules } from "../../../db/schema";
-import { isStockCode, toCents } from "../../../lib/domain";
+import { isStockCode, toMillis } from "../../../lib/domain";
 import { requireApiUser } from "../../../lib/auth";
 
 const alertTypes = new Set(["止损", "止盈一", "止盈二"]);
@@ -27,8 +27,8 @@ export async function POST(request: Request) {
     const name = payload.name?.trim() ?? "";
     const type = payload.type?.trim() ?? "";
     const rawTargetPrice = Number(payload.targetPrice);
-    const targetPriceCents = toCents(rawTargetPrice);
-    if (!isStockCode(symbol) || !name || !alertTypes.has(type) || !Number.isFinite(rawTargetPrice) || targetPriceCents <= 0) {
+    const targetPriceMillis = toMillis(rawTargetPrice);
+    if (!isStockCode(symbol) || !name || !alertTypes.has(type) || !Number.isFinite(rawTargetPrice) || targetPriceMillis <= 0) {
       return Response.json({ error: "提醒信息不正确" }, { status: 400 });
     }
     await ensureSchema();
@@ -36,7 +36,8 @@ export async function POST(request: Request) {
       symbol,
       name,
       type: type as "止损" | "止盈一" | "止盈二",
-      targetPriceCents,
+      targetPriceCents: Math.round(targetPriceMillis / 10),
+      targetPriceMillis,
     }).returning();
     return Response.json({ alert }, { status: 201 });
   } catch {
