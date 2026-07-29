@@ -20,13 +20,13 @@ export const metadata: Metadata = {
   openGraph: {
     title: "我的股票助手｜看懂、记录、复盘",
     description: "输入股票，先把它看懂。AI负责解释，你负责决定。",
-    images: [{ url: "/og-v5.png", width: 1672, height: 941, alt: "我的股票助手：记录、提醒、复盘" }],
+    images: [{ url: "/og-v6.png", width: 1672, height: 941, alt: "我的股票助手：看懂、记录、复盘" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "我的股票助手｜看懂、记录、复盘",
     description: "输入股票，先把它看懂。AI负责解释，你负责决定。",
-    images: ["/og-v5.png"],
+    images: ["/og-v6.png"],
   },
 };
 
