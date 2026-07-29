@@ -1,58 +1,4 @@
-const STOCK_NAMES: Record<string, string> = {
-  "000001": "平安银行",
-  "000333": "美的集团",
-  "000651": "格力电器",
-  "000858": "五粮液",
-  "002230": "科大讯飞",
-  "002371": "北方华创",
-  "002415": "海康威视",
-  "002594": "比亚迪",
-  "300059": "东方财富",
-  "300308": "中际旭创",
-  "300476": "胜宏科技",
-  "300750": "宁德时代",
-  "159583": "富国中证通信设备主题ETF",
-  "513180": "华夏恒生科技ETF（QDII）",
-  "600036": "招商银行",
-  "600276": "恒瑞医药",
-  "600519": "贵州茅台",
-  "601318": "中国平安",
-  "601899": "紫金矿业",
-  "601988": "中国银行",
-  "601138": "工业富联",
-  "688041": "海光信息",
-  "688111": "金山办公",
-  "688256": "寒武纪",
-  "688981": "中芯国际",
-};
-
-const INDUSTRIES: Record<string, string> = {
-  "000001": "银行",
-  "000333": "家用电器",
-  "000651": "家用电器",
-  "000858": "白酒",
-  "002230": "人工智能软件",
-  "002371": "半导体设备",
-  "002415": "计算机设备",
-  "002594": "新能源汽车",
-  "300059": "互联网金融",
-  "300308": "光通信",
-  "300476": "PCB · AI算力",
-  "300750": "动力电池",
-  "159583": "通信设备主题指数",
-  "513180": "恒生科技指数",
-  "600036": "银行",
-  "600276": "创新药",
-  "600519": "白酒",
-  "601318": "保险",
-  "601899": "黄金 · 有色",
-  "601988": "银行",
-  "601138": "AI服务器",
-  "688041": "国产算力芯片",
-  "688111": "办公软件",
-  "688256": "AI芯片",
-  "688981": "半导体制造",
-};
+import A_STOCK_LIST from "../db/a_stock_list";
 
 const ETF_PROFILES: Record<string, {
   manager: string;
@@ -136,13 +82,12 @@ export function tencentSymbol(code: string) {
 export function resolveStock(query: string) {
   const clean = query.trim();
   if (/^\d{6}$/.test(clean)) {
-    return { code: clean, name: STOCK_NAMES[clean] ?? clean };
+    // 优先从本地全量列表查名称，兜底用代码本身
+    return { code: clean, name: A_STOCK_LIST[clean] ?? clean };
   }
 
-  const match = Object.entries(STOCK_NAMES).find(([, name]) =>
-    name.includes(clean) || clean.includes(name)
-  );
-  return match ? { code: match[0], name: match[1] } : null;
+  // 名称搜索走腾讯 smartbox API，本地 5534 条全量搜索代价大
+  return null;
 }
 
 export function parseStockSuggestions(content: string) {
@@ -381,33 +326,51 @@ async function getQuoteSummary(symbol: string): Promise<ProfileSummary> {
   }
 }
 
-const THEME_HINTS: Record<string, string[]> = {
-  "白酒": ["白酒", "消费"],
-  "电池": ["新能源", "锂电池"],
-  "半导体设备": ["半导体", "国产替代"],
-  "新能源汽车": ["新能源车", "锂电池"],
-  "动力电池": ["新能源", "锂电池"],
-  "人工智能软件": ["人工智能", "信创"],
-  "创新药": ["创新药", "医药"],
-  "银行": ["金融", "高股息"],
-  "保险": ["金融", "高股息"],
-  "黄金·有色": ["黄金", "有色金属"],
-  "AI服务器": ["人工智能", "算力"],
-  "光通信": ["人工智能", "算力", "光模块"],
-  "PCB·AI算力": ["人工智能", "PCB", "算力"],
-  "国产算力芯片": ["半导体", "国产替代", "人工智能"],
-  "AI芯片": ["半导体", "人工智能"],
-  "半导体制造": ["半导体", "国产替代"],
-  "互联网金融": ["金融", "互联网"],
-  "办公软件": ["信创", "软件"],
-  "家用电器": ["消费", "家电"],
-  "新能源整车": ["新能源车", "锂电池"],
-  "化学制药": ["医药", "化学制药"],
-  "医疗服务": ["医药", "医疗服务"],
-  "医疗器械": ["医药", "医疗器械"],
-  "乳制品": ["消费", "食品饮料"],
-  "工程机械": ["高端制造", "基建"],
-};
+// 关键词→概念题材 模糊匹配，覆盖全A股常见行业
+const THEME_RULES: Array<{ keywords: string[]; themes: string[] }> = [
+  { keywords: ["白酒", "啤酒", "黄酒", "葡萄酒", "饮料"], themes: ["白酒", "消费"] },
+  { keywords: ["银行"], themes: ["金融", "高股息"] },
+  { keywords: ["保险"], themes: ["金融", "高股息"] },
+  { keywords: ["券商", "证券"], themes: ["金融", "券商"] },
+  { keywords: ["房地产", "地产", "房产"], themes: ["房地产", "周期"] },
+  { keywords: ["煤炭", "钢铁", "有色", "黄金", "稀土", "矿业", "铝", "铜", "锂矿"], themes: ["有色", "周期", "资源"] },
+  { keywords: ["石油", "石化", "化工", "化学", "化肥", "农药", "涂料", "塑料", "橡胶", "化纤"], themes: ["化工", "周期"] },
+  { keywords: ["电力", "发电", "水电", "火电", "核电", "风电", "光伏", "太阳能", "储能", "电网", "电气"], themes: ["新能源", "电力"] },
+  { keywords: ["新能源", "锂电", "电池", "动力电池", "固态电池"], themes: ["新能源", "锂电池"] },
+  { keywords: ["新能源车", "整车", "汽车", "零部件", "汽配", "轮胎"], themes: ["新能源车", "汽车"] },
+  { keywords: ["半导体", "芯片", "集成电路", "晶圆", "封测", "光刻"], themes: ["半导体", "国产替代"] },
+  { keywords: ["人工智能", "AI", "大模型", "机器学习", "NLP"], themes: ["人工智能", "AI"] },
+  { keywords: ["算力", "服务器", "数据中心", "云计算", "IDC", "GPU"], themes: ["人工智能", "算力"] },
+  { keywords: ["光通信", "光模块", "光纤", "5G", "通信"], themes: ["人工智能", "算力", "光模块"] },
+  { keywords: ["软件", "SaaS", "信创", "操作系统", "数据库", "中间件", "办公"], themes: ["信创", "软件"] },
+  { keywords: ["互联网", "电商", "游戏", "社交", "视频", "直播", "广告", "传媒", "出版"], themes: ["互联网", "传媒"] },
+  { keywords: ["医药", "制药", "生物", "疫苗", "基因", "细胞"], themes: ["医药", "创新药"] },
+  { keywords: ["医疗", "器械", "设备", "诊断", "检测", "医院", "服务", "外包", "CXO", "CRO"], themes: ["医药", "医疗器械"] },
+  { keywords: ["食品", "饮料", "乳品", "调味", "零食", "预制菜", "养殖", "畜牧", "饲料", "种业", "农产品"], themes: ["消费", "食品饮料"] },
+  { keywords: ["家电", "家居", "家具", "照明", "厨卫"], themes: ["消费", "家电"] },
+  { keywords: ["服装", "纺织", "鞋帽", "化妆品", "零售", "百货", "超市", "免税"], themes: ["消费", "零售"] },
+  { keywords: ["军工", "航空航天", "船舶", "兵器", "卫星", "导航"], themes: ["军工", "高端制造"] },
+  { keywords: ["机械", "工程", "重工", "装备", "机器人", "自动化", "智能制造"], themes: ["高端制造", "基建"] },
+  { keywords: ["建筑", "建材", "水泥", "玻璃", "基建", "工程"], themes: ["基建", "地产链"] },
+  { keywords: ["交通", "运输", "航空", "机场", "港口", "航运", "铁路", "公路", "物流", "快递"], themes: ["交通运输", "物流"] },
+  { keywords: ["环保", "水务", "燃气", "供热", "废物处理"], themes: ["环保", "公用事业"] },
+  { keywords: ["教育", "培训"], themes: ["教育"] },
+  { keywords: ["旅游", "酒店", "景区", "餐饮"], themes: ["消费", "旅游"] },
+  { keywords: ["PCB"], themes: ["PCB", "电子"] },
+  { keywords: ["消费电子", "手机", "面板", "LED", "声学", "摄像头", "可穿戴"], themes: ["消费电子"] },
+];
+
+function matchThemes(industry: string): string[] {
+  if (!industry || industry === "行业信息待补充") return [];
+  const lower = industry.toLowerCase();
+  const found = new Set<string>();
+  for (const rule of THEME_RULES) {
+    if (rule.keywords.some((kw) => lower.includes(kw.toLowerCase()))) {
+      for (const t of rule.themes) found.add(t);
+    }
+  }
+  return [...found];
+}
 
 export async function analyzeStockData(query: string) {
   const clean = query.trim();
@@ -441,8 +404,8 @@ export async function analyzeStockData(query: string) {
   const debt = fundamentals.quarterlyTotalDebt?.at(-1)?.value ?? 0;
   const debtRatio = assets ? (debt / assets) * 100 : null;
 
-  const resolvedName = STOCK_NAMES[stock.code] ?? profile.name ?? stock.name;
-  const resolvedIndustry = INDUSTRIES[stock.code] ?? profile.industry ?? profile.sector ?? "行业信息待补充";
+  const resolvedName = A_STOCK_LIST[stock.code] ?? profile.name ?? stock.name;
+  const resolvedIndustry = profile.industry ?? profile.sector ?? "行业信息待补充";
 
   return {
     stock: {
@@ -545,7 +508,7 @@ export function automaticExplanation(data: Awaited<ReturnType<typeof analyzeStoc
   if (stock.sector) {
     pushTheme(stock.sector, "中", `所属板块分类为${stock.sector}。`);
   }
-  for (const hint of THEME_HINTS[stock.industry] ?? []) {
+  for (const hint of matchThemes(stock.industry)) {
     pushTheme(hint, "待核验", `与${stock.industry}相关的常见概念题材，需以公司公告为准。`);
   }
   if (builtThemes.length === 0) {
