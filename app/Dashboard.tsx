@@ -1,117 +1,351 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { calculatePortfolio, type Trade } from "../lib/domain";
 
 type View = "home" | "watchlist" | "trades" | "settings";
-type Modal = "buy" | "sell" | null;
+type TradeMode = "buy" | "sell";
 
-type Trade = {
+type WatchItem = {
   id: number;
-  stock: string;
-  code: string;
-  side: "买入" | "卖出";
-  price: number;
-  quantity: number;
-  date: string;
-  reason: string;
+  symbol: string;
+  name: string;
+  note: string;
+  createdAt: string;
 };
 
-const navItems: { id: View; label: string; icon: string }[] = [
+type AlertRule = {
+  id: number;
+  symbol: string;
+  name: string;
+  type: "止损" | "止盈一" | "止盈二";
+  targetPriceCents: number;
+  enabled: boolean;
+  acknowledgedAt: string | null;
+};
+
+type Review = {
+  id: number;
+  symbol: string;
+  name: string;
+  followedPlan: boolean;
+  lesson: string;
+  resultCents: number;
+};
+
+type Explanation = {
+  summary: string;
+  company: string[];
+  risks: string[];
+  themes: Array<{ name: string; confidence: string; reason: string }>;
+  missingInformation: string[];
+};
+
+type Analysis = {
+  stock: { code: string; name: string; industry: string; marketSymbol: string };
+  quote: {
+    price: number;
+    previousClose: number;
+    changePercent: number;
+    ma20: number;
+    recentHigh: number;
+    recentLow: number;
+    support: number;
+    resistance: number;
+    volatility: number;
+    target1: number;
+    target2: number;
+    marketTime: string | null;
+  };
+  financials: {
+    revenueGrowth: number | null;
+    profitGrowth: number | null;
+    debtRatio: number | null;
+    series: Record<string, Array<{ date: string; value: number }>>;
+  };
+  source: { name: string; url: string; fetchedAt: string };
+  mode: "deepseek" | "automatic";
+  explanation: Explanation;
+};
+
+type Status = {
+  deepseekConfigured: boolean;
+  dataSource: string;
+  reminderMode: string;
+};
+
+const navItems: Array<{ id: View; label: string; icon: string }> = [
   { id: "home", label: "首页", icon: "⌂" },
   { id: "watchlist", label: "关注", icon: "☆" },
-  { id: "trades", label: "交易记录", icon: "↕" },
+  { id: "trades", label: "交易记录", icon: "↔" },
   { id: "settings", label: "设置", icon: "⚙" },
 ];
 
-const holdings = [
-  { name: "贵州茅台", code: "600519", price: "1,512.80", profit: "+3.20%", stopDistance: "4.10%", status: "接近第一止盈", tone: "amber" },
-  { name: "宁德时代", code: "300750", price: "284.63", profit: "-1.50%", stopDistance: "2.00%", status: "注意止损距离", tone: "red" },
-];
+const buyReasons = ["看好公司业绩", "看好行业题材", "价格回调", "突破买入", "朋友或网络推荐", "担心错过", "冲动买入", "其他"];
+const sellReasons = ["达到止盈目标", "触发止损", "买入逻辑失效", "害怕利润回吐", "临时需要资金", "看到其他股票", "不知道为什么卖", "其他"];
 
-const initialTrades: Trade[] = [
-  { id: 1, stock: "贵州茅台", code: "600519", side: "买入", price: 1466, quantity: 100, date: "2026-07-15", reason: "看好公司业绩" },
-  { id: 2, stock: "宁德时代", code: "300750", side: "买入", price: 288.96, quantity: 100, date: "2026-07-22", reason: "价格回调" },
-  { id: 3, stock: "比亚迪", code: "002594", side: "卖出", price: 118.4, quantity: 200, date: "2026-07-18", reason: "达到止盈目标" },
-];
+function money(cents: number) {
+  return `¥${(cents / 100).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
-const watchlist = [
-  { name: "北方华创", code: "002371", industry: "半导体设备", price: "438.20", change: "+1.35%", note: "突破前高且放量后再考虑", state: "等待条件" },
-  { name: "胜宏科技", code: "300476", industry: "PCB · AI算力", price: "176.64", change: "+4.82%", note: "当日涨幅超过5%不追高", state: "研究中" },
-  { name: "紫金矿业", code: "601899", industry: "黄金 · 有色", price: "21.76", change: "-0.62%", note: "等板块与金价形成共振", state: "一般关注" },
-];
+function price(value: number) {
+  return `¥${value.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
 
-const financials = [
-  { name: "营收", state: "良好", tone: "green", detail: "最近一年保持增长，主营业务仍较稳定。" },
-  { name: "净利润", state: "留意", tone: "amber", detail: "利润仍在增长，但增速比前期有所下降。" },
-  { name: "现金流", state: "良好", tone: "green", detail: "经营活动现金流能够覆盖同期净利润。" },
-  { name: "负债", state: "良好", tone: "green", detail: "有息负债压力不高，短期偿债风险较低。" },
-  { name: "应收账款", state: "留意", tone: "amber", detail: "需要继续观察其增长是否快于营业收入。" },
-  { name: "商誉", state: "正常", tone: "green", detail: "暂未发现明显的大额商誉减值压力。" },
-];
+async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(url, init);
+  const payload = await response.json() as T & { error?: string };
+  if (!response.ok) throw new Error(payload.error ?? "请求失败");
+  return payload;
+}
 
 export function Dashboard() {
   const [view, setView] = useState<View>("home");
   const [query, setQuery] = useState("");
-  const [showAnalysis, setShowAnalysis] = useState(false);
+  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [quotes, setQuotes] = useState<Record<string, Analysis>>({});
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
+  const [alerts, setAlerts] = useState<AlertRule[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [status, setStatus] = useState<Status | null>(null);
+  const [tradeMode, setTradeMode] = useState<TradeMode | null>(null);
+  const [reviewSymbol, setReviewSymbol] = useState<string | null>(null);
+  const [settingsSection, setSettingsSection] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
-  const [modal, setModal] = useState<Modal>(null);
-  const [trades, setTrades] = useState(initialTrades);
   const [toast, setToast] = useState("");
-  const [isWatched, setIsWatched] = useState(false);
+  const [error, setError] = useState("");
+  const notified = useRef(new Set<number>());
 
-  function flash(message: string) {
+  const portfolio = useMemo(() => calculatePortfolio(trades), [trades]);
+  const reviewedSymbols = useMemo(() => new Set(reviews.map((review) => review.symbol)), [reviews]);
+  const soldSymbols = useMemo(
+    () => [...new Set(trades.filter((trade) => trade.side === "卖出").map((trade) => trade.symbol))],
+    [trades],
+  );
+  const pendingReviews = soldSymbols.filter((symbol) => !reviewedSymbols.has(symbol));
+
+  const flash = useCallback((message: string) => {
     setToast(message);
     window.setTimeout(() => setToast(""), 2600);
-  }
+  }, []);
 
-  function analyzeStock(event?: FormEvent) {
+  const loadData = useCallback(async () => {
+    try {
+      const [tradeData, watchData, alertData, reviewData, statusData] = await Promise.all([
+        jsonRequest<{ trades: Trade[] }>("/api/trades"),
+        jsonRequest<{ items: WatchItem[] }>("/api/watchlist"),
+        jsonRequest<{ alerts: AlertRule[] }>("/api/alerts"),
+        jsonRequest<{ reviews: Review[] }>("/api/reviews"),
+        jsonRequest<Status>("/api/status"),
+      ]);
+      setTrades(tradeData.trades);
+      setWatchlist(watchData.items);
+      setAlerts(alertData.alerts);
+      setReviews(reviewData.reviews);
+      setStatus(statusData);
+      setError("");
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "个人数据暂时无法读取");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadData(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadData]);
+
+  const fetchAnalysis = useCallback(async (stockQuery: string, showResult = true) => {
+    setAnalyzing(true);
+    setError("");
+    try {
+      const result = await jsonRequest<Analysis>("/api/analyze", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ query: stockQuery }),
+      });
+      setQuotes((current) => ({ ...current, [result.stock.code]: result }));
+      if (showResult) {
+        setAnalysis(result);
+        setQuery(result.stock.code);
+        setView("home");
+      }
+      return result;
+    } catch (analyzeError) {
+      const message = analyzeError instanceof Error ? analyzeError.message : "股票分析失败";
+      setError(message);
+      flash(message);
+      return null;
+    } finally {
+      setAnalyzing(false);
+    }
+  }, [flash]);
+
+  useEffect(() => {
+    const symbols = new Set([
+      ...portfolio.positions.map((position) => position.symbol),
+      ...alerts.filter((alert) => alert.enabled).map((alert) => alert.symbol),
+    ]);
+    const timer = window.setTimeout(() => {
+      for (const symbol of symbols) {
+        if (!quotes[symbol]) void fetchAnalysis(symbol, false);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [alerts, fetchAnalysis, portfolio.positions, quotes]);
+
+  const checkAlerts = useCallback(() => {
+    for (const alert of alerts) {
+      if (!alert.enabled || alert.acknowledgedAt || notified.current.has(alert.id)) continue;
+      const current = quotes[alert.symbol]?.quote.price;
+      if (!current) continue;
+      const target = alert.targetPriceCents / 100;
+      const triggered = alert.type === "止损" ? current <= target : current >= target;
+      if (!triggered) continue;
+      notified.current.add(alert.id);
+      const message = `${alert.name}已触发${alert.type}提醒：当前${price(current)}，目标${price(target)}`;
+      flash(message);
+      if ("Notification" in window && Notification.permission === "granted") {
+        new Notification("我的股票助手", { body: message });
+      }
+    }
+  }, [alerts, flash, quotes]);
+
+  useEffect(() => {
+    const firstCheck = window.setTimeout(checkAlerts, 0);
+    const timer = window.setInterval(() => {
+      for (const symbol of new Set(alerts.filter((item) => item.enabled).map((item) => item.symbol))) {
+        void fetchAnalysis(symbol, false);
+      }
+    }, 300_000);
+    return () => {
+      window.clearTimeout(firstCheck);
+      window.clearInterval(timer);
+    };
+  }, [alerts, checkAlerts, fetchAnalysis]);
+
+  async function analyzeStock(event?: FormEvent) {
     event?.preventDefault();
     if (!query.trim()) {
       flash("请输入股票代码或名称");
       return;
     }
-    setAnalyzing(true);
-    window.setTimeout(() => {
-      setAnalyzing(false);
-      setShowAnalysis(true);
-    }, 850);
+    await fetchAnalysis(query);
+  }
+
+  async function addWatch(stock = analysis?.stock) {
+    if (!stock) {
+      flash("请先分析一只股票");
+      return;
+    }
+    try {
+      await jsonRequest("/api/watchlist", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ symbol: stock.code, name: stock.name, note: "等待自己的买入条件" }),
+      });
+      await loadData();
+      flash(`${stock.name}已加入关注`);
+    } catch (saveError) {
+      flash(saveError instanceof Error ? saveError.message : "加入关注失败");
+    }
+  }
+
+  async function removeWatch(symbol: string) {
+    try {
+      await jsonRequest(`/api/watchlist?symbol=${symbol}`, { method: "DELETE" });
+      await loadData();
+      flash("已移出关注");
+    } catch (removeError) {
+      flash(removeError instanceof Error ? removeError.message : "移出关注失败");
+    }
   }
 
   async function saveTrade(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    const side = modal === "sell" ? "卖出" : "买入";
-    const trade: Trade = {
-      id: Date.now(),
-      stock: String(data.get("stock")),
-      code: String(data.get("code")),
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const side = tradeMode === "sell" ? "卖出" : "买入";
+    const payload = {
+      symbol: String(data.get("symbol")),
+      name: String(data.get("name")),
       side,
       price: Number(data.get("price")),
       quantity: Number(data.get("quantity")),
-      date: String(data.get("date")),
+      tradeDate: String(data.get("tradeDate")),
       reason: String(data.get("reason")),
+      maxLoss: Number(data.get("maxLoss") || 0),
+      fee: Number(data.get("fee") || 0),
     };
-    setTrades((current) => [trade, ...current]);
-    setModal(null);
-    flash(`${trade.stock}的${side}记录已保存`);
+
     try {
-      await fetch("/api/trades", {
+      await jsonRequest("/api/trades", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          symbol: trade.code,
-          name: trade.stock,
-          side: trade.side,
-          price: trade.price,
-          quantity: trade.quantity,
-          reason: trade.reason,
-          plan: side === "买入" ? "待确认止盈止损提醒" : "等待完成复盘",
-        }),
+        body: JSON.stringify(payload),
       });
-    } catch {
-      // The interface remains usable if the cloud database is temporarily unavailable.
+
+      if (side === "买入" && payload.maxLoss > 0) {
+        const riskPerShare = payload.maxLoss / payload.quantity;
+        const stop = payload.price - riskPerShare;
+        if (stop > 0) {
+          await Promise.all([
+            saveAlert(payload.symbol, payload.name, "止损", stop),
+            saveAlert(payload.symbol, payload.name, "止盈一", payload.price + riskPerShare),
+            saveAlert(payload.symbol, payload.name, "止盈二", payload.price + riskPerShare * 2),
+          ]);
+        }
+      }
+
+      setTradeMode(null);
+      await loadData();
+      flash(`${payload.name}的${side}记录已保存`);
+      if (side === "卖出") setReviewSymbol(payload.symbol);
+    } catch (saveError) {
+      flash(saveError instanceof Error ? saveError.message : "交易记录保存失败");
     }
   }
+
+  async function saveAlert(symbol: string, name: string, type: AlertRule["type"], targetPrice: number) {
+    return jsonRequest("/api/alerts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ symbol, name, type, targetPrice }),
+    });
+  }
+
+  async function updateAlert(id: number, action = "acknowledge") {
+    try {
+      await jsonRequest("/api/alerts", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, action }),
+      });
+      await loadData();
+      flash(action === "disable" ? "提醒已停用" : "提醒已确认");
+    } catch (updateError) {
+      flash(updateError instanceof Error ? updateError.message : "提醒更新失败");
+    }
+  }
+
+  async function requestNotifications() {
+    if (!("Notification" in window)) {
+      flash("当前浏览器不支持系统通知");
+      return;
+    }
+    const permission = await Notification.requestPermission();
+    flash(permission === "granted" ? "浏览器通知已开启" : "浏览器通知未开启");
+    setSettingsSection("alerts");
+  }
+
+  const currentTradeStock = analysis?.stock ?? (
+    tradeMode === "sell" && portfolio.positions[0]
+      ? { code: portfolio.positions[0].symbol, name: portfolio.positions[0].name }
+      : null
+  );
 
   return (
     <div className="app-shell">
@@ -129,40 +363,79 @@ export function Dashboard() {
         </nav>
         <div className="safety-note">
           <span>给新手的提醒</span>
-          <p>AI只负责解释信息，不替你决定买卖。重要止损请同时在券商 App 设置。</p>
+          <p>AI只负责解释信息，不替你决定买卖。重要止损请同时在券商App设置。</p>
         </div>
-        <div className="source-status"><i /><span><b>演示模式</b><small>尚未配置真实数据</small></span></div>
+        <div className="source-status">
+          <i />
+          <span><b>{status?.deepseekConfigured ? "DeepSeek分析" : "自动解释模式"}</b><small>{status?.dataSource ?? "正在检查数据源"}</small></span>
+        </div>
       </aside>
 
       <main className="main">
         <header className="topbar">
           <div><span className="mobile-brand">我的股票助手</span><h1>{navItems.find((item) => item.id === view)?.label}</h1></div>
           <div className="top-actions">
-            <span className="privacy-pill">● 私人空间</span>
-            <button className="primary-button" onClick={() => setModal("buy")}>＋ 记录买入</button>
+            <span className="privacy-pill">● 本地个人空间</span>
+            <button className="primary-button" onClick={() => setTradeMode("buy")}>＋ 记录买入</button>
           </div>
         </header>
 
-        {view === "home" && (
-          <Home
-            query={query}
-            setQuery={setQuery}
-            showAnalysis={showAnalysis}
-            analyzing={analyzing}
-            onAnalyze={analyzeStock}
-            onBuy={() => setModal("buy")}
-            onSell={() => setModal("sell")}
-            onWatch={() => {
-              setIsWatched(true);
-              flash("贵州茅台已加入关注");
-            }}
-            isWatched={isWatched}
-            onNavigate={setView}
-          />
+        {error && <div className="error-banner" role="alert">{error}<button onClick={() => setError("")}>关闭</button></div>}
+        {loading ? <div className="loading-state">正在读取你的个人记录…</div> : (
+          <>
+            {view === "home" && (
+              <Home
+                query={query}
+                setQuery={setQuery}
+                analysis={analysis}
+                analyzing={analyzing}
+                portfolio={portfolio}
+                quotes={quotes}
+                alerts={alerts}
+                pendingReviews={pendingReviews}
+                trades={trades}
+                reviews={reviews}
+                watched={analysis ? watchlist.some((item) => item.symbol === analysis.stock.code) : false}
+                onAnalyze={analyzeStock}
+                onBuy={() => setTradeMode("buy")}
+                onSell={() => setTradeMode("sell")}
+                onWatch={() => void addWatch()}
+                onNavigate={setView}
+                onReview={setReviewSymbol}
+                onAlertPlan={() => { setSettingsSection("alerts"); setView("settings"); }}
+                onAcknowledge={(id) => void updateAlert(id)}
+              />
+            )}
+            {view === "watchlist" && (
+              <Watchlist
+                items={watchlist}
+                quotes={quotes}
+                onSearch={() => setView("home")}
+                onAnalyze={(symbol) => void fetchAnalysis(symbol)}
+                onRemove={(symbol) => void removeWatch(symbol)}
+              />
+            )}
+            {view === "trades" && (
+              <Trades
+                trades={trades}
+                reviews={reviews}
+                onBuy={() => setTradeMode("buy")}
+                onSell={() => setTradeMode("sell")}
+                onReview={setReviewSymbol}
+              />
+            )}
+            {view === "settings" && (
+              <Settings
+                status={status}
+                alerts={alerts}
+                section={settingsSection}
+                onSection={setSettingsSection}
+                onDisable={(id) => void updateAlert(id, "disable")}
+                onNotifications={() => void requestNotifications()}
+              />
+            )}
+          </>
         )}
-        {view === "watchlist" && <Watchlist onSearch={() => setView("home")} />}
-        {view === "trades" && <Trades trades={trades} onBuy={() => setModal("buy")} onSell={() => setModal("sell")} />}
-        {view === "settings" && <Settings />}
       </main>
 
       <nav className="mobile-nav" aria-label="移动端导航">
@@ -173,282 +446,473 @@ export function Dashboard() {
         ))}
       </nav>
 
-      {modal && <TradeModal mode={modal} onClose={() => setModal(null)} onSubmit={saveTrade} />}
-      {toast && <div className="toast" role="status"><span>✓</span>{toast}</div>}
+      {tradeMode && (
+        <TradeModal
+          mode={tradeMode}
+          stock={currentTradeStock}
+          positions={portfolio.positions}
+          onClose={() => setTradeMode(null)}
+          onSubmit={saveTrade}
+        />
+      )}
+      {reviewSymbol && (
+        <ReviewModal
+          symbol={reviewSymbol}
+          trades={trades}
+          onClose={() => setReviewSymbol(null)}
+          onSaved={async () => { setReviewSymbol(null); await loadData(); flash("复盘已保存"); }}
+        />
+      )}
+      {toast && <div className="toast" role="status" aria-live="polite"><span>✓</span>{toast}</div>}
     </div>
   );
 }
 
 function Home({
-  query,
-  setQuery,
-  showAnalysis,
-  analyzing,
-  onAnalyze,
-  onBuy,
-  onSell,
-  onWatch,
-  isWatched,
-  onNavigate,
+  query, setQuery, analysis, analyzing, portfolio, quotes, alerts, pendingReviews,
+  trades, reviews, watched, onAnalyze, onBuy, onSell, onWatch, onNavigate,
+  onReview, onAlertPlan, onAcknowledge,
 }: {
   query: string;
   setQuery: (value: string) => void;
-  showAnalysis: boolean;
+  analysis: Analysis | null;
   analyzing: boolean;
-  onAnalyze: (event?: FormEvent) => void;
+  portfolio: ReturnType<typeof calculatePortfolio>;
+  quotes: Record<string, Analysis>;
+  alerts: AlertRule[];
+  pendingReviews: string[];
+  trades: Trade[];
+  reviews: Review[];
+  watched: boolean;
+  onAnalyze: (event?: FormEvent) => Promise<void>;
   onBuy: () => void;
   onSell: () => void;
   onWatch: () => void;
-  isWatched: boolean;
   onNavigate: (view: View) => void;
+  onReview: (symbol: string) => void;
+  onAlertPlan: () => void;
+  onAcknowledge: (id: number) => void;
 }) {
+  const activeAlerts = alerts.filter((alert) => alert.enabled && !alert.acknowledgedAt);
+  const closedCount = portfolio.winningSells + portfolio.losingSells;
+  const winRate = closedCount ? Math.round((portfolio.winningSells / closedCount) * 100) : 0;
+  const planRate = reviews.length ? Math.round((reviews.filter((review) => review.followedPlan).length / reviews.length) * 100) : 0;
+
   return (
     <div className="page-content">
-      <section className={showAnalysis ? "search-hero compact" : "search-hero"}>
+      <section className={analysis ? "search-hero compact" : "search-hero"}>
         <span className="eyebrow">A股新手也能看懂</span>
-        <h2>{showAnalysis ? "继续查一只股票" : "输入股票，先把它看懂。"}</h2>
-        {!showAnalysis && <p>公开数据负责提供事实，AI负责说人话，你负责最后的决定。</p>}
+        <h2>{analysis ? "继续查一只股票" : "输入股票，先把它看懂。"}</h2>
+        {!analysis && <p>公开数据提供事实，AI或自动规则负责解释，你负责最后的决定。</p>}
         <form className="stock-search" onSubmit={onAnalyze}>
           <span className="search-icon">⌕</span>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="输入股票代码或名称，例如 600519、贵州茅台" aria-label="股票代码或名称" />
-          <button type="submit" disabled={analyzing}>{analyzing ? "正在整理…" : "开始分析"}</button>
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="例如 600519、贵州茅台" aria-label="股票代码或名称" />
+          <button type="submit" disabled={analyzing}>{analyzing ? "正在获取数据…" : "开始分析"}</button>
         </form>
-        <div className="search-meta"><span>无需股票数据账号</span><i /> <span>分析前会显示数据日期</span><i /> <span>不提供买卖建议</span></div>
-        {!showAnalysis && <div className="hero-orbit" aria-hidden="true"><span>财务</span><span>业绩</span><span>题材</span><span>风险</span></div>}
+        <div className="search-meta"><span>无需股票数据账号</span><i /><span>结果标明数据时间</span><i /><span>不提供买卖建议</span></div>
       </section>
 
-      {!showAnalysis ? (
+      {analysis ? (
+        <AnalysisView analysis={analysis} watched={watched} onWatch={onWatch} onBuy={onBuy} onSell={onSell} />
+      ) : (
         <>
           <section className="quick-title"><div><span className="eyebrow">今天只处理重要的事</span><h3>我的持仓</h3></div><button onClick={() => onNavigate("trades")}>查看交易记录 →</button></section>
-          <div className="holding-grid">
-            {holdings.map((stock) => (
-              <article className="holding-card" key={stock.code}>
-                <div className="holding-top">
-                  <span className="stock-avatar">{stock.name.slice(0, 1)}</span>
-                  <div><h4>{stock.name}<small>{stock.code}</small></h4><p>参考价 ¥{stock.price}</p></div>
-                  <strong className={stock.profit.startsWith("+") ? "up" : "down"}>{stock.profit}</strong>
-                </div>
-                <div className="risk-line"><span>距离你的止损价</span><b>{stock.stopDistance}</b></div>
-                <div className={`holding-status ${stock.tone}`}><i />{stock.status}</div>
-              </article>
-            ))}
+          {portfolio.positions.length ? (
+            <div className="holding-grid">
+              {portfolio.positions.map((position) => {
+                const quote = quotes[position.symbol]?.quote.price;
+                const profit = quote ? (quote * 100 - position.averageCostCents) * position.quantity : 0;
+                const rate = quote ? ((quote * 100 / position.averageCostCents) - 1) * 100 : null;
+                const stop = activeAlerts.find((item) => item.symbol === position.symbol && item.type === "止损");
+                return (
+                  <article className="holding-card" key={position.symbol}>
+                    <div className="holding-top">
+                      <span className="stock-avatar">{position.name.slice(0, 1)}</span>
+                      <div><h4>{position.name}<small>{position.symbol}</small></h4><p>{position.quantity}股 · 成本{money(position.averageCostCents)}</p></div>
+                      <strong className={(rate ?? 0) >= 0 ? "up" : "down"}>{rate === null ? "行情更新中" : `${rate >= 0 ? "+" : ""}${rate.toFixed(2)}%`}</strong>
+                    </div>
+                    <div className="risk-line"><span>按当前参考价计算</span><b>{quote ? money(profit) : "—"}</b></div>
+                    <div className={`holding-status ${stop ? "amber" : ""}`}><i />{stop ? `止损提醒 ${money(stop.targetPriceCents)}` : "尚未设置止损提醒"}</div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : <div className="empty-state">还没有持仓。先查一只股票，或记录你的第一笔买入。</div>}
+
+          <div className="summary-strip home-summary">
+            <div><span>已实现盈亏</span><strong className={portfolio.realizedCents >= 0 ? "up" : "down"}>{money(portfolio.realizedCents)}</strong></div>
+            <div><span>已卖出胜率</span><strong>{closedCount ? `${winRate}%` : "—"}</strong></div>
+            <div><span>按计划复盘</span><strong>{reviews.length ? `${planRate}%` : "—"}</strong></div>
+            <div><span>最近改进规则</span><strong className="summary-lesson">{reviews[0]?.lesson ?? "暂无"}</strong></div>
           </div>
 
           <div className="home-grid">
             <section className="panel reminder-panel">
-              <PanelHeader title="今日提醒" subtitle="只有需要你行动的内容" />
-              <div className="reminder"><span className="reminder-icon amber">!</span><div><b>贵州茅台接近第一止盈参考</b><p>距离你设置的 ¥1,528.00 还有 1.0%</p></div><button>查看计划</button></div>
-              <div className="reminder"><span className="reminder-icon red">!</span><div><b>宁德时代距离止损较近</b><p>免费行情可能延迟，请同时检查券商 App</p></div><button>我知道了</button></div>
+              <PanelHeader title="价格提醒" subtitle="页面打开期间每5分钟检查" />
+              {activeAlerts.slice(0, 3).map((alert) => (
+                <div className="reminder" key={alert.id}>
+                  <span className={`reminder-icon ${alert.type === "止损" ? "red" : "amber"}`}>!</span>
+                  <div><b>{alert.name} · {alert.type}</b><p>目标价 {money(alert.targetPriceCents)} · 免费行情可能延迟</p></div>
+                  <div className="reminder-actions"><button onClick={onAlertPlan}>查看计划</button><button onClick={() => onAcknowledge(alert.id)}>我知道了</button></div>
+                </div>
+              ))}
+              {!activeAlerts.length && <div className="empty-inline">暂无提醒。记录买入并填写最大亏损后会自动生成。</div>}
             </section>
             <section className="panel review-panel">
               <PanelHeader title="待复盘" subtitle="卖出后只回答三个问题" />
-              <div className="review-item">
-                <span className="stock-avatar pale">比</span>
-                <div><b>比亚迪 · 已清仓</b><p>盈利 ¥1,680 · 收益率 7.63%</p></div>
-                <button onClick={() => onNavigate("trades")}>开始复盘 →</button>
-              </div>
+              {pendingReviews.slice(0, 3).map((symbol) => {
+                const trade = trades.find((item) => item.symbol === symbol);
+                return (
+                  <div className="review-item" key={symbol}>
+                    <span className="stock-avatar pale">{trade?.name.slice(0, 1)}</span>
+                    <div><b>{trade?.name ?? symbol}</b><p>已记录卖出，等待总结经验</p></div>
+                    <button onClick={() => onReview(symbol)}>开始复盘 →</button>
+                  </div>
+                );
+              })}
+              {!pendingReviews.length && <div className="empty-inline">目前没有待复盘交易。</div>}
               <div className="simple-rule"><span>复盘不考试</span><p>只看：为什么买、为什么卖、有没有按计划。</p></div>
             </section>
           </div>
         </>
-      ) : (
-        <Analysis onBuy={onBuy} onSell={onSell} onWatch={onWatch} isWatched={isWatched} />
       )}
     </div>
   );
 }
 
-function Analysis({ onBuy, onSell, onWatch, isWatched }: { onBuy: () => void; onSell: () => void; onWatch: () => void; isWatched: boolean }) {
+function AnalysisView({ analysis, watched, onWatch, onBuy, onSell }: {
+  analysis: Analysis;
+  watched: boolean;
+  onWatch: () => void;
+  onBuy: () => void;
+  onSell: () => void;
+}) {
+  const [showRaw, setShowRaw] = useState(false);
+  const { stock, quote, financials, explanation } = analysis;
+  const quoteDate = quote.marketTime ? new Date(quote.marketTime).toLocaleString("zh-CN") : "数据源未提供";
+
   return (
     <div className="analysis-page">
       <section className="stock-summary panel">
         <div className="stock-identity">
-          <span className="stock-avatar large">茅</span>
-          <div><span className="demo-label">示例数据</span><h2>贵州茅台 <small>600519 · 沪市</small></h2><p>白酒 · 食品饮料</p></div>
+          <span className="stock-avatar large">{stock.name.slice(0, 1)}</span>
+          <div><span className="demo-label">{analysis.mode === "deepseek" ? "DeepSeek解释" : "自动解释"}</span><h2>{stock.name} <small>{stock.code}</small></h2><p>{stock.industry}</p></div>
         </div>
-        <div className="price-block"><strong>¥1,512.80</strong><span className="up">+18.80 · +1.26%</span><small>数据日期 2026-07-28 收盘</small></div>
+        <div className="price-block">
+          <strong>{price(quote.price)}</strong>
+          <span className={quote.changePercent >= 0 ? "up" : "down"}>{quote.changePercent >= 0 ? "+" : ""}{quote.changePercent.toFixed(2)}%</span>
+          <small>行情时间 {quoteDate}</small>
+        </div>
         <div className="summary-actions">
-          <button className={isWatched ? "soft-button active" : "soft-button"} onClick={onWatch}>{isWatched ? "★ 已关注" : "☆ 加入关注"}</button>
+          <button className={watched ? "soft-button active" : "soft-button"} onClick={onWatch}>{watched ? "✓ 已关注" : "☆ 加入关注"}</button>
           <button className="primary-button" onClick={onBuy}>记录买入</button>
         </div>
       </section>
 
       <section className="ai-conclusion">
-        <span className="ai-mark">AI</span>
-        <div><span>一句话看懂</span><h3>公司盈利能力仍然较强，但增速已不像过去那么快；对新手来说，更需要关注估值和消费需求变化。</h3><p>以下内容根据页面中的示例数据整理，不构成投资建议。</p></div>
+        <span className="ai-mark">{analysis.mode === "deepseek" ? "AI" : "算"}</span>
+        <div><span>一句话看懂</span><h3>{explanation.summary}</h3><p>只基于页面所列公开数据整理，不构成投资建议。</p></div>
       </section>
 
       <div className="analysis-grid">
-        <section className="panel analysis-card company-card">
-          <CardTitle number="01" title="公司是做什么的" source="AI 通俗解释" />
+        <section className="panel analysis-card">
+          <CardTitle number="01" title="公司与行业" source="通俗解释" />
           <div className="plain-points">
-            <p><b>卖什么</b><span>核心产品是贵州茅台酒，同时经营系列酒。</span></p>
-            <p><b>卖给谁</b><span>通过经销与直营渠道，面向个人、企业和礼赠消费。</span></p>
-            <p><b>怎么赚钱</b><span>依靠品牌溢价、较高毛利率和稀缺产能获得利润。</span></p>
+            {explanation.company.map((item, index) => <p key={item}><b>{["是什么", "数据代码", "还要核验"][index] ?? "信息"}</b><span>{item}</span></p>)}
           </div>
         </section>
 
-        <section className="panel analysis-card finance-card">
-          <CardTitle number="02" title="财务体检" source="基于近 4 期财务数据" />
-          <div className="financial-list">
-            {financials.map((item) => <div key={item.name}><span>{item.name}</span><i className={item.tone}>{item.state}</i><p>{item.detail}</p></div>)}
+        <section className="panel analysis-card">
+          <CardTitle number="02" title="财务体检" source="公开财务接口" />
+          <div className="metric-row">
+            <Metric label="营收变化" value={financials.revenueGrowth} suffix="%" />
+            <Metric label="利润变化" value={financials.profitGrowth} suffix="%" />
+            <Metric label="负债率" value={financials.debtRatio} suffix="%" />
           </div>
-          <button className="text-button">展开查看原始数字 ↓</button>
+          <button className="text-button" onClick={() => setShowRaw((value) => !value)}>{showRaw ? "收起原始数字 ↑" : "展开查看原始数字 →"}</button>
+          {showRaw && (
+            <div className="raw-data">
+              {Object.entries(financials.series).map(([key, rows]) => (
+                <div key={key}><b>{key}</b>{rows.length ? rows.map((row) => <span key={row.date}>{row.date}: {row.value.toLocaleString("zh-CN")}</span>) : <span>暂无数据</span>}</div>
+              ))}
+              {!Object.keys(financials.series).length && <p>数据源暂未返回财务明细。</p>}
+            </div>
+          )}
         </section>
 
-        <section className="panel analysis-card performance-card">
-          <CardTitle number="03" title="业绩变化" source="程序计算 · AI 解释" />
-          <div className="metric-row"><div><span>营业收入</span><strong>+15.7%</strong><small>最近一期同比</small></div><div><span>归母净利润</span><strong>+14.8%</strong><small>最近一期同比</small></div><div><span>经营现金流</span><strong className="neutral">稳定</strong><small>覆盖净利润</small></div></div>
-          <div className="trend-chart" aria-label="近四期营收与利润趋势"><i style={{ height: "55%" }} /><i style={{ height: "68%" }} /><i style={{ height: "76%" }} /><i style={{ height: "88%" }} /></div>
-          <p className="card-note">怎么看：业绩仍在增长，但需要观察增速是否继续放缓，以及直营渠道能否保持效率。</p>
+        <section className="panel analysis-card">
+          <CardTitle number="03" title="价格位置" source="程序计算" />
+          <div className="metric-row">
+            <Metric label="20日均线" value={quote.ma20} moneyValue />
+            <Metric label="近60日高点" value={quote.recentHigh} moneyValue />
+            <Metric label="平均日波动" value={quote.volatility} suffix="%" />
+          </div>
+          <p className="card-note">价格位于20日均线{quote.price >= quote.ma20 ? "上方" : "下方"}。价格位置只能辅助制定计划，不能单独决定买卖。</p>
         </section>
 
-        <section className="panel analysis-card themes-card">
-          <CardTitle number="04" title="题材信息" source="第三方候选 · 需要核验" />
+        <section className="panel analysis-card">
+          <CardTitle number="04" title="题材信息" source="候选信息 · 需核验" />
           <div className="theme-list">
-            <div><b>高端白酒</b><span className="confidence high">关联较强</span><p>来自公司主营业务，属于长期行业标签。</p></div>
-            <div><b>大消费</b><span className="confidence">关联一般</span><p>消费复苏预期可能影响市场关注度。</p></div>
-            <div><b>国企改革</b><span className="confidence">待核验</span><p>属于市场概念，需要结合公司公告确认。</p></div>
+            {explanation.themes.map((theme) => <div key={theme.name}><b>{theme.name}</b><span className="confidence high">{theme.confidence}</span><p>{theme.reason}</p></div>)}
           </div>
-          <p className="source-warning">题材不等于公司业绩，AI不会把市场概念自动认定为事实。</p>
+          <p className="source-warning">题材不等于业绩事实，请结合公司公告核验。</p>
         </section>
 
         <section className="panel analysis-card risks-card">
-          <CardTitle number="05" title="主要风险" source="按重要程度排序" />
-          <ol>
-            <li><span>1</span><div><b>需求与价格风险</b><p>高端白酒需求如果持续走弱，可能影响收入与渠道库存。</p></div></li>
-            <li><span>2</span><div><b>增长速度放缓</b><p>高基数下维持过去的高速增长会越来越困难。</p></div></li>
-            <li><span>3</span><div><b>估值波动</b><p>市场预期变化可能让股价先于业绩出现较大波动。</p></div></li>
-          </ol>
+          <CardTitle number="05" title="主要风险" source="按数据可见范围整理" />
+          <ol>{explanation.risks.map((risk, index) => <li key={risk}><span>{index + 1}</span><div><p>{risk}</p></div></li>)}</ol>
+          {explanation.missingInformation.length > 0 && <p className="source-warning">仍缺少：{explanation.missingInformation.join("、")}</p>}
         </section>
 
         <section className="panel analysis-card price-plan-card">
           <CardTitle number="06" title="价格参考" source="参考情景，不是买卖建议" />
           <div className="price-scenarios">
-            <div className="risk"><span>风险观察线</span><strong>¥1,455</strong><p>接近近期低点，跌破后需要重新检查原判断。</p></div>
-            <div><span>第一目标参考</span><strong>¥1,560</strong><p>接近前期密集成交区域，可考虑保护利润。</p></div>
-            <div><span>乐观情景</span><strong>¥1,625</strong><p>只有趋势保持较强时才继续观察。</p></div>
+            <div className="risk"><span>20日风险观察线</span><strong>{price(quote.support)}</strong><p>近期低点，跌破后重新检查原判断。</p></div>
+            <div><span>第一目标参考</span><strong>{price(quote.target1)}</strong><p>以当前价到风险线的距离计算1R。</p></div>
+            <div><span>第二目标参考</span><strong>{price(quote.target2)}</strong><p>以相同风险距离计算2R。</p></div>
           </div>
-          <div className="price-disclaimer">价格不能单独决定买卖。请先填写买入价、数量和最多能接受亏损多少钱。</div>
+          <div className="price-disclaimer">数据来源：<a href={analysis.source.url} target="_blank" rel="noreferrer">{analysis.source.name}</a> · 获取于 {new Date(analysis.source.fetchedAt).toLocaleString("zh-CN")}</div>
         </section>
       </div>
 
       <section className="decision-bar">
         <div><span className="eyebrow">现在由你决定</span><h3>这只股票下一步怎么处理？</h3></div>
-        <div><button className="soft-button" onClick={onWatch}>☆ {isWatched ? "已加入关注" : "加入关注"}</button><button className="soft-button" onClick={onSell}>记录卖出</button><button className="primary-button" onClick={onBuy}>我已买入</button></div>
+        <div><button className="soft-button" onClick={onWatch}>{watched ? "✓ 已关注" : "☆ 加入关注"}</button><button className="soft-button" onClick={onSell}>记录卖出</button><button className="primary-button" onClick={onBuy}>我已买入</button></div>
       </section>
     </div>
   );
 }
 
-function Watchlist({ onSearch }: { onSearch: () => void }) {
+function Metric({ label, value, suffix = "", moneyValue = false }: { label: string; value: number | null; suffix?: string; moneyValue?: boolean }) {
+  const content = value === null ? "暂无" : moneyValue ? price(value) : `${value >= 0 && suffix === "%" ? "+" : ""}${value.toFixed(1)}${suffix}`;
+  return <div><span>{label}</span><strong className={value !== null && value < 0 ? "down" : "neutral"}>{content}</strong><small>{value === null ? "数据不足" : "最新可用数据"}</small></div>;
+}
+
+function Watchlist({ items, quotes, onSearch, onAnalyze, onRemove }: {
+  items: WatchItem[];
+  quotes: Record<string, Analysis>;
+  onSearch: () => void;
+  onAnalyze: (symbol: string) => void;
+  onRemove: (symbol: string) => void;
+}) {
   return (
     <div className="page-content inner-page">
-      <section className="page-intro"><div><span className="eyebrow">先研究，再决定</span><h2>我的关注</h2><p>这里不是股票购物车。每只股票都要写下“什么条件出现才行动”。</p></div><button className="primary-button" onClick={onSearch}>＋ 查找股票</button></section>
-      <div className="watch-cards">
-        {watchlist.map((stock) => (
-          <article className="panel watch-card" key={stock.code}>
-            <div className="watch-card-top"><span className="stock-avatar">{stock.name.slice(0, 1)}</span><span className="watch-state">{stock.state}</span></div>
-            <h3>{stock.name}<small>{stock.code}</small></h3><p>{stock.industry}</p>
-            <div className="watch-price"><strong>¥{stock.price}</strong><span className={stock.change.startsWith("+") ? "up" : "down"}>{stock.change}</span></div>
-            <div className="watch-note"><span>我的观察条件</span><p>{stock.note}</p></div>
-            <button className="text-button">查看分析 →</button>
-          </article>
-        ))}
-      </div>
-      <section className="empty-tip"><span>小建议</span><p>关注列表控制在 10 只以内，会比收藏几十只股票更容易真正看懂。</p></section>
+      <section className="page-intro"><div><span className="eyebrow">先研究，再决定</span><h2>我的关注</h2><p>每只股票都保留一个明确的等待条件。</p></div><button className="primary-button" onClick={onSearch}>＋ 查找股票</button></section>
+      {items.length ? (
+        <div className="watch-cards">
+          {items.map((item) => {
+            const quote = quotes[item.symbol]?.quote;
+            return (
+              <article className="panel watch-card" key={item.symbol}>
+                <div className="watch-card-top"><span className="stock-avatar">{item.name.slice(0, 1)}</span><span className="watch-state">关注中</span></div>
+                <h3>{item.name}</h3><p>{item.symbol} · {quotes[item.symbol]?.stock.industry ?? "行业信息更新中"}</p>
+                <div className="watch-price"><strong>{quote ? price(quote.price) : "行情待更新"}</strong>{quote && <span className={quote.changePercent >= 0 ? "up" : "down"}>{quote.changePercent.toFixed(2)}%</span>}</div>
+                <div className="watch-note"><span>我的条件</span><p>{item.note || "等待自己的买入条件"}</p></div>
+                <div className="card-actions"><button className="text-button" onClick={() => onAnalyze(item.symbol)}>查看分析 →</button><button className="danger-link" onClick={() => onRemove(item.symbol)}>移出关注</button></div>
+              </article>
+            );
+          })}
+        </div>
+      ) : <div className="empty-state">关注列表还是空的。查一只股票后点击“加入关注”。</div>}
     </div>
   );
 }
 
-function Trades({ trades, onBuy, onSell }: { trades: Trade[]; onBuy: () => void; onSell: () => void }) {
+function Trades({ trades, reviews, onBuy, onSell, onReview }: {
+  trades: Trade[];
+  reviews: Review[];
+  onBuy: () => void;
+  onSell: () => void;
+  onReview: (symbol: string) => void;
+}) {
+  const portfolio = calculatePortfolio(trades);
+  const openSymbols = new Set(portfolio.positions.map((position) => position.symbol));
+  const reviewed = new Set(reviews.map((review) => review.symbol));
+  const closedCount = portfolio.winningSells + portfolio.losingSells;
+
   return (
     <div className="page-content inner-page">
-      <section className="page-intro"><div><span className="eyebrow">每笔只需约 30 秒</span><h2>交易记录</h2><p>记录真实买卖和当时原因，系统自动计算，卖出后再做简短复盘。</p></div><div className="intro-actions"><button className="soft-button" onClick={onSell}>记录卖出</button><button className="primary-button" onClick={onBuy}>＋ 记录买入</button></div></section>
+      <section className="page-intro"><div><span className="eyebrow">真实记录，才能真实复盘</span><h2>交易记录</h2><p>所有状态都按买卖数量计算，不再按列表位置猜测。</p></div><div className="intro-actions"><button className="soft-button" onClick={onSell}>记录卖出</button><button className="primary-button" onClick={onBuy}>＋ 记录买入</button></div></section>
       <div className="summary-strip">
-        <div><span>累计盈亏</span><strong className="up">+¥3,420</strong></div>
-        <div><span>交易胜率</span><strong>60%</strong></div>
-        <div><span>按计划操作</span><strong>75%</strong></div>
-        <div><span>最常见问题</span><strong className="warning-text">过早止盈</strong></div>
+        <div><span>交易记录</span><strong>{trades.length}</strong></div>
+        <div><span>当前持仓</span><strong>{portfolio.positions.length}</strong></div>
+        <div><span>已实现盈亏</span><strong className={portfolio.realizedCents >= 0 ? "up" : "down"}>{money(portfolio.realizedCents)}</strong></div>
+        <div><span>已卖出胜率</span><strong>{closedCount ? `${Math.round(portfolio.winningSells / closedCount * 100)}%` : "—"}</strong></div>
       </div>
-      <section className="panel trade-list">
-        <div className="trade-head"><span>日期 / 操作</span><span>股票</span><span>成交信息</span><span>当时原因</span><span>状态</span></div>
-        {trades.map((trade, index) => (
-          <article className="trade-row" key={trade.id}>
-            <span><b className={trade.side === "买入" ? "side buy" : "side sell"}>{trade.side}</b><small>{trade.date}</small></span>
-            <span><b>{trade.stock}</b><small>{trade.code}</small></span>
-            <span><b>¥{trade.price.toFixed(2)}</b><small>{trade.quantity} 股</small></span>
-            <span className="trade-reason">{trade.reason}</span>
-            <span>{index === 2 ? <button className="review-button">待复盘</button> : <i className="holding-label">持仓中</i>}</span>
+      {trades.length ? (
+        <section className="panel trade-list">
+          <div className="trade-head"><span>日期</span><span>股票</span><span>操作</span><span>原因</span><span>状态</span></div>
+          {trades.map((trade) => {
+            const hasReview = reviewed.has(trade.symbol);
+            return (
+              <div className="trade-row" key={trade.id}>
+                <span><b>{trade.tradeDate}</b><small>{trade.quantity}股</small></span>
+                <span><b>{trade.name}</b><small>{trade.symbol}</small></span>
+                <span><b className={`side ${trade.side === "买入" ? "buy" : "sell"}`}>{trade.side}</b><small>{money(trade.priceCents)}</small></span>
+                <span className="trade-reason">{trade.reason}</span>
+                <span>
+                  {openSymbols.has(trade.symbol)
+                    ? <i className="holding-label">持仓中</i>
+                    : hasReview
+                      ? <i className="holding-label complete">已复盘</i>
+                      : <button className="review-button" onClick={() => onReview(trade.symbol)}>去复盘</button>}
+                </span>
+              </div>
+            );
+          })}
+        </section>
+      ) : <div className="empty-state">还没有交易记录。保存成功后刷新页面也不会丢失。</div>}
+    </div>
+  );
+}
+
+function Settings({ status, alerts, section, onSection, onDisable, onNotifications }: {
+  status: Status | null;
+  alerts: AlertRule[];
+  section: string | null;
+  onSection: (section: string | null) => void;
+  onDisable: (id: number) => void;
+  onNotifications: () => void;
+}) {
+  const notificationState = typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported";
+  const cards = [
+    { id: "ai", icon: "AI", title: "AI分析", text: status?.deepseekConfigured ? "DeepSeek已由服务端安全配置。" : "当前未配置DeepSeek，使用基于真实数据的自动解释。", state: status?.deepseekConfigured ? "已连接" : "自动模式" },
+    { id: "data", icon: "数", title: "数据来源", text: `${status?.dataSource ?? "公开行情"}。结果显示获取时间，失败时不会伪装成最新。`, state: "无需账号" },
+    { id: "alerts", icon: "醒", title: "提醒管理", text: `${status?.reminderMode ?? "页面打开期间检查"}。重要止损仍需在券商App重复设置。`, state: `${alerts.filter((item) => item.enabled).length}条启用` },
+    { id: "privacy", icon: "私", title: "隐私与备份", text: "交易数据保存在私有数据库中，可随时下载JSON备份。", state: "默认私有" },
+  ];
+
+  return (
+    <div className="page-content inner-page">
+      <section className="page-intro"><div><span className="eyebrow">所有边界都说清楚</span><h2>设置</h2><p>这里展示真实连接状态，不再用演示文案冒充功能。</p></div></section>
+      <div className="settings-grid">
+        {cards.map((card) => (
+          <article className="panel setting-card" key={card.id}>
+            <span className={`setting-icon ${card.id}`}>{card.icon}</span>
+            <div className="setting-copy"><h3>{card.title}</h3><p>{card.text}</p><span className="connected">● {card.state}</span></div>
+            <button className="text-button" onClick={() => onSection(section === card.id ? null : card.id)}>{section === card.id ? "收起" : "查看"}</button>
           </article>
         ))}
+      </div>
+      {section === "ai" && <section className="panel settings-detail"><h3>AI连接状态</h3><p>{status?.deepseekConfigured ? "DeepSeek API密钥只在服务端读取，浏览器无法看到。" : "没有DeepSeek密钥时，系统不会假装调用AI，而是明确显示“自动解释”。"}</p></section>}
+      {section === "data" && <section className="panel settings-detail"><h3>数据原则</h3><p>行情来自公开接口，可能延迟或暂时不可用。每次分析都记录来源、行情时间和获取时间；财务数据缺失时显示“暂无”，不会补数字。</p></section>}
+      {section === "alerts" && (
+        <section className="panel settings-detail">
+          <div className="settings-detail-head"><div><h3>提醒管理</h3><p>浏览器权限：{notificationState}</p></div><button className="primary-button" onClick={onNotifications}>申请浏览器通知</button></div>
+          {alerts.length ? alerts.map((alert) => <div className="alert-row" key={alert.id}><span><b>{alert.name} · {alert.type}</b><small>{money(alert.targetPriceCents)} · {alert.enabled ? "启用" : "已停用"}</small></span>{alert.enabled && <button className="danger-link" onClick={() => onDisable(alert.id)}>停用</button>}</div>) : <p>暂无提醒规则。</p>}
+        </section>
+      )}
+      {section === "privacy" && <section className="panel settings-detail"><h3>导出个人数据</h3><p>备份包含交易、关注、提醒与复盘，不包含任何API密钥。</p><a className="primary-button download-link" href="/api/export">下载JSON备份</a></section>}
+      <section className="panel boundary-card">
+        <span>产品边界</span>
+        <div><p>✓ 不自动交易</p><p>✓ 不荐股</p><p>✓ 不承诺提醒必达</p><p>✓ 数据缺失会明说</p><p>✓ 最终决定由你作出</p><p>✓ 重要止损在券商App重复设置</p></div>
       </section>
     </div>
   );
 }
 
-function Settings() {
+function TradeModal({ mode, stock, positions, onClose, onSubmit }: {
+  mode: TradeMode;
+  stock: { code?: string; symbol?: string; name: string } | null;
+  positions: ReturnType<typeof calculatePortfolio>["positions"];
+  onClose: () => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
+}) {
+  const firstInput = useRef<HTMLInputElement>(null);
+  const defaultPosition = mode === "sell" ? positions[0] : null;
+  const symbol = stock?.code ?? stock?.symbol ?? defaultPosition?.symbol ?? "";
+  const name = stock?.name ?? defaultPosition?.name ?? "";
+
+  useEffect(() => {
+    firstInput.current?.focus();
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [onClose]);
+
   return (
-    <div className="page-content inner-page settings-page">
-      <section className="page-intro"><div><span className="eyebrow">保持简单，也要保护数据</span><h2>设置</h2><p>真实数据与 AI 接口都只在服务端处理，不会把密钥放进浏览器。</p></div></section>
-      <div className="settings-grid">
-        <section className="panel setting-card">
-          <div className="setting-icon ai">AI</div>
-          <div className="setting-copy"><h3>DeepSeek 分析</h3><p>把财务、业绩和风险翻译成通俗语言。密钥必须通过服务端安全环境配置。</p><span className="not-connected">● 尚未连接</span></div>
-          <button className="soft-button">查看配置说明</button>
-        </section>
-        <section className="panel setting-card">
-          <div className="setting-icon data">数</div>
-          <div className="setting-copy"><h3>A股公开数据</h3><p>计划使用无需账号的公开数据服务，并保存最后更新时间；获取失败时不冒充最新数据。</p><span className="demo-status">● 当前为演示数据</span></div>
-          <button className="soft-button">数据原则</button>
-        </section>
-        <section className="panel setting-card">
-          <div className="setting-icon alert">铃</div>
-          <div className="setting-copy"><h3>价格提醒</h3><p>网站提醒仅作参考。重要止损必须同时在券商 App 中设置，避免网络或数据延迟。</p><span className="connected">● 浏览器提醒已开启</span></div>
-          <button className="soft-button">管理提醒</button>
-        </section>
-        <section className="panel setting-card">
-          <div className="setting-icon private">锁</div>
-          <div className="setting-copy"><h3>隐私与备份</h3><p>你的交易数据默认私有。建议定期导出备份，不上传券商账号和密码。</p><span className="connected">● 私有访问</span></div>
-          <button className="soft-button">导出数据</button>
-        </section>
-      </div>
-      <section className="panel boundary-card"><span>产品边界</span><div><p>✓ 帮你看懂事实</p><p>✓ 帮你记录和复盘</p><p>✓ 按你确认的价格提醒</p><p>× 不荐股</p><p>× 不自动交易</p><p>× 不保证提醒必达</p></div></section>
+    <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="modal" role="dialog" aria-modal="true" aria-labelledby="trade-modal-title">
+        <header><div><span className="eyebrow">{mode === "buy" ? "写下当时的决定" : "记录真实的退出"}</span><h2 id="trade-modal-title">记录{mode === "buy" ? "买入" : "卖出"}</h2></div><button onClick={onClose} aria-label="关闭">×</button></header>
+        <form onSubmit={onSubmit}>
+          <div className="form-grid">
+            <label>股票代码<input ref={firstInput} name="symbol" defaultValue={symbol} pattern="\d{6}" required /></label>
+            <label>股票名称<input name="name" defaultValue={name} required maxLength={30} /></label>
+            <label>{mode === "buy" ? "买入" : "卖出"}价格<input name="price" type="number" min="0.01" step="0.01" required /></label>
+            <label>数量（股）<input name="quantity" type="number" min="1" step="1" required /></label>
+            <label>交易日期<input name="tradeDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></label>
+            <label>总费用（可选）<input name="fee" type="number" min="0" step="0.01" defaultValue="0" /></label>
+            {mode === "buy" && <label>最多接受亏损（元）<input name="maxLoss" type="number" min="0" step="0.01" placeholder="用于计算止损和1R/2R提醒" /></label>}
+          </div>
+          <fieldset><legend>为什么{mode === "buy" ? "买" : "卖"}？</legend><div className="reason-options">{(mode === "buy" ? buyReasons : sellReasons).map((reason) => <label key={reason}><input className="visually-hidden" type="radio" name="reason" value={reason} required /><span>{reason}</span></label>)}</div></fieldset>
+          {mode === "buy" && <div className="calculation-tip">填写最大亏损后，系统会按“买入价 − 最大亏损 ÷ 数量”创建止损，并生成1R、2R止盈提醒。由你确认和执行。</div>}
+          <div className="modal-actions"><button type="button" onClick={onClose}>取消</button><button className="primary-button" type="submit">确认保存</button></div>
+        </form>
+      </section>
     </div>
   );
 }
 
-function CardTitle({ number, title, source }: { number: string; title: string; source: string }) {
-  return <header className="card-title"><span>{number}</span><div><h3>{title}</h3><p>{source}</p></div></header>;
+function ReviewModal({ symbol, trades, onClose, onSaved }: {
+  symbol: string;
+  trades: Trade[];
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const firstInput = useRef<HTMLTextAreaElement>(null);
+  const related = trades.filter((trade) => trade.symbol === symbol);
+  const name = related[0]?.name ?? symbol;
+  const buyReason = related.find((trade) => trade.side === "买入")?.reason ?? "";
+  const sellReason = [...related].reverse().find((trade) => trade.side === "卖出")?.reason ?? "";
+  const result = calculatePortfolio(related).realizedCents / 100;
+
+  useEffect(() => {
+    firstInput.current?.focus();
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [onClose]);
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const data = new FormData(event.currentTarget);
+    await jsonRequest("/api/reviews", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        symbol,
+        name,
+        buyReason: data.get("buyReason"),
+        sellReason: data.get("sellReason"),
+        followedPlan: data.get("followedPlan") === "yes",
+        lesson: data.get("lesson"),
+        result,
+      }),
+    });
+    await onSaved();
+  }
+
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="modal review-modal" role="dialog" aria-modal="true" aria-labelledby="review-title">
+        <header><div><span className="eyebrow">只改进一件事</span><h2 id="review-title">复盘 {name}</h2></div><button onClick={onClose} aria-label="关闭">×</button></header>
+        <form onSubmit={save}>
+          <label>为什么买？<textarea ref={firstInput} name="buyReason" defaultValue={buyReason} required maxLength={300} /></label>
+          <label>为什么卖？<textarea name="sellReason" defaultValue={sellReason} required maxLength={300} /></label>
+          <fieldset><legend>有没有按计划执行？</legend><div className="reason-options"><label><input className="visually-hidden" type="radio" name="followedPlan" value="yes" required /><span>有，按计划</span></label><label><input className="visually-hidden" type="radio" name="followedPlan" value="no" required /><span>没有</span></label></div></fieldset>
+          <label>下一次只改进哪一件事？<textarea name="lesson" required maxLength={500} placeholder="例如：触发止损后当天执行，不再向下移动止损线。" /></label>
+          <div className="calculation-tip">程序按成交记录计算本次已实现盈亏：{price(result)}</div>
+          <div className="modal-actions"><button type="button" onClick={onClose}>取消</button><button className="primary-button" type="submit">保存复盘</button></div>
+        </form>
+      </section>
+    </div>
+  );
 }
 
 function PanelHeader({ title, subtitle }: { title: string; subtitle: string }) {
   return <header className="panel-header"><div><h3>{title}</h3><p>{subtitle}</p></div></header>;
 }
 
-function TradeModal({ mode, onClose, onSubmit }: { mode: Exclude<Modal, null>; onClose: () => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
-  const isBuy = mode === "buy";
-  const reasons = isBuy
-    ? ["看好公司业绩", "看好行业题材", "价格回调", "突破买入", "朋友或网络推荐", "担心错过", "冲动买入", "其他"]
-    : ["达到止盈目标", "触发止损", "买入逻辑失效", "害怕利润回吐", "临时需要资金", "看到其他股票", "不知道为什么卖", "其他"];
-  return (
-    <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-        <header><div><span className="eyebrow">{isBuy ? "只填五项" : "卖出后会生成复盘"}</span><h2 id="modal-title">记录{isBuy ? "买入" : "卖出"}</h2></div><button onClick={onClose} aria-label="关闭">×</button></header>
-        <form onSubmit={onSubmit}>
-          <div className="form-grid">
-            <label>股票名称<input name="stock" defaultValue="贵州茅台" required /></label>
-            <label>股票代码<input name="code" defaultValue="600519" required /></label>
-            <label>{isBuy ? "买入" : "卖出"}价格<input name="price" type="number" step="0.01" placeholder="0.00" required /></label>
-            <label>{isBuy ? "买入" : "卖出"}数量<input name="quantity" type="number" step="100" placeholder="100" required /></label>
-            <label>{isBuy ? "买入" : "卖出"}日期<input name="date" type="date" defaultValue="2026-07-29" required /></label>
-            {isBuy && <label>最多能接受亏损<input name="maxLoss" type="number" placeholder="例如 1000 元" /></label>}
-          </div>
-          <fieldset><legend>为什么{isBuy ? "买" : "卖"}？</legend><div className="reason-options">{reasons.map((reason, index) => <label key={reason}><input type="radio" name="reason" value={reason} defaultChecked={index === 0} /><span>{reason}</span></label>)}</div></fieldset>
-          {isBuy && <div className="calculation-tip"><b>保存后系统会帮你算：</b>持仓成本、最大亏损比例，以及 1R / 2R 止盈参考。</div>}
-          <div className="modal-actions"><button type="button" onClick={onClose}>取消</button><button className="primary-button" type="submit">保存{isBuy ? "买入" : "卖出"}记录</button></div>
-        </form>
-      </section>
-    </div>
-  );
+function CardTitle({ number, title, source }: { number: string; title: string; source: string }) {
+  return <header className="card-title"><span>{number}</span><div><h3>{title}</h3><p>{source}</p></div></header>;
 }
