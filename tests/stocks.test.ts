@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseStockSuggestions, resolveStock } from "../lib/stocks";
+import { isEtfCode, parseStockSuggestions, resolveStock } from "../lib/stocks";
 
 test("本地常用股票名称仍可直接解析", () => {
   assert.deepEqual(resolveStock("贵州茅台"), { code: "600519", name: "贵州茅台" });
@@ -18,4 +18,9 @@ test("实时搜索只保留内地A股", () => {
 
 test("没有搜索结果时返回空列表", () => {
   assert.deepEqual(parseStockSuggestions('v_hint="N";'), []);
+});
+
+test("159583识别为通信设备主题ETF", () => {
+  assert.equal(isEtfCode("159583"), true);
+  assert.deepEqual(resolveStock("159583"), { code: "159583", name: "富国中证通信设备主题ETF" });
 });

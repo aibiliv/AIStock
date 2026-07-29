@@ -107,14 +107,14 @@ export async function POST(request: Request) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
-    const payload = await request.json() as { query?: string; saveHistory?: boolean };
+    const payload = await request.json() as { query?: string; saveHistory?: boolean; explain?: boolean };
     const query = payload.query?.trim() ?? "";
     if (!query || query.length > 30) {
       return Response.json({ error: "请输入有效的股票代码或名称" }, { status: 400 });
     }
 
     const facts = await analyzeStockData(query);
-    const analysis = facts.stock.instrumentType === "etf"
+    const analysis = payload.explain === false || facts.stock.instrumentType === "etf"
       ? { mode: "automatic" as const, explanation: automaticExplanation(facts) }
       : await getDeepSeekExplanation(facts);
     const result = { ...facts, ...analysis };
