@@ -609,6 +609,7 @@ function Home({
         />
       ) : (
         <>
+          {!trades.length && <BeginnerStart onBuy={onBuy} />}
           <SectorHeatmap />
           <section className="quick-title"><div><span className="eyebrow">今天只处理重要的事</span><h3>我的持仓</h3></div><button onClick={() => onNavigate("trades")}>查看交易记录 →</button></section>
           {portfolio.positions.length ? (
@@ -640,6 +641,16 @@ function Home({
             <div><span>最近改进规则</span><strong className="summary-lesson">{reviews[0]?.lesson ?? "暂无"}</strong></div>
           </div>
 
+          {!!trades.length && (
+            <BehaviorCoach
+              trades={trades}
+              completedCycles={completedCycles}
+              reviews={reviews}
+              pendingReviews={pendingReviews}
+              onReview={onReview}
+            />
+          )}
+
           <div className="home-grid">
             <section className="panel reminder-panel">
               <PanelHeader title="价格提醒" subtitle="页面打开期间每5分钟检查" />
@@ -670,6 +681,103 @@ function Home({
         </>
       )}
     </div>
+  );
+}
+
+function BeginnerStart({ onBuy }: { onBuy: () => void }) {
+  const [showExample, setShowExample] = useState(false);
+
+  return (
+    <section className="panel beginner-start">
+      <div className="beginner-copy">
+        <span className="eyebrow">第一次使用，从这里开始</span>
+        <h3>完成一轮真实记录，复盘才有价值。</h3>
+        <p>不用一次学会所有指标。先按三个步骤走完一笔交易，软件会开始总结你的行为。</p>
+      </div>
+      <div className="beginner-steps" aria-label="新手三步上手">
+        <div><b>1</b><span><strong>先查清楚</strong><small>输入股票，读公司、风险和缺失信息。</small></span></div>
+        <div><b>2</b><span><strong>买前写计划</strong><small>记录买入理由和最多接受亏损。</small></span></div>
+        <div><b>3</b><span><strong>清仓后复盘</strong><small>只回答为什么买、为什么卖、是否按计划。</small></span></div>
+      </div>
+      <div className="beginner-actions">
+        <button className="primary-button" onClick={onBuy}><Plus size={16} weight="bold" />记录第一笔买入</button>
+        <button className="text-button" onClick={() => setShowExample((value) => !value)}>
+          {showExample ? "收起示例 ↑" : "先看一份完整示例 →"}
+        </button>
+      </div>
+      {showExample && (
+        <div className="review-example">
+          <div><span>示例结果</span><strong className="down">−8.6%</strong></div>
+          <dl>
+            <div><dt>为什么买？</dt><dd>朋友推荐后担心错过，没有先核验风险。</dd></div>
+            <div><dt>为什么卖？</dt><dd>跌破原定风险线后又拖了两天，亏损继续扩大。</dd></div>
+            <div><dt>按计划了吗？</dt><dd>没有。知道退出条件，但没有当天执行。</dd></div>
+            <div><dt>下次只改一件事</dt><dd>买入前写好退出条件；触发后当天执行，不向下移动。</dd></div>
+          </dl>
+          <p>示例只展示复盘方法，不代表任何真实股票或收益。</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function BehaviorCoach({
+  trades,
+  completedCycles,
+  reviews,
+  pendingReviews,
+  onReview,
+}: {
+  trades: Trade[];
+  completedCycles: TradeCycle[];
+  reviews: Review[];
+  pendingReviews: TradeCycle[];
+  onReview: (cycleEndTradeId: number) => void;
+}) {
+  const buyTrades = trades.filter((trade) => trade.side === "买入");
+  const plannedBuys = buyTrades.filter((trade) => (trade.maxLossCents ?? 0) > 0);
+  const reasonCounts = new Map<string, number>();
+  for (const trade of buyTrades) {
+    reasonCounts.set(trade.reason, (reasonCounts.get(trade.reason) ?? 0) + 1);
+  }
+  const topReason = [...reasonCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+
+  const lossReasonCounts = new Map<string, number>();
+  for (const cycle of completedCycles.filter((item) => item.realizedCents < 0)) {
+    for (const trade of cycle.trades.filter((item) => item.side === "买入")) {
+      lossReasonCounts.set(trade.reason, (lossReasonCounts.get(trade.reason) ?? 0) + 1);
+    }
+  }
+  const lossPattern = [...lossReasonCounts.entries()].sort((a, b) => b[1] - a[1])[0];
+  const followedPlans = reviews.filter((review) => review.followedPlan).length;
+
+  let advice = reviews[0]?.lesson ?? "继续记录，等完成一轮交易后再总结，不凭一笔输赢下结论。";
+  if (plannedBuys.length < buyTrades.length) {
+    advice = "下一次买入前，先写下最多接受亏损；没有退出条件，就先不下单。";
+  } else if (pendingReviews.length) {
+    advice = "完成最近一笔待复盘，只找一个最值得改的动作。";
+  } else if (reviews.some((review) => !review.followedPlan)) {
+    advice = reviews.find((review) => !review.followedPlan)?.lesson ?? "下一笔交易只检查一件事：是否按原计划执行。";
+  }
+
+  return (
+    <section className="panel behavior-coach">
+      <div className="coach-head">
+        <div><span className="eyebrow">你的记录正在说什么</span><h3>行为复盘</h3></div>
+        <p>样本少时只描述事实，不把偶然输赢当成规律。</p>
+      </div>
+      <div className="behavior-grid">
+        <div><span>买入计划覆盖</span><strong>{plannedBuys.length}/{buyTrades.length}</strong><small>填写了最多接受亏损</small></div>
+        <div><span>最常见买入原因</span><strong>{topReason?.[0] ?? "暂无"}</strong><small>{topReason ? `出现 ${topReason[1]} 次` : "继续记录后生成"}</small></div>
+        <div><span>亏损交易共性</span><strong>{lossPattern?.[0] ?? "暂无样本"}</strong><small>{lossPattern ? `${lossPattern[1]} 次亏损周期涉及此原因` : "完成亏损交易后再判断"}</small></div>
+        <div><span>按计划执行</span><strong>{reviews.length ? `${Math.round(followedPlans / reviews.length * 100)}%` : "暂无"}</strong><small>{reviews.length ? `${followedPlans}/${reviews.length} 次复盘` : "完成清仓复盘后生成"}</small></div>
+      </div>
+      <div className="weekly-advice">
+        <span>本周只改这一件事</span>
+        <p>{advice}</p>
+        {!!pendingReviews.length && <button onClick={() => onReview(pendingReviews[0].endTradeId!)}>现在去复盘 →</button>}
+      </div>
+    </section>
   );
 }
 
@@ -823,11 +931,11 @@ function AnalysisView({ analysis, watched, canSell, onWatch, onBuy, onSell }: {
           </div>
           <div className="metric-row">
             <Metric label="总市值" value={financials.marketCap} marketCapValue />
-            <Metric label="市盈率" value={financials.pe} suffix="" />
-            <Metric label="市净率" value={financials.pb} suffix="" />
+            <Metric label="市盈率" value={financials.pe} suffix="" help="股价相对公司利润的倍数" />
+            <Metric label="市净率" value={financials.pb} suffix="" help="股价相对净资产的倍数" />
           </div>
           <div className="metric-row">
-            <Metric label="ROE" value={financials.roe} percentValue />
+            <Metric label="ROE" value={financials.roe} percentValue help="公司使用股东资金赚钱的能力" />
             <Metric label="毛利率" value={financials.grossMargin} percentValue />
             <Metric label="净利率" value={financials.profitMargin} percentValue />
           </div>
@@ -845,9 +953,9 @@ function AnalysisView({ analysis, watched, canSell, onWatch, onBuy, onSell }: {
         <section className="panel analysis-card">
           <CardTitle number="03" title="价格位置" source="程序计算" />
           <div className="metric-row">
-            <Metric label="20日均线" value={quote.ma20} moneyValue />
+            <Metric label="20日均线" value={quote.ma20} moneyValue help="近20个交易日收盘价的平均值" />
             <Metric label="近60日高点" value={quote.recentHigh} moneyValue />
-            <Metric label="平均日波动" value={quote.volatility} suffix="%" />
+            <Metric label="平均日波动" value={quote.volatility} suffix="%" help="近期每天涨跌幅度的平均水平" />
           </div>
           <p className="card-note">价格位于20日均线{quote.price >= quote.ma20 ? "上方" : "下方"}。价格位置只能辅助制定计划，不能单独决定买卖。</p>
         </section>
@@ -868,6 +976,7 @@ function AnalysisView({ analysis, watched, canSell, onWatch, onBuy, onSell }: {
 
         <section className="panel analysis-card price-plan-card">
           <CardTitle number="06" title="价格参考" source="参考情景，不是买卖建议" />
+          <p className="risk-unit-note"><b>先看风险，再看目标：</b>1R就是当前价到风险观察线的距离，2R是这段距离的两倍。</p>
           <div className="price-scenarios">
             <div className="risk"><span>20日风险观察线</span><strong>{price(quote.support)}</strong><p>近期低点，跌破后重新检查原判断。</p></div>
             <div><span>第一目标参考</span><strong>{price(quote.target1)}</strong><p>以当前价到风险线的距离计算1R。</p></div>
@@ -1090,13 +1199,14 @@ function formatMarketCap(value: number) {
   return value.toLocaleString("zh-CN");
 }
 
-function Metric({ label, value, suffix = "", moneyValue = false, marketCapValue = false, percentValue = false }: {
+function Metric({ label, value, suffix = "", moneyValue = false, marketCapValue = false, percentValue = false, help }: {
   label: string;
   value: number | null;
   suffix?: string;
   moneyValue?: boolean;
   marketCapValue?: boolean;
   percentValue?: boolean;
+  help?: string;
 }) {
   let content = "暂无";
   if (value !== null) {
@@ -1105,7 +1215,7 @@ function Metric({ label, value, suffix = "", moneyValue = false, marketCapValue 
     else if (moneyValue) content = price(value);
     else content = `${value >= 0 && suffix === "%" ? "+" : ""}${value.toFixed(1)}${suffix}`;
   }
-  return <div><span>{label}</span><strong className={value !== null && value < 0 ? "down" : "neutral"}>{content}</strong><small>{value === null ? "数据不足" : "最新可用数据"}</small></div>;
+  return <div><span>{label}</span><strong className={value !== null && value < 0 ? "down" : "neutral"}>{content}</strong><small>{help ?? (value === null ? "数据不足" : "最新可用数据")}</small></div>;
 }
 
 function Watchlist({ items, quotes, onSearch, onAnalyze, onRemove, onSaved }: {
@@ -1320,10 +1430,15 @@ function TradeModal({ mode, stock, positions, onClose, onSubmit }: {
             <label>数量（股）<input name="quantity" type="number" min="1" step="1" required /></label>
             <label>交易日期<input name="tradeDate" type="date" defaultValue={localIsoDate()} max={localIsoDate()} required /></label>
             <label>总费用（可选）<input name="fee" type="number" min="0" step="0.01" defaultValue="0" /></label>
-            {mode === "buy" && <label>最多接受亏损（元）<input name="maxLoss" type="number" min="0" step="0.01" placeholder="用于计算止损和1R/2R提醒" /></label>}
+            {mode === "buy" && (
+              <label>最多接受亏损（元）
+                <input name="maxLoss" type="number" min="0" step="0.01" placeholder="例如 500" />
+                <small className="field-help">如果判断错了，这笔交易最多愿意亏多少钱？请填你能实际执行的金额。</small>
+              </label>
+            )}
           </div>
           <fieldset><legend>为什么{mode === "buy" ? "买" : "卖"}？</legend><div className="reason-options">{(mode === "buy" ? buyReasons : sellReasons).map((reason) => <label key={reason}><input className="visually-hidden" type="radio" name="reason" value={reason} required /><span>{reason}</span></label>)}</div></fieldset>
-          {mode === "buy" && <div className="calculation-tip">填写最大亏损后，系统会按“买入价 − 最大亏损 ÷ 数量”创建止损，并生成1R、2R止盈提醒。由你确认和执行。</div>}
+          {mode === "buy" && <div className="calculation-tip"><b>1R是什么？</b>它是你愿意承担的这笔亏损。系统会据此计算风险观察线和1R、2R参考目标；它们不是收益预测，仍由你确认和执行。</div>}
           <div className="modal-actions"><button type="button" onClick={onClose}>取消</button><button className="primary-button" type="submit" disabled={saving}>{saving ? "正在保存…" : "确认保存"}</button></div>
         </form>
       </section>
