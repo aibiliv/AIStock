@@ -42,6 +42,12 @@ export type TradeCycle = {
   realizedCents: number;
 };
 
+export type InvalidSell = {
+  symbol: string;
+  availableQuantity: number;
+  requestedQuantity: number;
+};
+
 export type MarketPeriod = "day" | "week" | "month";
 
 export type MarketBar = {
@@ -107,7 +113,9 @@ export function calculatePortfolio(trades: Trade[]): PortfolioSummary {
     if (saleProfitMillis < 0) losingSells += 1;
 
     current.quantity -= soldQuantity;
-    current.costMillis = Math.max(0, current.costMillis - current.averageCostMillis * soldQuantity);
+    current.costMillis = current.quantity > 0
+      ? Math.max(0, current.costMillis - current.averageCostMillis * soldQuantity)
+      : 0;
     current.costCents = Math.round(current.costMillis / 10);
     current.averageCostMillis = current.quantity > 0
       ? Math.round(current.costMillis / current.quantity)
@@ -122,6 +130,28 @@ export function calculatePortfolio(trades: Trade[]): PortfolioSummary {
     winningSells,
     losingSells,
   };
+}
+
+export function findInvalidSell(trades: Trade[]): InvalidSell | null {
+  const quantities = new Map<string, number>();
+
+  for (const trade of orderedTrades(trades)) {
+    const availableQuantity = quantities.get(trade.symbol) ?? 0;
+    if (trade.side === "卖出") {
+      if (trade.quantity > availableQuantity) {
+        return {
+          symbol: trade.symbol,
+          availableQuantity,
+          requestedQuantity: trade.quantity,
+        };
+      }
+      quantities.set(trade.symbol, availableQuantity - trade.quantity);
+      continue;
+    }
+    quantities.set(trade.symbol, availableQuantity + trade.quantity);
+  }
+
+  return null;
 }
 
 export function buildTradeCycles(trades: Trade[]): TradeCycle[] {

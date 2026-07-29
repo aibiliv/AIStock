@@ -4,6 +4,7 @@ import {
   aggregateMarketHistory,
   buildTradeCycles,
   calculatePortfolio,
+  findInvalidSell,
   isIsoDate,
   isStockCode,
   localIsoDate,
@@ -50,6 +51,31 @@ test("超出持仓数量的卖出不会制造负持仓", () => {
   ]);
   assert.equal(summary.positions.length, 0);
   assert.equal(summary.realizedCents, -20_000);
+});
+
+test("按日期补录的卖出不能破坏后续交易的可卖数量", () => {
+  const trades: Trade[] = [
+    trade({ id: 1, side: "买入", quantity: 100, tradeDate: "2026-07-10" }),
+    trade({ id: 2, side: "卖出", quantity: 100, tradeDate: "2026-07-20" }),
+    trade({ id: 3, side: "卖出", quantity: 50, tradeDate: "2026-07-15" }),
+  ];
+
+  assert.deepEqual(findInvalidSell(trades), {
+    symbol: "600519",
+    availableQuantity: 50,
+    requestedQuantity: 100,
+  });
+});
+
+test("完全卖出后不会把毫厘舍入残差带入下一次持仓", () => {
+  const result = calculatePortfolio([
+    trade({ id: 1, side: "买入", priceCents: 33, priceMillis: 334, quantity: 3 }),
+    trade({ id: 2, side: "卖出", priceCents: 33, priceMillis: 334, quantity: 3 }),
+    trade({ id: 3, side: "买入", priceCents: 50, priceMillis: 500, quantity: 1 }),
+  ]);
+
+  assert.equal(result.positions[0].costMillis, 500);
+  assert.equal(result.positions[0].averageCostMillis, 500);
 });
 
 test("金额和基础字段验证保持严格", () => {
