@@ -1,9 +1,9 @@
 import { Dashboard } from "./Dashboard";
-import { requireAuthenticatedUser, signOutPath } from "../lib/auth";
+import { requireAuthenticatedUser } from "../lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const user = await requireAuthenticatedUser();
-  return <Dashboard user={user} signOutUrl={signOutPath()} />;
+  return <Dashboard user={user} signOutUrl="/api/auth/logout" />;
 }
