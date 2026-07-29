@@ -39,9 +39,18 @@ test("异动榜按涨跌幅绝对值排序并保留涨跌方向", () => {
     move("通信", -2.4, 800),
     move("汽车", 0.8, 700),
     move("传媒", 4.2, 200),
+    move("医药", -1.1, 600),
+    move("军工", 1.6, 500),
+    move("消费", -0.7, 1_000),
+    move("钢铁", 0.5, 300),
+    move("电力", -0.2, 200),
   ]);
 
-  assert.deepEqual(result.map((item) => item.name), ["传媒", "煤炭", "通信", "银行", "电子"]);
+  assert.deepEqual(
+    result.map((item) => item.name),
+    ["传媒", "煤炭", "通信", "银行", "军工", "电子", "医药", "汽车", "消费", "钢铁"],
+  );
+  assert.equal(result.length, 10);
   assert.equal(result[1].changePercent, -3.1);
 });
 

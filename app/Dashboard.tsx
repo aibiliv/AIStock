@@ -885,7 +885,7 @@ function SectorHeatmap() {
     <section className="panel sector-heatmap-card" aria-labelledby="sector-heatmap-title">
       <div className="sector-heatmap-head">
         <div>
-          <span className="eyebrow">{data?.basis === "etf-proxy" ? "行业主题ETF代理 · 前5名" : "板块异动 · 前5名"}</span>
+          <span className="eyebrow">{data?.basis === "etf-proxy" ? "行业主题ETF代理 · 前10名" : "板块异动 · 前10名"}</span>
           <h3 id="sector-heatmap-title">板块异动热力图</h3>
           <p>以代表性行业ETF观察板块强弱，按涨跌幅绝对值排序。</p>
         </div>
