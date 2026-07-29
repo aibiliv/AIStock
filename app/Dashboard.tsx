@@ -1,6 +1,20 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowsLeftRight,
+  CheckCircle,
+  GearSix,
+  House,
+  MagnifyingGlass,
+  Moon,
+  Plus,
+  ShieldCheck,
+  SignOut,
+  Star,
+  Sun,
+  type Icon,
+} from "@phosphor-icons/react";
 import { buildTradeCycles, calculatePortfolio, localIsoDate, type Trade, type TradeCycle } from "../lib/domain";
 
 type View = "home" | "watchlist" | "trades" | "settings";
@@ -103,11 +117,11 @@ type User = {
   email: string;
 };
 
-const navItems: Array<{ id: View; label: string; icon: string }> = [
-  { id: "home", label: "首页", icon: "⌂" },
-  { id: "watchlist", label: "关注", icon: "☆" },
-  { id: "trades", label: "交易记录", icon: "↔" },
-  { id: "settings", label: "设置", icon: "⚙" },
+const navItems: Array<{ id: View; label: string; icon: Icon }> = [
+  { id: "home", label: "首页", icon: House },
+  { id: "watchlist", label: "关注", icon: Star },
+  { id: "trades", label: "交易记录", icon: ArrowsLeftRight },
+  { id: "settings", label: "设置", icon: GearSix },
 ];
 
 const buyReasons = ["看好公司业绩", "看好行业题材", "价格回调", "突破买入", "朋友或网络推荐", "担心错过", "冲动买入", "其他"];
@@ -130,6 +144,7 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
 
 export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string }) {
   const [view, setView] = useState<View>("home");
+  const [darkMode, setDarkMode] = useState(false);
   const [query, setQuery] = useState("");
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [quotes, setQuotes] = useState<Record<string, Analysis>>({});
@@ -146,6 +161,19 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
   const notified = useRef(new Set<number>());
+
+  useEffect(() => {
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    setDarkMode(prefersDark);
+    document.documentElement.dataset.theme = prefersDark ? "dark" : "light";
+  }, []);
+
+  function toggleTheme() {
+    setDarkMode((current) => {
+      document.documentElement.dataset.theme = current ? "light" : "dark";
+      return !current;
+    });
+  }
 
   const portfolio = useMemo(() => calculatePortfolio(trades), [trades]);
   const tradeCycles = useMemo(() => buildTradeCycles(trades), [trades]);
@@ -381,11 +409,14 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
           <span><strong>我的股票助手</strong><small>看懂 · 记录 · 复盘</small></span>
         </button>
         <nav aria-label="主导航">
-          {navItems.map((item) => (
-            <button key={item.id} className={view === item.id ? "nav-item active" : "nav-item"} onClick={() => setView(item.id)}>
-              <span>{item.icon}</span>{item.label}
-            </button>
-          ))}
+          {navItems.map((item) => {
+            const NavIcon = item.icon;
+            return (
+              <button key={item.id} className={view === item.id ? "nav-item active" : "nav-item"} onClick={() => setView(item.id)}>
+                <span><NavIcon size={19} weight={view === item.id ? "fill" : "regular"} /></span>{item.label}
+              </button>
+            );
+          })}
         </nav>
         <div className="safety-note">
           <span>给新手的提醒</span>
@@ -401,13 +432,16 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         <header className="topbar">
           <div><span className="mobile-brand">我的股票助手</span><h1>{navItems.find((item) => item.id === view)?.label}</h1></div>
           <div className="top-actions">
-            <span className="privacy-pill">● 私有个人空间</span>
+            <span className="privacy-pill"><ShieldCheck size={15} weight="fill" />私有个人空间</span>
+            <button className="icon-button" onClick={toggleTheme} aria-label={darkMode ? "切换到浅色模式" : "切换到深色模式"} title={darkMode ? "浅色模式" : "深色模式"}>
+              {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
             <a className="account-button" href={signOutUrl} title={`当前账号：${user.email}`}>
               <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
               <b>{user.displayName}</b>
-              <small>退出</small>
+              <SignOut size={15} aria-label="退出" />
             </a>
-            <button className="primary-button" onClick={() => setTradeMode("buy")}>＋ 记录买入</button>
+            <button className="primary-button" onClick={() => setTradeMode("buy")}><Plus size={16} weight="bold" />记录买入</button>
           </div>
         </header>
 
@@ -471,11 +505,14 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       </main>
 
       <nav className="mobile-nav" aria-label="移动端导航">
-        {navItems.map((item) => (
-          <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}>
-            <span>{item.icon}</span>{item.label}
-          </button>
-        ))}
+        {navItems.map((item) => {
+          const NavIcon = item.icon;
+          return (
+            <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}>
+              <NavIcon size={20} weight={view === item.id ? "fill" : "regular"} />{item.label}
+            </button>
+          );
+        })}
       </nav>
 
       {tradeMode && (
@@ -494,7 +531,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
           onSaved={async () => { setReviewCycleEndTradeId(null); await loadData(); flash("复盘已保存"); }}
         />
       )}
-      {toast && <div className="toast" role="status" aria-live="polite"><span>✓</span>{toast}</div>}
+      {toast && <div className="toast" role="status" aria-live="polite"><CheckCircle size={19} weight="fill" />{toast}</div>}
     </div>
   );
 }
@@ -537,7 +574,7 @@ function Home({
         <h2>{analysis ? "继续查一只股票" : "输入股票，先把它看懂。"}</h2>
         {!analysis && <p>公开数据提供事实，AI或自动规则负责解释，你负责最后的决定。</p>}
         <form className="stock-search" onSubmit={onAnalyze}>
-          <span className="search-icon">⌕</span>
+          <span className="search-icon"><MagnifyingGlass size={21} /></span>
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="例如 600519、贵州茅台" aria-label="股票代码或名称" />
           <button type="submit" disabled={analyzing}>{analyzing ? "正在获取数据…" : "开始分析"}</button>
         </form>
@@ -960,7 +997,7 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onRemove, onSaved }: {
 
   return (
     <div className="page-content inner-page">
-      <section className="page-intro"><div><span className="eyebrow">先研究，再决定</span><h2>我的关注</h2><p>每只股票都保留一个明确的等待条件。</p></div><button className="primary-button" onClick={onSearch}>＋ 查找股票</button></section>
+      <section className="page-intro"><div><span className="eyebrow">先研究，再决定</span><h2>我的关注</h2><p>每只股票都保留一个明确的等待条件。</p></div><button className="primary-button" onClick={onSearch}><Plus size={16} weight="bold" />查找股票</button></section>
       {items.length ? (
         <div className="watch-cards">
           {items.map((item) => {
@@ -1017,7 +1054,7 @@ function Trades({ trades, reviews, onBuy, onSell, onReview }: {
 
   return (
     <div className="page-content inner-page">
-      <section className="page-intro"><div><span className="eyebrow">真实记录，才能真实复盘</span><h2>交易记录</h2><p>只有完全清仓才会生成待复盘任务；部分卖出仍属于同一持仓周期。</p></div><div className="intro-actions"><button className="soft-button" onClick={onSell} disabled={!portfolio.positions.length}>记录卖出</button><button className="primary-button" onClick={onBuy}>＋ 记录买入</button></div></section>
+      <section className="page-intro"><div><span className="eyebrow">真实记录，才能真实复盘</span><h2>交易记录</h2><p>只有完全清仓才会生成待复盘任务；部分卖出仍属于同一持仓周期。</p></div><div className="intro-actions"><button className="soft-button" onClick={onSell} disabled={!portfolio.positions.length}>记录卖出</button><button className="primary-button" onClick={onBuy}><Plus size={16} weight="bold" />记录买入</button></div></section>
       <div className="summary-strip">
         <div><span>交易记录</span><strong>{trades.length}</strong></div>
         <div><span>当前持仓</span><strong>{portfolio.positions.length}</strong></div>
