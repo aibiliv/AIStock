@@ -1081,6 +1081,7 @@ function AnalysisView({ analysis, watched, canSell, onWatch, onBuy, onSell }: {
 function MarketChart({ analysis }: { analysis: Analysis }) {
   const [period, setPeriod] = useState<MarketPeriod>("day");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [pointerPrice, setPointerPrice] = useState<number | null>(null);
   const rows = useMemo(
     () => aggregateMarketHistory(analysis.history, period).slice(-60),
     [analysis.history, period],
@@ -1112,6 +1113,10 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
   const tooltipX = selectedIndex === null
     ? 0
     : x(selectedIndex) > width / 2 ? x(selectedIndex) - 230 : x(selectedIndex) + 12;
+  const crosshairPrice = pointerPrice ?? selectedRow?.close ?? null;
+  const crosshairY = crosshairPrice === null ? null : y(crosshairPrice);
+  const crosshairLabel = crosshairPrice === null ? "" : price(crosshairPrice);
+  const priceLabelWidth = Math.max(62, crosshairLabel.length * 7 + 14);
   const periodLabel = period === "day" ? "日K" : period === "week" ? "周K" : "月K";
   const latestRow = rows.at(-1);
 
@@ -1122,14 +1127,27 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
     point.x = event.clientX;
     point.y = event.clientY;
     const pointer = point.matrixTransform(matrix.inverse());
-    if (pointer.x < 0 || pointer.x > width) return setSelectedIndex(null);
+    if (pointer.x < 0 || pointer.x > width) {
+      setSelectedIndex(null);
+      setPointerPrice(null);
+      return;
+    }
     const index = Math.min(rows.length - 1, Math.floor(Math.min(pointer.x, width - Number.EPSILON) / step));
     setSelectedIndex(index);
+    const priceTop = 12;
+    const priceBottom = priceHeight - 12;
+    if (pointer.y < priceTop || pointer.y > priceBottom) {
+      setPointerPrice(null);
+      return;
+    }
+    const value = maxPrice - ((pointer.y - priceTop) / (priceBottom - priceTop)) * priceRange;
+    setPointerPrice(Math.max(minPrice, Math.min(maxPrice, value)));
   }
 
   function navigateChart(event: ReactKeyboardEvent<SVGSVGElement>) {
     if (!["ArrowLeft", "ArrowRight", "Home", "End", "Escape"].includes(event.key)) return;
     event.preventDefault();
+    setPointerPrice(null);
     if (event.key === "Escape") return setSelectedIndex(null);
     if (event.key === "Home") return setSelectedIndex(0);
     if (event.key === "End") return setSelectedIndex(rows.length - 1);
@@ -1140,6 +1158,7 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
   function changePeriod(nextPeriod: MarketPeriod) {
     setPeriod(nextPeriod);
     setSelectedIndex(null);
+    setPointerPrice(null);
   }
 
   return (
@@ -1163,7 +1182,7 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
           <div className="chart-legend"><span className="ma5">MA5</span><span className="ma20">MA20</span><span className="ma60">MA60</span></div>
         </div>
       </div>
-      <p className="chart-interaction-hint">移动鼠标或点按图表查看当天明细，键盘可使用左右方向键。</p>
+      <p className="chart-interaction-hint">移动鼠标查看日期与水平线对应价格，点按或使用左右方向键切换K线。</p>
       <svg
         className="market-chart"
         viewBox={`0 0 ${width} 280`}
@@ -1172,7 +1191,11 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
         aria-label={`${analysis.stock.name}${periodLabel}、成交量和均线。移动鼠标、点按或使用左右方向键查看每根K线数据。`}
         onPointerMove={selectAtPointer}
         onPointerDown={selectAtPointer}
-        onPointerLeave={(event) => { if (event.pointerType !== "touch") setSelectedIndex(null); }}
+        onPointerLeave={(event) => {
+          if (event.pointerType === "touch") return;
+          setSelectedIndex(null);
+          setPointerPrice(null);
+        }}
         onKeyDown={navigateChart}
       >
         <line x1="0" y1={priceHeight} x2={width} y2={priceHeight} className="chart-axis" />
@@ -1195,6 +1218,18 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
         {selectedRow && selectedIndex !== null && (
           <g className="chart-selection" pointerEvents="none">
             <line x1={x(selectedIndex)} x2={x(selectedIndex)} y1="4" y2="270" className="chart-crosshair" />
+            {crosshairY !== null && (
+              <>
+                <line x1="0" x2={width} y1={crosshairY} y2={crosshairY} className="chart-crosshair chart-crosshair-horizontal" />
+                <g
+                  transform={`translate(${width - priceLabelWidth}, ${Math.max(2, Math.min(priceHeight - 22, crosshairY - 10))})`}
+                  className="chart-price-label"
+                >
+                  <rect width={priceLabelWidth} height="20" rx="5" />
+                  <text x={priceLabelWidth - 7} y="14" textAnchor="end">{crosshairLabel}</text>
+                </g>
+              </>
+            )}
             <circle cx={x(selectedIndex)} cy={y(selectedRow.close)} r="4" className="chart-selection-dot" />
             <g transform={`translate(${tooltipX}, 8)`} className="chart-tooltip">
               <rect width="218" height="126" rx="9" />

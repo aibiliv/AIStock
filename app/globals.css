@@ -1396,6 +1396,9 @@ svg { display: block; }
 .ma20-line { stroke: #24a2b8; }
 .ma60-line { stroke: #a275d1; }
 .chart-crosshair { stroke: color-mix(in srgb, var(--text) 38%, transparent); stroke-dasharray: 4 4; stroke-width: 1; }
+.chart-crosshair-horizontal { stroke-dasharray: 3 3; }
+.chart-price-label rect { fill: var(--surface-inverse); stroke: color-mix(in srgb, var(--bg) 18%, transparent); }
+.chart-price-label text { fill: var(--bg); font-size: 10px; font-variant-numeric: tabular-nums; font-weight: 800; }
 .chart-selection-dot { fill: var(--surface); stroke: var(--text); stroke-width: 2; }
 .chart-tooltip rect { fill: color-mix(in srgb, var(--surface-inverse) 94%, transparent); stroke: color-mix(in srgb, var(--bg) 18%, transparent); }
 .chart-tooltip text { fill: color-mix(in srgb, var(--bg) 72%, transparent); font-size: 10px; }
