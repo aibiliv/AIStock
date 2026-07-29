@@ -16,13 +16,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/*
 
 # 混合镜像源策略：
-# - 默认走 npmmirror 国内镜像加速
-# - @cloudflare/* 始终走官方源（镜像未缓存 Cloudflare 包）
-# - 若 wrangler 等包在 npmmirror 缺失（404），自动回退到官方源全量安装
+# - wrangler 先从 npmjs 单独装好（此包在 npmmirror 未缓存，后续 install 会跳过）
+# - @cloudflare/* 通过 scoped registry 走官方源
+# - 其余所有包走 npmmirror 国内镜像加速
 COPY package.json package-lock.json ./
-RUN npm config set @cloudflare:registry https://registry.npmjs.org && \
-    (npm install --no-audit --no-fund --registry=https://registry.npmmirror.com || \
-     npm install --no-audit --no-fund --registry=https://registry.npmjs.org) && \
+RUN npm config set registry https://registry.npmmirror.com && \
+    npm config set @cloudflare:registry https://registry.npmjs.org && \
+    npm install wrangler@4.115.0 --no-save --no-audit --no-fund --registry=https://registry.npmjs.org && \
+    npm install --no-audit --no-fund && \
     npm cache clean --force
 
 # 复制源码并构建（vinext build 产出 dist/）
