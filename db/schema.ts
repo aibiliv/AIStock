@@ -38,6 +38,14 @@ export const watchItems = sqliteTable("watch_items", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const watchDetails = sqliteTable("watch_details", {
+  symbol: text("symbol").primaryKey(),
+  conditionText: text("condition_text").notNull().default("等待自己的买入条件"),
+  status: text("status", { enum: ["研究中", "等待条件", "已买入", "暂停"] }).notNull().default("研究中"),
+  lastReviewedAt: text("last_reviewed_at"),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
 export const alertRules = sqliteTable("alert_rules", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   symbol: text("symbol").notNull(),
@@ -58,5 +66,31 @@ export const reviews = sqliteTable("reviews", {
   followedPlan: integer("followed_plan", { mode: "boolean" }).notNull(),
   lesson: text("lesson").notNull(),
   resultCents: integer("result_cents").notNull().default(0),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const analysisReports = sqliteTable("analysis_reports", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  symbol: text("symbol").notNull(),
+  name: text("name").notNull(),
+  priceCents: integer("price_cents").notNull(),
+  marketTime: text("market_time"),
+  source: text("source").notNull(),
+  mode: text("mode", { enum: ["deepseek", "automatic"] }).notNull(),
+  summary: text("summary").notNull(),
+  reportJson: text("report_json").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const announcementNotes = sqliteTable("announcement_notes", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  symbol: text("symbol").notNull(),
+  name: text("name").notNull(),
+  title: text("title").notNull(),
+  sourceUrl: text("source_url").notNull().default(""),
+  totalPages: integer("total_pages").notNull().default(0),
+  summary: text("summary").notNull(),
+  risksJson: text("risks_json").notNull().default("[]"),
+  mode: text("mode", { enum: ["deepseek", "automatic"] }).notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });

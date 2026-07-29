@@ -1,0 +1,51 @@
+import { and, desc, eq } from "drizzle-orm";
+import { ensureSchema, getDb } from "../../../db";
+import { analysisReports } from "../../../db/schema";
+import { isStockCode } from "../../../lib/domain";
+
+export async function GET(request: Request) {
+  try {
+    const symbol = new URL(request.url).searchParams.get("symbol")?.trim() ?? "";
+    if (!isStockCode(symbol)) {
+      return Response.json({ error: "股票代码不正确" }, { status: 400 });
+    }
+    await ensureSchema();
+    const reports = await getDb()
+      .select({
+        id: analysisReports.id,
+        symbol: analysisReports.symbol,
+        name: analysisReports.name,
+        priceCents: analysisReports.priceCents,
+        marketTime: analysisReports.marketTime,
+        source: analysisReports.source,
+        mode: analysisReports.mode,
+        summary: analysisReports.summary,
+        createdAt: analysisReports.createdAt,
+      })
+      .from(analysisReports)
+      .where(eq(analysisReports.symbol, symbol))
+      .orderBy(desc(analysisReports.id))
+      .limit(20);
+    return Response.json({ reports });
+  } catch {
+    return Response.json({ error: "分析历史暂时无法读取" }, { status: 503 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const url = new URL(request.url);
+    const symbol = url.searchParams.get("symbol")?.trim() ?? "";
+    const id = Number(url.searchParams.get("id"));
+    if (!isStockCode(symbol) || !Number.isInteger(id) || id <= 0) {
+      return Response.json({ error: "分析记录不正确" }, { status: 400 });
+    }
+    await ensureSchema();
+    await getDb()
+      .delete(analysisReports)
+      .where(and(eq(analysisReports.id, id), eq(analysisReports.symbol, symbol)));
+    return Response.json({ ok: true });
+  } catch {
+    return Response.json({ error: "分析记录删除失败" }, { status: 500 });
+  }
+}

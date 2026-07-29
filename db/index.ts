@@ -42,6 +42,13 @@ export async function ensureSchema() {
         note TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`),
+      db.prepare(`CREATE TABLE IF NOT EXISTS watch_details (
+        symbol TEXT PRIMARY KEY NOT NULL,
+        condition_text TEXT NOT NULL DEFAULT '等待自己的买入条件',
+        status TEXT NOT NULL DEFAULT '研究中',
+        last_reviewed_at TEXT,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`),
       db.prepare(`CREATE TABLE IF NOT EXISTS alert_rules (
         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
         symbol TEXT NOT NULL,
@@ -63,9 +70,35 @@ export async function ensureSchema() {
         result_cents INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`),
+      db.prepare(`CREATE TABLE IF NOT EXISTS analysis_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+        symbol TEXT NOT NULL,
+        name TEXT NOT NULL,
+        price_cents INTEGER NOT NULL,
+        market_time TEXT,
+        source TEXT NOT NULL,
+        mode TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        report_json TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`),
+      db.prepare(`CREATE TABLE IF NOT EXISTS announcement_notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+        symbol TEXT NOT NULL,
+        name TEXT NOT NULL,
+        title TEXT NOT NULL,
+        source_url TEXT NOT NULL DEFAULT '',
+        total_pages INTEGER NOT NULL DEFAULT 0,
+        summary TEXT NOT NULL,
+        risks_json TEXT NOT NULL DEFAULT '[]',
+        mode TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`),
       db.prepare("CREATE INDEX IF NOT EXISTS trade_records_symbol_idx ON trade_records(symbol)"),
       db.prepare("CREATE INDEX IF NOT EXISTS alert_rules_symbol_idx ON alert_rules(symbol)"),
       db.prepare("CREATE INDEX IF NOT EXISTS reviews_symbol_idx ON reviews(symbol)"),
+      db.prepare("CREATE INDEX IF NOT EXISTS analysis_reports_symbol_idx ON analysis_reports(symbol)"),
+      db.prepare("CREATE INDEX IF NOT EXISTS announcement_notes_symbol_idx ON announcement_notes(symbol)"),
     ]);
   })().catch((error) => {
     schemaReady = null;
