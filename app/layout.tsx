@@ -8,22 +8,22 @@ const notoSans = Noto_Sans_SC({
 });
 
 export const metadata: Metadata = {
-  title: "复盘簿｜每一笔交易，都有迹可循",
-  description: "记录交易、管理止盈止损、追踪题材，并从每一笔操作中建立自己的交易系统。",
+  title: "我的股票助手｜看懂、记录、复盘",
+  description: "为A股新手准备的个人股票复盘助手：AI通俗分析、交易记录、价格提醒与卖出复盘。",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",
   },
   openGraph: {
-    title: "复盘簿｜每一笔交易，都有迹可循",
-    description: "为认真交易的人准备的个人复盘工作台。",
-    images: [{ url: "/og.png", width: 1672, height: 941, alt: "复盘簿产品预览" }],
+    title: "我的股票助手｜看懂、记录、复盘",
+    description: "输入股票，先把它看懂。AI负责解释，你负责决定。",
+    images: [{ url: "/og-v2.png", width: 1672, height: 941, alt: "我的股票助手产品预览" }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "复盘簿｜每一笔交易，都有迹可循",
-    description: "为认真交易的人准备的个人复盘工作台。",
-    images: ["/og.png"],
+    title: "我的股票助手｜看懂、记录、复盘",
+    description: "输入股票，先把它看懂。AI负责解释，你负责决定。",
+    images: ["/og-v2.png"],
   },
 };
 
