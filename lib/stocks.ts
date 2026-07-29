@@ -181,7 +181,7 @@ async function getChart(code: string) {
       const close = quote?.close?.[index];
       if (!Number.isFinite(close)) return [];
       return [{
-        date: new Date(timestamp * 1000).toISOString().slice(0, 10),
+        date: new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date(timestamp * 1000)),
         open: Number(quote?.open?.[index] ?? close),
         high: Number(quote?.high?.[index] ?? close),
         low: Number(quote?.low?.[index] ?? close),
