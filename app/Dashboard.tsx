@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { calculatePortfolio, type Trade } from "../lib/domain";
+import { buildTradeCycles, calculatePortfolio, localIsoDate, type Trade, type TradeCycle } from "../lib/domain";
 
 type View = "home" | "watchlist" | "trades" | "settings";
 type TradeMode = "buy" | "sell";
@@ -32,6 +32,7 @@ type Review = {
   id: number;
   symbol: string;
   name: string;
+  cycleEndTradeId: number | null;
   followedPlan: boolean;
   lesson: string;
   resultCents: number;
@@ -132,7 +133,7 @@ export function Dashboard() {
   const [reviews, setReviews] = useState<Review[]>([]);
   const [status, setStatus] = useState<Status | null>(null);
   const [tradeMode, setTradeMode] = useState<TradeMode | null>(null);
-  const [reviewSymbol, setReviewSymbol] = useState<string | null>(null);
+  const [reviewCycleEndTradeId, setReviewCycleEndTradeId] = useState<number | null>(null);
   const [settingsSection, setSettingsSection] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
@@ -141,12 +142,21 @@ export function Dashboard() {
   const notified = useRef(new Set<number>());
 
   const portfolio = useMemo(() => calculatePortfolio(trades), [trades]);
-  const reviewedSymbols = useMemo(() => new Set(reviews.map((review) => review.symbol)), [reviews]);
-  const soldSymbols = useMemo(
-    () => [...new Set(trades.filter((trade) => trade.side === "卖出").map((trade) => trade.symbol))],
-    [trades],
+  const tradeCycles = useMemo(() => buildTradeCycles(trades), [trades]);
+  const closedCycles = tradeCycles.filter((cycle) => cycle.endTradeId !== null);
+  const reviewedCycleIds = useMemo(() => {
+    const ids = new Set(reviews.flatMap((review) => review.cycleEndTradeId ? [review.cycleEndTradeId] : []));
+    for (const review of reviews.filter((item) => item.cycleEndTradeId === null)) {
+      const legacyCycle = [...closedCycles]
+        .reverse()
+        .find((cycle) => cycle.symbol === review.symbol && cycle.endTradeId && !ids.has(cycle.endTradeId));
+      if (legacyCycle?.endTradeId) ids.add(legacyCycle.endTradeId);
+    }
+    return ids;
+  }, [closedCycles, reviews]);
+  const pendingReviews = closedCycles.filter((cycle) =>
+    cycle.endTradeId !== null && !reviewedCycleIds.has(cycle.endTradeId)
   );
-  const pendingReviews = soldSymbols.filter((symbol) => !reviewedSymbols.has(symbol));
 
   const flash = useCallback((message: string) => {
     setToast(message);
@@ -183,6 +193,7 @@ export function Dashboard() {
   const fetchAnalysis = useCallback(async (stockQuery: string, showResult = true) => {
     setAnalyzing(true);
     setError("");
+    if (showResult) setAnalysis(null);
     try {
       const result = await jsonRequest<Analysis>("/api/analyze", {
         method: "POST",
@@ -304,39 +315,24 @@ export function Dashboard() {
     };
 
     try {
-      await jsonRequest("/api/trades", {
+      const saved = await jsonRequest<{ trade: Trade }>("/api/trades", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      if (side === "买入" && payload.maxLoss > 0) {
-        const riskPerShare = payload.maxLoss / payload.quantity;
-        const stop = payload.price - riskPerShare;
-        if (stop > 0) {
-          await Promise.all([
-            saveAlert(payload.symbol, payload.name, "止损", stop),
-            saveAlert(payload.symbol, payload.name, "止盈一", payload.price + riskPerShare),
-            saveAlert(payload.symbol, payload.name, "止盈二", payload.price + riskPerShare * 2),
-          ]);
-        }
-      }
-
       setTradeMode(null);
       await loadData();
       flash(`${payload.name}的${side}记录已保存`);
-      if (side === "卖出") setReviewSymbol(payload.symbol);
+      if (side === "卖出") {
+        const closedCycle = buildTradeCycles([...trades, saved.trade]).find(
+          (cycle) => cycle.endTradeId === saved.trade.id
+        );
+        if (closedCycle?.endTradeId) setReviewCycleEndTradeId(closedCycle.endTradeId);
+      }
     } catch (saveError) {
       flash(saveError instanceof Error ? saveError.message : "交易记录保存失败");
     }
-  }
-
-  async function saveAlert(symbol: string, name: string, type: AlertRule["type"], targetPrice: number) {
-    return jsonRequest("/api/alerts", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ symbol, name, type, targetPrice }),
-    });
   }
 
   async function updateAlert(id: number, action = "acknowledge") {
@@ -363,11 +359,13 @@ export function Dashboard() {
     setSettingsSection("alerts");
   }
 
-  const currentTradeStock = analysis?.stock ?? (
-    tradeMode === "sell" && portfolio.positions[0]
-      ? { code: portfolio.positions[0].symbol, name: portfolio.positions[0].name }
-      : null
-  );
+  const analyzedPosition = portfolio.positions.find((position) => position.symbol === analysis?.stock.code);
+  const currentTradeStock = tradeMode === "sell"
+    ? analyzedPosition ?? portfolio.positions[0] ?? null
+    : analysis?.stock ?? null;
+  const reviewCycle = reviewCycleEndTradeId === null
+    ? null
+    : closedCycles.find((cycle) => cycle.endTradeId === reviewCycleEndTradeId) ?? null;
 
   return (
     <div className="app-shell">
@@ -397,7 +395,7 @@ export function Dashboard() {
         <header className="topbar">
           <div><span className="mobile-brand">我的股票助手</span><h1>{navItems.find((item) => item.id === view)?.label}</h1></div>
           <div className="top-actions">
-            <span className="privacy-pill">● 本地个人空间</span>
+            <span className="privacy-pill">● 私有个人空间</span>
             <button className="primary-button" onClick={() => setTradeMode("buy")}>＋ 记录买入</button>
           </div>
         </header>
@@ -423,7 +421,7 @@ export function Dashboard() {
                 onSell={() => setTradeMode("sell")}
                 onWatch={() => void addWatch()}
                 onNavigate={setView}
-                onReview={setReviewSymbol}
+                onReview={setReviewCycleEndTradeId}
                 onAlertPlan={() => { setSettingsSection("alerts"); setView("settings"); }}
                 onAcknowledge={(id) => void updateAlert(id)}
               />
@@ -444,7 +442,7 @@ export function Dashboard() {
                 reviews={reviews}
                 onBuy={() => setTradeMode("buy")}
                 onSell={() => setTradeMode("sell")}
-                onReview={setReviewSymbol}
+                onReview={setReviewCycleEndTradeId}
               />
             )}
             {view === "settings" && (
@@ -478,12 +476,11 @@ export function Dashboard() {
           onSubmit={saveTrade}
         />
       )}
-      {reviewSymbol && (
+      {reviewCycle && (
         <ReviewModal
-          symbol={reviewSymbol}
-          trades={trades}
-          onClose={() => setReviewSymbol(null)}
-          onSaved={async () => { setReviewSymbol(null); await loadData(); flash("复盘已保存"); }}
+          cycle={reviewCycle}
+          onClose={() => setReviewCycleEndTradeId(null)}
+          onSaved={async () => { setReviewCycleEndTradeId(null); await loadData(); flash("复盘已保存"); }}
         />
       )}
       {toast && <div className="toast" role="status" aria-live="polite"><span>✓</span>{toast}</div>}
@@ -503,7 +500,7 @@ function Home({
   portfolio: ReturnType<typeof calculatePortfolio>;
   quotes: Record<string, Analysis>;
   alerts: AlertRule[];
-  pendingReviews: string[];
+  pendingReviews: TradeCycle[];
   trades: Trade[];
   reviews: Review[];
   watched: boolean;
@@ -512,13 +509,14 @@ function Home({
   onSell: () => void;
   onWatch: () => void;
   onNavigate: (view: View) => void;
-  onReview: (symbol: string) => void;
+  onReview: (cycleEndTradeId: number) => void;
   onAlertPlan: () => void;
   onAcknowledge: (id: number) => void;
 }) {
   const activeAlerts = alerts.filter((alert) => alert.enabled && !alert.acknowledgedAt);
-  const closedCount = portfolio.winningSells + portfolio.losingSells;
-  const winRate = closedCount ? Math.round((portfolio.winningSells / closedCount) * 100) : 0;
+  const completedCycles = buildTradeCycles(trades).filter((cycle) => cycle.endTradeId !== null);
+  const winningCycles = completedCycles.filter((cycle) => cycle.realizedCents > 0).length;
+  const winRate = completedCycles.length ? Math.round((winningCycles / completedCycles.length) * 100) : 0;
   const planRate = reviews.length ? Math.round((reviews.filter((review) => review.followedPlan).length / reviews.length) * 100) : 0;
 
   return (
@@ -536,7 +534,14 @@ function Home({
       </section>
 
       {analysis ? (
-        <AnalysisView analysis={analysis} watched={watched} onWatch={onWatch} onBuy={onBuy} onSell={onSell} />
+        <AnalysisView
+          analysis={analysis}
+          watched={watched}
+          canSell={portfolio.positions.some((position) => position.symbol === analysis.stock.code)}
+          onWatch={onWatch}
+          onBuy={onBuy}
+          onSell={onSell}
+        />
       ) : (
         <>
           <section className="quick-title"><div><span className="eyebrow">今天只处理重要的事</span><h3>我的持仓</h3></div><button onClick={() => onNavigate("trades")}>查看交易记录 →</button></section>
@@ -564,7 +569,7 @@ function Home({
 
           <div className="summary-strip home-summary">
             <div><span>已实现盈亏</span><strong className={portfolio.realizedCents >= 0 ? "up" : "down"}>{money(portfolio.realizedCents)}</strong></div>
-            <div><span>已卖出胜率</span><strong>{closedCount ? `${winRate}%` : "—"}</strong></div>
+            <div><span>完整交易胜率</span><strong>{completedCycles.length ? `${winRate}%` : "—"}</strong></div>
             <div><span>按计划复盘</span><strong>{reviews.length ? `${planRate}%` : "—"}</strong></div>
             <div><span>最近改进规则</span><strong className="summary-lesson">{reviews[0]?.lesson ?? "暂无"}</strong></div>
           </div>
@@ -583,13 +588,12 @@ function Home({
             </section>
             <section className="panel review-panel">
               <PanelHeader title="待复盘" subtitle="卖出后只回答三个问题" />
-              {pendingReviews.slice(0, 3).map((symbol) => {
-                const trade = trades.find((item) => item.symbol === symbol);
+              {pendingReviews.slice(0, 3).map((cycle) => {
                 return (
-                  <div className="review-item" key={symbol}>
-                    <span className="stock-avatar pale">{trade?.name.slice(0, 1)}</span>
-                    <div><b>{trade?.name ?? symbol}</b><p>已记录卖出，等待总结经验</p></div>
-                    <button onClick={() => onReview(symbol)}>开始复盘 →</button>
+                  <div className="review-item" key={cycle.endTradeId}>
+                    <span className="stock-avatar pale">{cycle.name.slice(0, 1)}</span>
+                    <div><b>{cycle.name}</b><p>{cycle.startDate} 至 {cycle.endDate}，已经清仓</p></div>
+                    <button onClick={() => onReview(cycle.endTradeId!)}>开始复盘 →</button>
                   </div>
                 );
               })}
@@ -603,9 +607,10 @@ function Home({
   );
 }
 
-function AnalysisView({ analysis, watched, onWatch, onBuy, onSell }: {
+function AnalysisView({ analysis, watched, canSell, onWatch, onBuy, onSell }: {
   analysis: Analysis;
   watched: boolean;
+  canSell: boolean;
   onWatch: () => void;
   onBuy: () => void;
   onSell: () => void;
@@ -707,7 +712,7 @@ function AnalysisView({ analysis, watched, onWatch, onBuy, onSell }: {
 
       <section className="decision-bar">
         <div><span className="eyebrow">现在由你决定</span><h3>这只股票下一步怎么处理？</h3></div>
-        <div><button className="soft-button" onClick={onWatch}>{watched ? "✓ 已关注" : "☆ 加入关注"}</button><button className="soft-button" onClick={onSell}>记录卖出</button><button className="primary-button" onClick={onBuy}>我已买入</button></div>
+        <div><button className="soft-button" onClick={onWatch}>{watched ? "✓ 已关注" : "☆ 加入关注"}</button>{canSell && <button className="soft-button" onClick={onSell}>记录卖出</button>}<button className="primary-button" onClick={onBuy}>我已买入</button></div>
       </section>
     </div>
   );
@@ -723,6 +728,9 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
   const maxPrice = Math.max(...rows.map((row) => row.high));
   const priceRange = Math.max(maxPrice - minPrice, 0.01);
   const maxVolume = Math.max(...rows.map((row) => row.volume), 1);
+  const volumeHighlight = rows.length
+    ? rows.reduce((largest, row) => row.volume > largest.volume ? row : largest)
+    : null;
   const step = width / Math.max(rows.length, 1);
   const candleWidth = Math.max(2, step * 0.55);
   const x = (index: number) => index * step + step / 2;
@@ -761,7 +769,7 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
         <span>5日均线 <b>{price(analysis.quote.ma5)}</b></span>
         <span>20日均线 <b>{price(analysis.quote.ma20)}</b></span>
         <span>60日均线 <b>{price(analysis.quote.ma60)}</b></span>
-        <span>最大成交量日 <b>{analysis.volumeHighlight?.date ?? "暂无"}</b></span>
+        <span>最大成交量日 <b>{volumeHighlight?.date ?? "暂无"}</b></span>
       </div>
     </section>
   );
@@ -860,6 +868,16 @@ function AnnouncementPanel({ stock }: { stock: Analysis["stock"] }) {
     }
   }
 
+  async function removeNote(id: number) {
+    try {
+      await jsonRequest(`/api/announcements?symbol=${stock.code}&id=${id}`, { method: "DELETE" });
+      await loadNotes();
+      setMessage("公告摘要已删除");
+    } catch (removeError) {
+      setMessage(removeError instanceof Error ? removeError.message : "公告摘要删除失败");
+    }
+  }
+
   return (
     <section className="panel research-card announcement-card">
       <CardTitle number="08" title="官方公告" source="官方原文优先 · AI只做摘要" />
@@ -881,7 +899,10 @@ function AnnouncementPanel({ stock }: { stock: Analysis["stock"] }) {
             <div><b>{note.title}</b><span>{note.mode === "deepseek" ? "DeepSeek摘要" : "自动摘要"} · {note.totalPages}页</span></div>
             <p>{note.summary}</p>
             {note.risks.length > 0 && <small>需要核验：{note.risks.join("；")}</small>}
-            {note.sourceUrl && <a href={note.sourceUrl} target="_blank" rel="noreferrer">查看原文 →</a>}
+            <div className="announcement-actions">
+              {note.sourceUrl && <a href={note.sourceUrl} target="_blank" rel="noreferrer">查看原文 →</a>}
+              <button type="button" onClick={() => void removeNote(note.id)}>删除摘要</button>
+            </div>
           </article>
         ))}
       </div>
@@ -966,27 +987,38 @@ function Trades({ trades, reviews, onBuy, onSell, onReview }: {
   reviews: Review[];
   onBuy: () => void;
   onSell: () => void;
-  onReview: (symbol: string) => void;
+  onReview: (cycleEndTradeId: number) => void;
 }) {
   const portfolio = calculatePortfolio(trades);
-  const openSymbols = new Set(portfolio.positions.map((position) => position.symbol));
-  const reviewed = new Set(reviews.map((review) => review.symbol));
-  const closedCount = portfolio.winningSells + portfolio.losingSells;
+  const cycles = buildTradeCycles(trades);
+  const completedCycles = cycles.filter((cycle) => cycle.endTradeId !== null);
+  const cycleByTradeId = new Map(cycles.flatMap((cycle) =>
+    cycle.trades.map((trade) => [trade.id, cycle] as const)
+  ));
+  const reviewed = new Set(reviews.flatMap((review) => review.cycleEndTradeId ? [review.cycleEndTradeId] : []));
+  for (const review of reviews.filter((item) => item.cycleEndTradeId === null)) {
+    const legacyCycle = [...completedCycles]
+      .reverse()
+      .find((cycle) => cycle.symbol === review.symbol && cycle.endTradeId && !reviewed.has(cycle.endTradeId));
+    if (legacyCycle?.endTradeId) reviewed.add(legacyCycle.endTradeId);
+  }
+  const winningCycles = completedCycles.filter((cycle) => cycle.realizedCents > 0).length;
 
   return (
     <div className="page-content inner-page">
-      <section className="page-intro"><div><span className="eyebrow">真实记录，才能真实复盘</span><h2>交易记录</h2><p>所有状态都按买卖数量计算，不再按列表位置猜测。</p></div><div className="intro-actions"><button className="soft-button" onClick={onSell}>记录卖出</button><button className="primary-button" onClick={onBuy}>＋ 记录买入</button></div></section>
+      <section className="page-intro"><div><span className="eyebrow">真实记录，才能真实复盘</span><h2>交易记录</h2><p>只有完全清仓才会生成待复盘任务；部分卖出仍属于同一持仓周期。</p></div><div className="intro-actions"><button className="soft-button" onClick={onSell} disabled={!portfolio.positions.length}>记录卖出</button><button className="primary-button" onClick={onBuy}>＋ 记录买入</button></div></section>
       <div className="summary-strip">
         <div><span>交易记录</span><strong>{trades.length}</strong></div>
         <div><span>当前持仓</span><strong>{portfolio.positions.length}</strong></div>
         <div><span>已实现盈亏</span><strong className={portfolio.realizedCents >= 0 ? "up" : "down"}>{money(portfolio.realizedCents)}</strong></div>
-        <div><span>已卖出胜率</span><strong>{closedCount ? `${Math.round(portfolio.winningSells / closedCount * 100)}%` : "—"}</strong></div>
+        <div><span>完整交易胜率</span><strong>{completedCycles.length ? `${Math.round(winningCycles / completedCycles.length * 100)}%` : "—"}</strong></div>
       </div>
       {trades.length ? (
         <section className="panel trade-list">
           <div className="trade-head"><span>日期</span><span>股票</span><span>操作</span><span>原因</span><span>状态</span></div>
           {trades.map((trade) => {
-            const hasReview = reviewed.has(trade.symbol);
+            const cycle = cycleByTradeId.get(trade.id);
+            const hasReview = cycle?.endTradeId ? reviewed.has(cycle.endTradeId) : false;
             return (
               <div className="trade-row" key={trade.id}>
                 <span><b>{trade.tradeDate}</b><small>{trade.quantity}股</small></span>
@@ -994,11 +1026,13 @@ function Trades({ trades, reviews, onBuy, onSell, onReview }: {
                 <span><b className={`side ${trade.side === "买入" ? "buy" : "sell"}`}>{trade.side}</b><small>{money(trade.priceCents)}</small></span>
                 <span className="trade-reason">{trade.reason}</span>
                 <span>
-                  {openSymbols.has(trade.symbol)
+                  {cycle?.endTradeId === null
                     ? <i className="holding-label">持仓中</i>
                     : hasReview
                       ? <i className="holding-label complete">已复盘</i>
-                      : <button className="review-button" onClick={() => onReview(trade.symbol)}>去复盘</button>}
+                      : cycle?.endTradeId === trade.id
+                        ? <button className="review-button" onClick={() => onReview(cycle.endTradeId!)}>去复盘</button>
+                        : <i className="holding-label pending">待复盘</i>}
                 </span>
               </div>
             );
@@ -1062,6 +1096,7 @@ function TradeModal({ mode, stock, positions, onClose, onSubmit }: {
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
 }) {
   const firstInput = useRef<HTMLInputElement>(null);
+  const [saving, setSaving] = useState(false);
   const defaultPosition = mode === "sell" ? positions[0] : null;
   const symbol = stock?.code ?? stock?.symbol ?? defaultPosition?.symbol ?? "";
   const name = stock?.name ?? defaultPosition?.name ?? "";
@@ -1073,41 +1108,49 @@ function TradeModal({ mode, stock, positions, onClose, onSubmit }: {
     return () => window.removeEventListener("keydown", close);
   }, [onClose]);
 
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    if (saving) return;
+    setSaving(true);
+    await onSubmit(event);
+    setSaving(false);
+  }
+
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="modal" role="dialog" aria-modal="true" aria-labelledby="trade-modal-title">
         <header><div><span className="eyebrow">{mode === "buy" ? "写下当时的决定" : "记录真实的退出"}</span><h2 id="trade-modal-title">记录{mode === "buy" ? "买入" : "卖出"}</h2></div><button onClick={onClose} aria-label="关闭">×</button></header>
-        <form onSubmit={onSubmit}>
+        <form onSubmit={submit}>
           <div className="form-grid">
             <label>股票代码<input ref={firstInput} name="symbol" defaultValue={symbol} pattern="\d{6}" required /></label>
             <label>股票名称<input name="name" defaultValue={name} required maxLength={30} /></label>
             <label>{mode === "buy" ? "买入" : "卖出"}价格<input name="price" type="number" min="0.01" step="0.01" required /></label>
             <label>数量（股）<input name="quantity" type="number" min="1" step="1" required /></label>
-            <label>交易日期<input name="tradeDate" type="date" defaultValue={new Date().toISOString().slice(0, 10)} required /></label>
+            <label>交易日期<input name="tradeDate" type="date" defaultValue={localIsoDate()} max={localIsoDate()} required /></label>
             <label>总费用（可选）<input name="fee" type="number" min="0" step="0.01" defaultValue="0" /></label>
             {mode === "buy" && <label>最多接受亏损（元）<input name="maxLoss" type="number" min="0" step="0.01" placeholder="用于计算止损和1R/2R提醒" /></label>}
           </div>
           <fieldset><legend>为什么{mode === "buy" ? "买" : "卖"}？</legend><div className="reason-options">{(mode === "buy" ? buyReasons : sellReasons).map((reason) => <label key={reason}><input className="visually-hidden" type="radio" name="reason" value={reason} required /><span>{reason}</span></label>)}</div></fieldset>
           {mode === "buy" && <div className="calculation-tip">填写最大亏损后，系统会按“买入价 − 最大亏损 ÷ 数量”创建止损，并生成1R、2R止盈提醒。由你确认和执行。</div>}
-          <div className="modal-actions"><button type="button" onClick={onClose}>取消</button><button className="primary-button" type="submit">确认保存</button></div>
+          <div className="modal-actions"><button type="button" onClick={onClose}>取消</button><button className="primary-button" type="submit" disabled={saving}>{saving ? "正在保存…" : "确认保存"}</button></div>
         </form>
       </section>
     </div>
   );
 }
 
-function ReviewModal({ symbol, trades, onClose, onSaved }: {
-  symbol: string;
-  trades: Trade[];
+function ReviewModal({ cycle, onClose, onSaved }: {
+  cycle: TradeCycle;
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
   const firstInput = useRef<HTMLTextAreaElement>(null);
-  const related = trades.filter((trade) => trade.symbol === symbol);
-  const name = related[0]?.name ?? symbol;
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState("");
+  const related = cycle.trades;
+  const name = cycle.name;
   const buyReason = related.find((trade) => trade.side === "买入")?.reason ?? "";
   const sellReason = [...related].reverse().find((trade) => trade.side === "卖出")?.reason ?? "";
-  const result = calculatePortfolio(related).realizedCents / 100;
+  const result = cycle.realizedCents / 100;
 
   useEffect(() => {
     firstInput.current?.focus();
@@ -1118,21 +1161,29 @@ function ReviewModal({ symbol, trades, onClose, onSaved }: {
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    setMessage("");
     const data = new FormData(event.currentTarget);
-    await jsonRequest("/api/reviews", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        symbol,
-        name,
-        buyReason: data.get("buyReason"),
-        sellReason: data.get("sellReason"),
-        followedPlan: data.get("followedPlan") === "yes",
-        lesson: data.get("lesson"),
-        result,
-      }),
-    });
-    await onSaved();
+    try {
+      await jsonRequest("/api/reviews", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          symbol: cycle.symbol,
+          name,
+          cycleEndTradeId: cycle.endTradeId,
+          buyReason: data.get("buyReason"),
+          sellReason: data.get("sellReason"),
+          followedPlan: data.get("followedPlan") === "yes",
+          lesson: data.get("lesson"),
+        }),
+      });
+      await onSaved();
+    } catch (saveError) {
+      setMessage(saveError instanceof Error ? saveError.message : "复盘保存失败");
+      setSaving(false);
+    }
   }
 
   return (
@@ -1145,7 +1196,8 @@ function ReviewModal({ symbol, trades, onClose, onSaved }: {
           <fieldset><legend>有没有按计划执行？</legend><div className="reason-options"><label><input className="visually-hidden" type="radio" name="followedPlan" value="yes" required /><span>有，按计划</span></label><label><input className="visually-hidden" type="radio" name="followedPlan" value="no" required /><span>没有</span></label></div></fieldset>
           <label>下一次只改进哪一件事？<textarea name="lesson" required maxLength={500} placeholder="例如：触发止损后当天执行，不再向下移动止损线。" /></label>
           <div className="calculation-tip">程序按成交记录计算本次已实现盈亏：{price(result)}</div>
-          <div className="modal-actions"><button type="button" onClick={onClose}>取消</button><button className="primary-button" type="submit">保存复盘</button></div>
+          {message && <p className="form-message" role="alert">{message}</p>}
+          <div className="modal-actions"><button type="button" onClick={onClose}>取消</button><button className="primary-button" type="submit" disabled={saving}>{saving ? "正在保存…" : "保存复盘"}</button></div>
         </form>
       </section>
     </div>

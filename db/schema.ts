@@ -61,6 +61,7 @@ export const reviews = sqliteTable("reviews", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   symbol: text("symbol").notNull(),
   name: text("name").notNull(),
+  cycleEndTradeId: integer("cycle_end_trade_id"),
   buyReason: text("buy_reason").notNull(),
   sellReason: text("sell_reason").notNull(),
   followedPlan: integer("followed_plan", { mode: "boolean" }).notNull(),

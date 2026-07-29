@@ -41,7 +41,17 @@ export async function POST(request: Request) {
     const db = getDb();
     const existing = await db.select().from(watchItems).where(eq(watchItems.symbol, symbol)).limit(1);
     if (existing.length) {
-      return Response.json({ item: existing[0], existed: true });
+      const detail = await db.select().from(watchDetails).where(eq(watchDetails.symbol, symbol)).limit(1);
+      return Response.json({
+        item: {
+          ...existing[0],
+          conditionText: detail[0]?.conditionText ?? existing[0].note ?? "等待自己的买入条件",
+          status: detail[0]?.status ?? "研究中",
+          lastReviewedAt: detail[0]?.lastReviewedAt ?? null,
+          updatedAt: detail[0]?.updatedAt ?? existing[0].createdAt,
+        },
+        existed: true,
+      });
     }
     const [item] = await db.insert(watchItems).values({ symbol, name, note }).returning();
     await db.insert(watchDetails).values({ symbol, conditionText, status: "研究中" });

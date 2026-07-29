@@ -137,6 +137,7 @@ function buildHistory(rows: Array<{
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url, {
     headers: { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" },
+    signal: AbortSignal.timeout(8_000),
   });
   if (!response.ok) {
     throw new Error(`数据源返回 ${response.status}`);

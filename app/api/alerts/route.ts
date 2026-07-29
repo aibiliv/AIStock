@@ -21,8 +21,9 @@ export async function POST(request: Request) {
     const symbol = payload.symbol?.trim() ?? "";
     const name = payload.name?.trim() ?? "";
     const type = payload.type?.trim() ?? "";
-    const targetPriceCents = toCents(payload.targetPrice);
-    if (!isStockCode(symbol) || !name || !alertTypes.has(type) || targetPriceCents <= 0) {
+    const rawTargetPrice = Number(payload.targetPrice);
+    const targetPriceCents = toCents(rawTargetPrice);
+    if (!isStockCode(symbol) || !name || !alertTypes.has(type) || !Number.isFinite(rawTargetPrice) || targetPriceCents <= 0) {
       return Response.json({ error: "提醒信息不正确" }, { status: 400 });
     }
     await ensureSchema();
@@ -44,6 +45,9 @@ export async function PATCH(request: Request) {
     const id = Number(payload.id);
     if (!Number.isInteger(id) || id <= 0) {
       return Response.json({ error: "提醒编号不正确" }, { status: 400 });
+    }
+    if (payload.action !== "disable" && payload.action !== "acknowledge") {
+      return Response.json({ error: "提醒操作不正确" }, { status: 400 });
     }
     await ensureSchema();
     const values = payload.action === "disable"

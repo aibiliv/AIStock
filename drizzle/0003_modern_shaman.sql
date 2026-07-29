@@ -1,0 +1,1 @@
+ALTER TABLE `reviews` ADD `cycle_end_trade_id` integer;

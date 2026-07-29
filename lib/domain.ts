@@ -27,18 +27,31 @@ export type PortfolioSummary = {
   losingSells: number;
 };
 
+export type TradeCycle = {
+  symbol: string;
+  name: string;
+  trades: Trade[];
+  startTradeId: number;
+  endTradeId: number | null;
+  startDate: string;
+  endDate: string | null;
+  realizedCents: number;
+};
+
+function orderedTrades(trades: Trade[]) {
+  return [...trades].sort((a, b) => {
+    const dateOrder = a.tradeDate.localeCompare(b.tradeDate);
+    return dateOrder || a.id - b.id;
+  });
+}
+
 export function calculatePortfolio(trades: Trade[]): PortfolioSummary {
   const positions = new Map<string, Position>();
   let realizedCents = 0;
   let winningSells = 0;
   let losingSells = 0;
 
-  const ordered = [...trades].sort((a, b) => {
-    const dateOrder = a.tradeDate.localeCompare(b.tradeDate);
-    return dateOrder || a.id - b.id;
-  });
-
-  for (const trade of ordered) {
+  for (const trade of orderedTrades(trades)) {
     const current = positions.get(trade.symbol) ?? {
       symbol: trade.symbol,
       name: trade.name,
@@ -82,6 +95,62 @@ export function calculatePortfolio(trades: Trade[]): PortfolioSummary {
     winningSells,
     losingSells,
   };
+}
+
+export function buildTradeCycles(trades: Trade[]): TradeCycle[] {
+  const cycles: TradeCycle[] = [];
+  const open = new Map<string, { quantity: number; trades: Trade[] }>();
+
+  for (const trade of orderedTrades(trades)) {
+    if (trade.side === "买入") {
+      const current = open.get(trade.symbol) ?? { quantity: 0, trades: [] };
+      current.quantity += trade.quantity;
+      current.trades.push(trade);
+      open.set(trade.symbol, current);
+      continue;
+    }
+
+    const current = open.get(trade.symbol);
+    if (!current || current.quantity <= 0) continue;
+    current.trades.push(trade);
+    current.quantity = Math.max(0, current.quantity - trade.quantity);
+    if (current.quantity > 0) continue;
+
+    cycles.push({
+      symbol: trade.symbol,
+      name: trade.name,
+      trades: current.trades,
+      startTradeId: current.trades[0].id,
+      endTradeId: trade.id,
+      startDate: current.trades[0].tradeDate,
+      endDate: trade.tradeDate,
+      realizedCents: calculatePortfolio(current.trades).realizedCents,
+    });
+    open.delete(trade.symbol);
+  }
+
+  for (const current of open.values()) {
+    const first = current.trades[0];
+    cycles.push({
+      symbol: first.symbol,
+      name: first.name,
+      trades: current.trades,
+      startTradeId: first.id,
+      endTradeId: null,
+      startDate: first.tradeDate,
+      endDate: null,
+      realizedCents: calculatePortfolio(current.trades).realizedCents,
+    });
+  }
+
+  return cycles.sort((a, b) => a.startDate.localeCompare(b.startDate) || a.startTradeId - b.startTradeId);
+}
+
+export function localIsoDate(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 export function toCents(value: unknown) {

@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { extractText, getDocumentProxy } from "unpdf";
 import { ensureSchema, getDb } from "../../../db";
 import { announcementNotes } from "../../../db/schema";
@@ -19,6 +19,26 @@ type SummaryResult = {
   summary: string;
   risks: string[];
 };
+
+class RequestError extends Error {
+  constructor(message: string, readonly status = 400) {
+    super(message);
+  }
+}
+
+function parseRisks(value: string) {
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+async function closePdf(pdf: Awaited<ReturnType<typeof getDocumentProxy>>) {
+  const destroy = (pdf as unknown as { destroy?: () => Promise<void> }).destroy;
+  if (typeof destroy === "function") await destroy.call(pdf);
+}
 
 function automaticSummary(text: string): SummaryResult {
   const normalized = text.replace(/\s+/g, " ").trim();
@@ -40,6 +60,7 @@ async function summarizeWithDeepSeek(text: string): Promise<SummaryResult> {
   try {
     const response = await fetch("https://api.deepseek.com/chat/completions", {
       method: "POST",
+      signal: AbortSignal.timeout(20_000),
       headers: {
         "content-type": "application/json",
         authorization: `Bearer ${runtimeEnv.DEEPSEEK_API_KEY}`,
@@ -67,8 +88,14 @@ async function summarizeWithDeepSeek(text: string): Promise<SummaryResult> {
     const content = payload.choices?.[0]?.message?.content;
     if (!content) return automaticSummary(text);
     const parsed = JSON.parse(content) as { summary?: string; risks?: string[] };
-    if (!parsed.summary || !Array.isArray(parsed.risks)) return automaticSummary(text);
-    return { mode: "deepseek", summary: parsed.summary, risks: parsed.risks.slice(0, 6) };
+    if (typeof parsed.summary !== "string" || !parsed.summary.trim() || !Array.isArray(parsed.risks)) {
+      return automaticSummary(text);
+    }
+    return {
+      mode: "deepseek",
+      summary: parsed.summary.slice(0, 600),
+      risks: parsed.risks.filter((risk): risk is string => typeof risk === "string").slice(0, 6),
+    };
   } catch {
     return automaticSummary(text);
   }
@@ -77,10 +104,14 @@ async function summarizeWithDeepSeek(text: string): Promise<SummaryResult> {
 async function loadPdf(form: FormData) {
   const uploaded = form.get("file");
   if (uploaded instanceof File && uploaded.size > 0) {
-    if (uploaded.size > 8 * 1024 * 1024 || uploaded.type !== "application/pdf") {
-      throw new Error("只支持8MB以内的PDF公告");
+    if (uploaded.size > 8 * 1024 * 1024) {
+      throw new RequestError("PDF公告不能超过8MB", 413);
     }
-    return new Uint8Array(await uploaded.arrayBuffer());
+    const bytes = new Uint8Array(await uploaded.arrayBuffer());
+    if (String.fromCharCode(...bytes.slice(0, 5)) !== "%PDF-") {
+      throw new RequestError("上传的文件不是有效PDF");
+    }
+    return bytes;
   }
 
   const sourceUrl = String(form.get("sourceUrl") ?? "").trim();
@@ -88,18 +119,25 @@ async function loadPdf(form: FormData) {
   try {
     url = new URL(sourceUrl);
   } catch {
-    throw new Error("请上传PDF或填写官方PDF链接");
+    throw new RequestError("请上传PDF或填写官方PDF链接");
   }
   if (url.protocol !== "https:" || !allowedHosts.has(url.hostname)) {
-    throw new Error("只允许读取巨潮资讯、上交所或深交所的HTTPS公告链接");
+    throw new RequestError("只允许读取巨潮资讯、上交所或深交所的HTTPS公告链接");
   }
-  const response = await fetch(url, { redirect: "follow" });
+  const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(15_000) });
+  const finalUrl = new URL(response.url);
+  if (finalUrl.protocol !== "https:" || !allowedHosts.has(finalUrl.hostname)) {
+    throw new RequestError("公告链接跳转到了非官方地址");
+  }
   const length = Number(response.headers.get("content-length") ?? 0);
   if (!response.ok || length > 8 * 1024 * 1024) {
-    throw new Error("公告PDF暂时无法读取或文件过大");
+    throw new RequestError("公告PDF暂时无法读取或文件过大", response.ok ? 413 : 422);
   }
   const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > 8 * 1024 * 1024) throw new Error("公告PDF不能超过8MB");
+  if (bytes.byteLength > 8 * 1024 * 1024) throw new RequestError("公告PDF不能超过8MB", 413);
+  if (String.fromCharCode(...bytes.slice(0, 5)) !== "%PDF-") {
+    throw new RequestError("官方链接返回的内容不是有效PDF", 422);
+  }
   return bytes;
 }
 
@@ -115,7 +153,7 @@ export async function GET(request: Request) {
       .orderBy(desc(announcementNotes.id))
       .limit(20);
     return Response.json({
-      notes: notes.map((note) => ({ ...note, risks: JSON.parse(note.risksJson) as string[] })),
+      notes: notes.map((note) => ({ ...note, risks: parseRisks(note.risksJson) })),
     });
   } catch {
     return Response.json({ error: "公告摘要暂时无法读取" }, { status: 503 });
@@ -129,19 +167,28 @@ export async function POST(request: Request) {
     const name = String(form.get("name") ?? "").trim();
     const title = String(form.get("title") ?? "").trim();
     const sourceUrl = String(form.get("sourceUrl") ?? "").trim();
-    if (!isStockCode(symbol) || !name || !title || title.length > 120) {
+    if (!isStockCode(symbol) || !name || name.length > 30 || !title || title.length > 120) {
       return Response.json({ error: "请填写股票和公告标题" }, { status: 400 });
     }
 
     const bytes = await loadPdf(form);
     const pdf = await getDocumentProxy(bytes);
     if (pdf.numPages > 80) {
+      await closePdf(pdf);
       return Response.json({ error: "公告超过80页，请选择需要分析的核心公告" }, { status: 400 });
     }
     const extracted = await extractText(pdf, { mergePages: true });
     const text = extracted.text.trim();
+    await closePdf(pdf);
     if (text.length < 40) {
       return Response.json({ error: "没有提取到足够文字，扫描版PDF暂不支持" }, { status: 422 });
+    }
+    const compactText = text.replace(/\s+/g, "");
+    const compactName = name.replace(/\s+/g, "");
+    if (!compactText.includes(symbol) && !compactText.includes(compactName)) {
+      return Response.json({
+        error: `PDF正文中没有找到${name}或股票代码${symbol}，请确认公告与股票匹配`,
+      }, { status: 422 });
     }
 
     const result = await summarizeWithDeepSeek(text);
@@ -159,6 +206,27 @@ export async function POST(request: Request) {
     return Response.json({ note: { ...note, risks: result.risks } }, { status: 201 });
   } catch (error) {
     const message = error instanceof Error ? error.message : "公告摘要失败";
-    return Response.json({ error: message }, { status: 500 });
+    return Response.json({ error: message }, { status: error instanceof RequestError ? error.status : 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const url = new URL(request.url);
+    const symbol = url.searchParams.get("symbol")?.trim() ?? "";
+    const id = Number(url.searchParams.get("id"));
+    if (!isStockCode(symbol) || !Number.isInteger(id) || id <= 0) {
+      return Response.json({ error: "公告摘要记录不正确" }, { status: 400 });
+    }
+    await ensureSchema();
+    const [deleted] = await getDb()
+      .delete(announcementNotes)
+      .where(and(eq(announcementNotes.id, id), eq(announcementNotes.symbol, symbol)))
+      .returning();
+    return deleted
+      ? Response.json({ ok: true })
+      : Response.json({ error: "公告摘要不存在" }, { status: 404 });
+  } catch {
+    return Response.json({ error: "公告摘要删除失败" }, { status: 500 });
   }
 }
