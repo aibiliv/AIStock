@@ -61,7 +61,7 @@ type Explanation = {
 };
 
 type Analysis = {
-  stock: { code: string; name: string; industry: string; marketSymbol: string };
+  stock: { code: string; name: string; industry: string; marketSymbol: string; sector?: string | null; businessSummary?: string | null };
   quote: {
     price: number;
     previousClose: number;
@@ -82,6 +82,13 @@ type Analysis = {
     revenueGrowth: number | null;
     profitGrowth: number | null;
     debtRatio: number | null;
+    marketCap: number | null;
+    pe: number | null;
+    pb: number | null;
+    roe: number | null;
+    grossMargin: number | null;
+    profitMargin: number | null;
+    operatingCashflow: number | null;
     series: Record<string, Array<{ date: string; value: number }>>;
   };
   history: Array<{
@@ -144,9 +151,7 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
 
 export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string }) {
   const [view, setView] = useState<View>("home");
-  const [darkMode, setDarkMode] = useState(
-    () => typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches,
-  );
+  const [darkMode, setDarkMode] = useState(false);
   const [query, setQuery] = useState("");
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [quotes, setQuotes] = useState<Record<string, Analysis>>({});
@@ -163,16 +168,30 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
   const notified = useRef(new Set<number>());
+  const pendingQuotes = useRef(new Set<string>());
+
+  useEffect(() => {
+    const colorScheme = window.matchMedia("(prefers-color-scheme: dark)");
+    const updateTheme = (event: MediaQueryListEvent) => setDarkMode(event.matches);
+    const timer = window.setTimeout(() => setDarkMode(colorScheme.matches), 0);
+    colorScheme.addEventListener("change", updateTheme);
+    return () => {
+      window.clearTimeout(timer);
+      colorScheme.removeEventListener("change", updateTheme);
+    };
+  }, []);
 
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? "dark" : "light";
   }, [darkMode]);
 
   function toggleTheme() {
-    setDarkMode((current) => {
-      document.documentElement.dataset.theme = current ? "light" : "dark";
-      return !current;
-    });
+    setDarkMode((current) => !current);
+  }
+
+  function navigate(nextView: View) {
+    setView(nextView);
+    if (nextView === "home") setAnalysis(null);
   }
 
   const portfolio = useMemo(() => calculatePortfolio(trades), [trades]);
@@ -225,9 +244,11 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   }, [loadData]);
 
   const fetchAnalysis = useCallback(async (stockQuery: string, showResult = true) => {
-    setAnalyzing(true);
-    setError("");
-    if (showResult) setAnalysis(null);
+    if (showResult) {
+      setAnalyzing(true);
+      setError("");
+      setAnalysis(null);
+    }
     try {
       const result = await jsonRequest<Analysis>("/api/analyze", {
         method: "POST",
@@ -243,13 +264,21 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       return result;
     } catch (analyzeError) {
       const message = analyzeError instanceof Error ? analyzeError.message : "股票分析失败";
-      setError(message);
-      flash(message);
+      if (showResult) {
+        setError(message);
+        flash(message);
+      }
       return null;
     } finally {
-      setAnalyzing(false);
+      if (showResult) setAnalyzing(false);
     }
   }, [flash]);
+
+  const refreshQuote = useCallback((symbol: string) => {
+    if (pendingQuotes.current.has(symbol)) return;
+    pendingQuotes.current.add(symbol);
+    void fetchAnalysis(symbol, false).finally(() => pendingQuotes.current.delete(symbol));
+  }, [fetchAnalysis]);
 
   useEffect(() => {
     const symbols = new Set([
@@ -258,11 +287,11 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     ]);
     const timer = window.setTimeout(() => {
       for (const symbol of symbols) {
-        if (!quotes[symbol]) void fetchAnalysis(symbol, false);
+        if (!quotes[symbol]) refreshQuote(symbol);
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [alerts, fetchAnalysis, portfolio.positions, quotes]);
+  }, [alerts, portfolio.positions, quotes, refreshQuote]);
 
   const checkAlerts = useCallback(() => {
     for (const alert of alerts) {
@@ -285,14 +314,14 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     const firstCheck = window.setTimeout(checkAlerts, 0);
     const timer = window.setInterval(() => {
       for (const symbol of new Set(alerts.filter((item) => item.enabled).map((item) => item.symbol))) {
-        void fetchAnalysis(symbol, false);
+        refreshQuote(symbol);
       }
     }, 300_000);
     return () => {
       window.clearTimeout(firstCheck);
       window.clearInterval(timer);
     };
-  }, [alerts, checkAlerts, fetchAnalysis]);
+  }, [alerts, checkAlerts, refreshQuote]);
 
   async function analyzeStock(event?: FormEvent) {
     event?.preventDefault();
@@ -404,7 +433,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <button className="brand" onClick={() => setView("home")}>
+        <button className="brand" onClick={() => navigate("home")}>
           <span className="brand-mark">股</span>
           <span><strong>我的股票助手</strong><small>看懂 · 记录 · 复盘</small></span>
         </button>
@@ -412,7 +441,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
           {navItems.map((item) => {
             const NavIcon = item.icon;
             return (
-              <button key={item.id} className={view === item.id ? "nav-item active" : "nav-item"} onClick={() => setView(item.id)}>
+              <button key={item.id} className={view === item.id ? "nav-item active" : "nav-item"} onClick={() => navigate(item.id)}>
                 <span><NavIcon size={19} weight={view === item.id ? "fill" : "regular"} /></span>{item.label}
               </button>
             );
@@ -465,7 +494,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 onBuy={() => setTradeMode("buy")}
                 onSell={() => setTradeMode("sell")}
                 onWatch={() => void addWatch()}
-                onNavigate={setView}
+                onNavigate={navigate}
                 onReview={setReviewCycleEndTradeId}
                 onAlertPlan={() => { setSettingsSection("alerts"); setView("settings"); }}
                 onAcknowledge={(id) => void updateAlert(id)}
@@ -475,7 +504,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
               <Watchlist
                 items={watchlist}
                 quotes={quotes}
-                onSearch={() => setView("home")}
+                onSearch={() => navigate("home")}
                 onAnalyze={(symbol) => void fetchAnalysis(symbol)}
                 onRemove={(symbol) => void removeWatch(symbol)}
                 onSaved={() => void loadData()}
@@ -508,7 +537,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         {navItems.map((item) => {
           const NavIcon = item.icon;
           return (
-            <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => setView(item.id)}>
+            <button key={item.id} className={view === item.id ? "active" : ""} onClick={() => navigate(item.id)}>
               <NavIcon size={20} weight={view === item.id ? "fill" : "regular"} />{item.label}
             </button>
           );
@@ -672,7 +701,7 @@ function AnalysisView({ analysis, watched, canSell, onWatch, onBuy, onSell }: {
       <section className="stock-summary panel">
         <div className="stock-identity">
           <span className="stock-avatar large">{stock.name.slice(0, 1)}</span>
-          <div><span className="demo-label">{analysis.mode === "deepseek" ? "AI解释" : "自动解释"}</span><h2>{stock.name} <small>{stock.code}</small></h2><p>{stock.industry}</p></div>
+          <div><span className="demo-label">{analysis.mode === "deepseek" ? "AI解释" : "自动解释"}</span><h2>{stock.name} <small>{stock.code}</small></h2><p>{stock.industry}{stock.sector ? ` · ${stock.sector}` : ""}</p></div>
         </div>
         <div className="price-block">
           <strong>{price(quote.price)}</strong>
@@ -698,8 +727,11 @@ function AnalysisView({ analysis, watched, canSell, onWatch, onBuy, onSell }: {
         <section className="panel analysis-card">
           <CardTitle number="01" title="公司与行业" source="通俗解释" />
           <div className="plain-points">
-            {explanation.company.map((item, index) => <p key={item}><b>{["是什么", "数据代码", "还要核验"][index] ?? "信息"}</b><span>{item}</span></p>)}
+            {explanation.company.map((item, index) => <p key={item}><b>{["是什么", "数据代码", "还要核验", "板块"][index] ?? "信息"}</b><span>{item}</span></p>)}
           </div>
+          {stock.businessSummary && (
+            <p className="company-brief">公司简介：{stock.businessSummary.length > 90 ? `${stock.businessSummary.slice(0, 90)}…` : stock.businessSummary}</p>
+          )}
         </section>
 
         <section className="panel analysis-card">
@@ -708,6 +740,16 @@ function AnalysisView({ analysis, watched, canSell, onWatch, onBuy, onSell }: {
             <Metric label="营收变化" value={financials.revenueGrowth} suffix="%" />
             <Metric label="利润变化" value={financials.profitGrowth} suffix="%" />
             <Metric label="负债率" value={financials.debtRatio} suffix="%" />
+          </div>
+          <div className="metric-row">
+            <Metric label="总市值" value={financials.marketCap} marketCapValue />
+            <Metric label="市盈率" value={financials.pe} suffix="" />
+            <Metric label="市净率" value={financials.pb} suffix="" />
+          </div>
+          <div className="metric-row">
+            <Metric label="ROE" value={financials.roe} percentValue />
+            <Metric label="毛利率" value={financials.grossMargin} percentValue />
+            <Metric label="净利率" value={financials.profitMargin} percentValue />
           </div>
           <button className="text-button" onClick={() => setShowRaw((value) => !value)}>{showRaw ? "收起原始数字 ↑" : "展开查看原始数字 →"}</button>
           {showRaw && (
@@ -960,8 +1002,29 @@ function AnnouncementPanel({ stock }: { stock: Analysis["stock"] }) {
   );
 }
 
-function Metric({ label, value, suffix = "", moneyValue = false }: { label: string; value: number | null; suffix?: string; moneyValue?: boolean }) {
-  const content = value === null ? "暂无" : moneyValue ? price(value) : `${value >= 0 && suffix === "%" ? "+" : ""}${value.toFixed(1)}${suffix}`;
+function formatMarketCap(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return "—";
+  if (value >= 1e12) return `${(value / 1e12).toFixed(2)}万亿`;
+  if (value >= 1e8) return `${(value / 1e8).toFixed(2)}亿`;
+  if (value >= 1e4) return `${(value / 1e4).toFixed(2)}万`;
+  return value.toLocaleString("zh-CN");
+}
+
+function Metric({ label, value, suffix = "", moneyValue = false, marketCapValue = false, percentValue = false }: {
+  label: string;
+  value: number | null;
+  suffix?: string;
+  moneyValue?: boolean;
+  marketCapValue?: boolean;
+  percentValue?: boolean;
+}) {
+  let content = "暂无";
+  if (value !== null) {
+    if (marketCapValue) content = formatMarketCap(value);
+    else if (percentValue) content = `${(value * 100).toFixed(1)}%`;
+    else if (moneyValue) content = price(value);
+    else content = `${value >= 0 && suffix === "%" ? "+" : ""}${value.toFixed(1)}${suffix}`;
+  }
   return <div><span>{label}</span><strong className={value !== null && value < 0 ? "down" : "neutral"}>{content}</strong><small>{value === null ? "数据不足" : "最新可用数据"}</small></div>;
 }
 

@@ -1,11 +1,5 @@
 import type { Metadata } from "next";
-import { Noto_Sans_SC } from "next/font/google";
 import "./globals.css";
-
-const notoSans = Noto_Sans_SC({
-  variable: "--font-sans",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: "我的股票助手｜看懂、记录、复盘",
@@ -33,7 +27,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="zh-CN">
-      <body className={notoSans.variable}>{children}</body>
+      <body>{children}</body>
     </html>
   );
 }

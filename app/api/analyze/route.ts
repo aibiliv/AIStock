@@ -72,7 +72,7 @@ async function getDeepSeekExplanation(facts: Awaited<ReturnType<typeof analyzeSt
               "只能使用用户提供的事实，不补充或编造数字。",
               "不荐股，不使用必涨、买入、卖出等确定性指令。",
               "输出JSON，字段必须包含summary、company、risks、themes、missingInformation。",
-              "company和risks为字符串数组；themes为{name,confidence,reason}数组。",
+              "company和risks为字符串数组；themes为{name,confidence,reason}数组，应为区分行业与概念的多条题材，至少给出行业与1-2个概念板块（如人工智能、新能源、高股息等），不要仅重复行业名。",
             ].join("\n"),
           },
           {
@@ -89,14 +89,15 @@ async function getDeepSeekExplanation(facts: Awaited<ReturnType<typeof analyzeSt
   if (!response.ok) {
     return { mode: "automatic" as const, explanation: fallback };
   }
-  const payload = await response.json() as DeepSeekResponse;
-  const content = payload.choices?.[0]?.message?.content;
+  const payload = await response.json().catch(() => null) as DeepSeekResponse | null;
+  const content = payload?.choices?.[0]?.message?.content;
   if (!content) {
     return { mode: "automatic" as const, explanation: fallback };
   }
 
+  const cleaned = content.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
   try {
-    return { mode: "deepseek" as const, explanation: normalizeExplanation(JSON.parse(content), fallback) };
+    return { mode: "deepseek" as const, explanation: normalizeExplanation(JSON.parse(cleaned), fallback) };
   } catch {
     return { mode: "automatic" as const, explanation: fallback };
   }
