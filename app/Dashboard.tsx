@@ -144,7 +144,9 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
 
 export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string }) {
   const [view, setView] = useState<View>("home");
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches,
+  );
   const [query, setQuery] = useState("");
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [quotes, setQuotes] = useState<Record<string, Analysis>>({});
@@ -163,10 +165,8 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const notified = useRef(new Set<number>());
 
   useEffect(() => {
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    setDarkMode(prefersDark);
-    document.documentElement.dataset.theme = prefersDark ? "dark" : "light";
-  }, []);
+    document.documentElement.dataset.theme = darkMode ? "dark" : "light";
+  }, [darkMode]);
 
   function toggleTheme() {
     setDarkMode((current) => {
@@ -607,7 +607,7 @@ function Home({
                       <div><h4>{position.name}<small>{position.symbol}</small></h4><p>{position.quantity}股 · 成本{money(position.averageCostCents)}</p></div>
                       <strong className={(rate ?? 0) >= 0 ? "up" : "down"}>{rate === null ? "行情更新中" : `${rate >= 0 ? "+" : ""}${rate.toFixed(2)}%`}</strong>
                     </div>
-                    <div className="risk-line"><span>按当前参考价计算</span><b>{quote ? money(profit) : "—"}</b></div>
+                    <div className="risk-line"><span>按当前参考价计算</span><b>{quote ? money(profit) : "暂无"}</b></div>
                     <div className={`holding-status ${stop ? "amber" : ""}`}><i />{stop ? `止损提醒 ${money(stop.targetPriceCents)}` : "尚未设置止损提醒"}</div>
                   </article>
                 );
@@ -617,8 +617,8 @@ function Home({
 
           <div className="summary-strip home-summary">
             <div><span>已实现盈亏</span><strong className={portfolio.realizedCents >= 0 ? "up" : "down"}>{money(portfolio.realizedCents)}</strong></div>
-            <div><span>完整交易胜率</span><strong>{completedCycles.length ? `${winRate}%` : "—"}</strong></div>
-            <div><span>按计划复盘</span><strong>{reviews.length ? `${planRate}%` : "—"}</strong></div>
+            <div><span>完整交易胜率</span><strong>{completedCycles.length ? `${winRate}%` : "暂无"}</strong></div>
+            <div><span>按计划复盘</span><strong>{reviews.length ? `${planRate}%` : "暂无"}</strong></div>
             <div><span>最近改进规则</span><strong className="summary-lesson">{reviews[0]?.lesson ?? "暂无"}</strong></div>
           </div>
 
@@ -680,7 +680,9 @@ function AnalysisView({ analysis, watched, canSell, onWatch, onBuy, onSell }: {
           <small>行情时间 {quoteDate}</small>
         </div>
         <div className="summary-actions">
-          <button className={watched ? "soft-button active" : "soft-button"} onClick={onWatch}>{watched ? "✓ 已关注" : "☆ 加入关注"}</button>
+          <button className={watched ? "soft-button active" : "soft-button"} onClick={onWatch}>
+            {watched ? <><CheckCircle size={15} weight="fill" />已关注</> : <><Star size={15} />加入关注</>}
+          </button>
           <button className="primary-button" onClick={onBuy}>记录买入</button>
         </div>
       </section>
@@ -760,7 +762,7 @@ function AnalysisView({ analysis, watched, canSell, onWatch, onBuy, onSell }: {
 
       <section className="decision-bar">
         <div><span className="eyebrow">现在由你决定</span><h3>这只股票下一步怎么处理？</h3></div>
-        <div><button className="soft-button" onClick={onWatch}>{watched ? "✓ 已关注" : "☆ 加入关注"}</button>{canSell && <button className="soft-button" onClick={onSell}>记录卖出</button>}<button className="primary-button" onClick={onBuy}>我已买入</button></div>
+        <div><button className="soft-button" onClick={onWatch}>{watched ? <><CheckCircle size={15} weight="fill" />已关注</> : <><Star size={15} />加入关注</>}</button>{canSell && <button className="soft-button" onClick={onSell}>记录卖出</button>}<button className="primary-button" onClick={onBuy}>我已买入</button></div>
       </section>
     </div>
   );
@@ -1059,7 +1061,7 @@ function Trades({ trades, reviews, onBuy, onSell, onReview }: {
         <div><span>交易记录</span><strong>{trades.length}</strong></div>
         <div><span>当前持仓</span><strong>{portfolio.positions.length}</strong></div>
         <div><span>已实现盈亏</span><strong className={portfolio.realizedCents >= 0 ? "up" : "down"}>{money(portfolio.realizedCents)}</strong></div>
-        <div><span>完整交易胜率</span><strong>{completedCycles.length ? `${Math.round(winningCycles / completedCycles.length * 100)}%` : "—"}</strong></div>
+        <div><span>完整交易胜率</span><strong>{completedCycles.length ? `${Math.round(winningCycles / completedCycles.length * 100)}%` : "暂无"}</strong></div>
       </div>
       {trades.length ? (
         <section className="panel trade-list">
@@ -1114,7 +1116,7 @@ function Settings({ status, alerts, section, onSection, onDisable, onNotificatio
         {cards.map((card) => (
           <article className="panel setting-card" key={card.id}>
             <span className={`setting-icon ${card.id}`}>{card.icon}</span>
-            <div className="setting-copy"><h3>{card.title}</h3><p>{card.text}</p><span className="connected">● {card.state}</span></div>
+            <div className="setting-copy"><h3>{card.title}</h3><p>{card.text}</p><span className="connected"><CheckCircle size={13} weight="fill" />{card.state}</span></div>
             <button className="text-button" onClick={() => onSection(section === card.id ? null : card.id)}>{section === card.id ? "收起" : "查看"}</button>
           </article>
         ))}
@@ -1130,7 +1132,7 @@ function Settings({ status, alerts, section, onSection, onDisable, onNotificatio
       {section === "privacy" && <section className="panel settings-detail"><h3>导出个人数据</h3><p>备份包含交易、关注、提醒与复盘，不包含任何API密钥。</p><a className="primary-button download-link" href="/api/export">下载JSON备份</a></section>}
       <section className="panel boundary-card">
         <span>产品边界</span>
-        <div><p>✓ 不自动交易</p><p>✓ 不荐股</p><p>✓ 不承诺提醒必达</p><p>✓ 数据缺失会明说</p><p>✓ 最终决定由你作出</p><p>✓ 重要止损在券商App重复设置</p></div>
+        <div><p><CheckCircle size={14} />不自动交易</p><p><CheckCircle size={14} />不荐股</p><p><CheckCircle size={14} />不承诺提醒必达</p><p><CheckCircle size={14} />数据缺失会明说</p><p><CheckCircle size={14} />最终决定由你作出</p><p><CheckCircle size={14} />重要止损在券商App重复设置</p></div>
       </section>
     </div>
   );

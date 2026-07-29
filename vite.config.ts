@@ -24,15 +24,18 @@ export default defineConfig(async ({ mode }) => {
   // 本地环境变量（来自 git 忽略的 .env 文件，前缀为空=全部读取）。
   // 通过 worker 的 vars 绑定注入，应用用 import { env } from "cloudflare:workers" 读取。
   const localEnv = loadEnv(mode, process.cwd(), "");
-  const aiVars: Record<string, string> = {
+  const runtimeVars: Record<string, string> = {
     DEEPSEEK_API_KEY: localEnv.DEEPSEEK_API_KEY ?? process.env.DEEPSEEK_API_KEY ?? "",
     AI_API_KEY: localEnv.AI_API_KEY ?? process.env.AI_API_KEY ?? "",
     AI_PROVIDER: localEnv.AI_PROVIDER ?? process.env.AI_PROVIDER ?? "",
     AI_API_BASE: localEnv.AI_API_BASE ?? process.env.AI_API_BASE ?? "",
     AI_MODEL: localEnv.AI_MODEL ?? process.env.AI_MODEL ?? "",
+    APP_USERNAME: localEnv.APP_USERNAME ?? process.env.APP_USERNAME ?? "",
+    APP_PASSWORD: localEnv.APP_PASSWORD ?? process.env.APP_PASSWORD ?? "",
+    APP_AUTH_SECRET: localEnv.APP_AUTH_SECRET ?? process.env.APP_AUTH_SECRET ?? "",
   };
   const vars = Object.fromEntries(
-    Object.entries(aiVars).filter(([, v]) => v.trim().length > 0),
+    Object.entries(runtimeVars).filter(([, v]) => v.trim().length > 0),
   );
 
   const localBindingConfig = {
