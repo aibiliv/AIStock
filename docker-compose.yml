@@ -21,3 +21,6 @@ services:
       - AI_API_KEY=${AI_API_KEY:-}
       - AI_API_BASE=${AI_API_BASE:-}
       - AI_MODEL=${AI_MODEL:-}
+      - APP_USERNAME=${APP_USERNAME}
+      - APP_PASSWORD=${APP_PASSWORD}
+      - APP_AUTH_SECRET=${APP_AUTH_SECRET}
