@@ -14,6 +14,7 @@ import {
   type Icon,
 } from "@phosphor-icons/react";
 import { buildTradeCycles, calculatePortfolio, localIsoDate, type Trade, type TradeCycle } from "../lib/domain";
+import type { SectorHeatmap as SectorHeatmapData } from "../lib/sectors";
 
 type View = "home" | "watchlist" | "trades" | "settings";
 type TradeMode = "buy" | "sell";
@@ -138,6 +139,18 @@ function money(cents: number) {
 
 function price(value: number) {
   return `¥${value.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function compactAmount(value: number) {
+  if (value >= 100_000_000) return `${(value / 100_000_000).toFixed(1)}亿`;
+  if (value >= 10_000) return `${(value / 10_000).toFixed(1)}万`;
+  return value.toLocaleString("zh-CN");
+}
+
+function latestWeekday() {
+  const date = new Date();
+  while (date.getDay() === 0 || date.getDay() === 6) date.setDate(date.getDate() - 1);
+  return localIsoDate(date);
 }
 
 async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
@@ -596,6 +609,7 @@ function Home({
         />
       ) : (
         <>
+          <SectorHeatmap />
           <section className="quick-title"><div><span className="eyebrow">今天只处理重要的事</span><h3>我的持仓</h3></div><button onClick={() => onNavigate("trades")}>查看交易记录 →</button></section>
           {portfolio.positions.length ? (
             <div className="holding-grid">
@@ -656,6 +670,97 @@ function Home({
         </>
       )}
     </div>
+  );
+}
+
+function SectorHeatmap() {
+  const [date, setDate] = useState(latestWeekday);
+  const [data, setData] = useState<SectorHeatmapData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+
+  const load = useCallback(async (selectedDate: string) => {
+    setLoading(true);
+    setMessage("");
+    try {
+      const heatmap = await jsonRequest<SectorHeatmapData>(
+        `/api/sector-heatmap?date=${encodeURIComponent(selectedDate)}`,
+      );
+      setData(heatmap);
+    } catch (loadError) {
+      setData(null);
+      setMessage(loadError instanceof Error ? loadError.message : "板块行情获取失败");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(date), 0);
+    return () => window.clearTimeout(timer);
+  }, [date, load]);
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    void load(date);
+  }
+
+  return (
+    <section className="panel sector-heatmap-card" aria-labelledby="sector-heatmap-title">
+      <div className="sector-heatmap-head">
+        <div>
+          <span className="eyebrow">申万一级行业 · 前5名</span>
+          <h3 id="sector-heatmap-title">板块异动热力图</h3>
+          <p>按当日涨跌幅绝对值排序，红色上涨、绿色下跌。</p>
+        </div>
+        <form className="sector-date-form" onSubmit={submit}>
+          <label htmlFor="sector-date">查看日期</label>
+          <input
+            id="sector-date"
+            type="date"
+            min="2018-01-01"
+            max={localIsoDate()}
+            value={date}
+            onChange={(event) => setDate(event.target.value)}
+          />
+          <button type="submit" disabled={loading}>{loading ? "加载中…" : "查看异动"}</button>
+        </form>
+      </div>
+
+      {loading && <div className="sector-heatmap-state" role="status">正在汇总行业板块行情…</div>}
+      {!loading && message && (
+        <div className="sector-heatmap-state error" role="alert">
+          <b>暂时无法显示这一天的数据</b>
+          <span>{message}</span>
+        </div>
+      )}
+      {!loading && data && (
+        <>
+          <div className="sector-heatmap-grid">
+            {data.sectors.map((sector, index) => {
+              const direction = sector.changePercent > 0 ? "up-sector" : sector.changePercent < 0 ? "down-sector" : "flat-sector";
+              return (
+                <article className={`sector-tile ${direction} rank-${index + 1}`} key={sector.code}>
+                  <div className="sector-tile-top">
+                    <span>#{index + 1}</span>
+                    <small>{sector.changePercent >= 0 ? "上涨异动" : "下跌异动"}</small>
+                  </div>
+                  <div>
+                    <h4>{sector.name}</h4>
+                    <strong>{sector.changePercent >= 0 ? "+" : ""}{sector.changePercent.toFixed(2)}%</strong>
+                  </div>
+                  <p>成交额 {compactAmount(sector.amount)}</p>
+                </article>
+              );
+            })}
+          </div>
+          <div className="sector-heatmap-foot">
+            <span>{data.date} · 覆盖 {data.sampleSize} 个一级行业</span>
+            <a href={data.source.url} target="_blank" rel="noreferrer">数据来源：{data.source.name} ↗</a>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 
