@@ -1,6 +1,7 @@
 import { ensureSchema, getDb } from "../../../db";
 import {
   alertRules,
+  accountSettings,
   analysisReports,
   announcementNotes,
   reviews,
@@ -16,7 +17,7 @@ export async function GET() {
   try {
     await ensureSchema();
     const db = getDb();
-    const [trades, watchlist, watchDetailRows, alerts, reviewRows, analysisHistory, announcements] = await Promise.all([
+    const [trades, watchlist, watchDetailRows, alerts, reviewRows, analysisHistory, announcements, account] = await Promise.all([
       db.select().from(tradeRecords),
       db.select().from(watchItems),
       db.select().from(watchDetails),
@@ -24,6 +25,7 @@ export async function GET() {
       db.select().from(reviews),
       db.select().from(analysisReports),
       db.select().from(announcementNotes),
+      db.select().from(accountSettings),
     ]);
     const body = JSON.stringify({
       exportedAt: new Date().toISOString(),
@@ -34,6 +36,7 @@ export async function GET() {
       reviews: reviewRows,
       analysisHistory,
       announcements,
+      accountSettings: account,
     }, null, 2);
     return new Response(body, {
       headers: {

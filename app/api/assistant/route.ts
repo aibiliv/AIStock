@@ -18,7 +18,9 @@ function validContext(value: unknown): value is AssistantContext {
     context.stock?.code &&
     context.stock.name &&
     Number.isFinite(context.quote?.price) &&
-    context.source?.name
+    context.source?.name &&
+    context.portfolio &&
+    Object.hasOwn(context.portfolio, "totalPositionPercent")
   );
 }
 
@@ -74,8 +76,9 @@ export async function POST(request: Request) {
             content: [
               "你是股票复盘软件中的证据型对话助手。",
               "只能使用context给出的事实和对话，不补充未经提供的数据。",
+              "遇到买入问题时，必须先检查总仓位、现金和单股集中度；缺少账户资金时不得判断。",
               "必须结合用户持仓信息；没有持仓时明确说明。",
-              "不荐股，不给出确定性的买入或卖出指令。",
+              "不替用户作买卖决定，不给出保证收益或确定性的买入卖出指令；只能判断仓位约束和条件是否完备。",
               "回答使用四段：结论、依据、风险与缺口、下一步核验。",
               "依据必须标出具体数字及其数据时间；缺失信息要直接承认。",
               "回答简洁、通俗，控制在500字以内。",
