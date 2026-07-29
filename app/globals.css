@@ -836,12 +836,16 @@ svg { display: block; }
 .portfolio-chart-legend .asset::before { background: var(--accent); }
 .portfolio-chart-legend .position::before { background: var(--amber); }
 .portfolio-chart { display: block; height: auto; width: 100%; }
+.portfolio-chart:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .portfolio-chart text { fill: var(--muted); font-size: 11px; }
 .portfolio-axis { stroke: var(--line-strong); stroke-width: 1; }
 .portfolio-asset-line,
 .portfolio-position-line { fill: none; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }
 .portfolio-asset-line { stroke: var(--accent); }
 .portfolio-position-line { stroke: var(--amber); stroke-dasharray: 7 5; }
+.portfolio-asset-dot { fill: var(--surface); stroke: var(--accent); stroke-width: 3; }
+.portfolio-position-dot { fill: var(--surface); stroke: var(--amber); stroke-width: 3; }
+.portfolio-tooltip text { font-size: 10px; }
 .portfolio-chart-empty,
 .portfolio-method {
   background: var(--surface-soft);

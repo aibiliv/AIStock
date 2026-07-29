@@ -797,6 +797,7 @@ function Home({
 }
 
 function PortfolioOverview({ insights, onConfigure }: { insights: PortfolioInsights; onConfigure: () => void }) {
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const points = insights.history;
   const width = 900;
   const height = 210;
@@ -809,6 +810,43 @@ function PortfolioOverview({ insights, onConfigure }: { insights: PortfolioInsig
   const positionY = (value: number) => 12 + (100 - Math.max(0, Math.min(100, value))) / 100 * 150;
   const assetLine = points.map((point, index) => `${x(index).toFixed(1)},${assetY(point.totalAssetsCents).toFixed(1)}`).join(" ");
   const positionLine = points.map((point, index) => `${x(index).toFixed(1)},${positionY(point.positionPercent).toFixed(1)}`).join(" ");
+  const selectedPoint = selectedIndex === null ? null : points[selectedIndex];
+  const selectedMarketValue = selectedPoint
+    ? Math.round(selectedPoint.totalAssetsCents * selectedPoint.positionPercent / 100)
+    : 0;
+  const selectedCash = selectedPoint ? selectedPoint.totalAssetsCents - selectedMarketValue : 0;
+  const previousAssets = selectedIndex !== null && selectedIndex > 0 ? points[selectedIndex - 1].totalAssetsCents : null;
+  const selectedDailyProfit = selectedPoint && previousAssets !== null
+    ? selectedPoint.totalAssetsCents - previousAssets
+    : null;
+  const tooltipX = selectedIndex === null ? 0 : x(selectedIndex) > width / 2 ? x(selectedIndex) - 242 : x(selectedIndex) + 12;
+
+  function selectAtPointer(event: ReactPointerEvent<SVGSVGElement>) {
+    const matrix = event.currentTarget.getScreenCTM();
+    if (!matrix || !points.length) return;
+    const point = event.currentTarget.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const pointer = point.matrixTransform(matrix.inverse());
+    if (pointer.x < 0 || pointer.x > width || pointer.y < 0 || pointer.y > 170) {
+      setSelectedIndex(null);
+      return;
+    }
+    const index = points.length <= 1
+      ? 0
+      : Math.round(Math.max(0, Math.min(width, pointer.x)) / width * (points.length - 1));
+    setSelectedIndex(index);
+  }
+
+  function navigateChart(event: ReactKeyboardEvent<SVGSVGElement>) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End", "Escape"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "Escape") return setSelectedIndex(null);
+    if (event.key === "Home") return setSelectedIndex(0);
+    if (event.key === "End") return setSelectedIndex(points.length - 1);
+    const current = selectedIndex ?? points.length - 1;
+    setSelectedIndex(Math.max(0, Math.min(points.length - 1, current + (event.key === "ArrowLeft" ? -1 : 1))));
+  }
 
   return (
     <section className="panel portfolio-overview">
@@ -827,10 +865,38 @@ function PortfolioOverview({ insights, onConfigure }: { insights: PortfolioInsig
       {points.length >= 2 ? (
         <div className="portfolio-chart-wrap">
           <div className="portfolio-chart-legend"><span className="asset">总资产</span><span className="position">总仓位</span></div>
-          <svg className="portfolio-chart" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="账户总资产和总仓位历史走势图">
+          <p className="chart-interaction-hint">移动鼠标或点按查看每天的资产、现金与仓位，键盘可使用左右方向键。</p>
+          <svg
+            className="portfolio-chart"
+            viewBox={`0 0 ${width} ${height}`}
+            role="img"
+            tabIndex={0}
+            aria-label="账户总资产和总仓位历史走势图。移动鼠标、点按或使用左右方向键查看每天明细。"
+            onPointerMove={selectAtPointer}
+            onPointerDown={selectAtPointer}
+            onPointerLeave={(event) => { if (event.pointerType !== "touch") setSelectedIndex(null); }}
+            onKeyDown={navigateChart}
+          >
             <line x1="0" y1="162" x2={width} y2="162" className="portfolio-axis" />
             <polyline points={assetLine} className="portfolio-asset-line" />
             <polyline points={positionLine} className="portfolio-position-line" />
+            {selectedPoint && selectedIndex !== null && (
+              <g className="portfolio-selection" pointerEvents="none">
+                <line x1={x(selectedIndex)} x2={x(selectedIndex)} y1="5" y2="162" className="chart-crosshair" />
+                <line x1="0" x2={width} y1={assetY(selectedPoint.totalAssetsCents)} y2={assetY(selectedPoint.totalAssetsCents)} className="chart-crosshair chart-crosshair-horizontal" />
+                <circle cx={x(selectedIndex)} cy={assetY(selectedPoint.totalAssetsCents)} r="4" className="portfolio-asset-dot" />
+                <circle cx={x(selectedIndex)} cy={positionY(selectedPoint.positionPercent)} r="4" className="portfolio-position-dot" />
+                <g transform={`translate(${tooltipX}, 8)`} className="chart-tooltip portfolio-tooltip">
+                  <rect width="230" height="132" rx="9" />
+                  <text x="12" y="19" className="chart-tooltip-date">{selectedPoint.date}</text>
+                  <text x="12" y="40">总资产 <tspan x="218" textAnchor="end">{money(selectedPoint.totalAssetsCents)}</tspan></text>
+                  <text x="12" y="59">总仓位 <tspan x="218" textAnchor="end">{selectedPoint.positionPercent.toFixed(1)}%</tspan></text>
+                  <text x="12" y="78">持仓市值 <tspan x="218" textAnchor="end">{money(selectedMarketValue)}</tspan></text>
+                  <text x="12" y="97">可用现金 <tspan x="218" textAnchor="end">{money(selectedCash)}</tspan></text>
+                  <text x="12" y="116">当日资产变化 <tspan x="218" textAnchor="end" className={(selectedDailyProfit ?? 0) >= 0 ? "chart-tooltip-up" : "chart-tooltip-down"}>{selectedDailyProfit === null ? "首日" : `${selectedDailyProfit >= 0 ? "+" : ""}${money(selectedDailyProfit)}`}</tspan></text>
+                </g>
+              </g>
+            )}
             <text x="0" y="190">{points[0].date}</text>
             <text x={width} y="190" textAnchor="end">{points.at(-1)?.date}</text>
           </svg>
