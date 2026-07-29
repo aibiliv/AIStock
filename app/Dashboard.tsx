@@ -149,6 +149,13 @@ type Analysis = {
   explanation: Explanation;
 };
 
+type Position = ReturnType<typeof calculatePortfolio>["positions"][number];
+
+type AssistantMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
 type Status = {
   deepseekConfigured: boolean;
   aiProvider?: string;
@@ -661,6 +668,7 @@ function Home({
       {analysis ? (
         <AnalysisView
           analysis={analysis}
+          position={portfolio.positions.find((position) => position.symbol === analysis.stock.code) ?? null}
           watched={watched}
           canSell={portfolio.positions.some((position) => position.symbol === analysis.stock.code)}
           onWatch={onWatch}
@@ -932,8 +940,9 @@ function SectorHeatmap() {
   );
 }
 
-function AnalysisView({ analysis, watched, canSell, onWatch, onBuy, onSell }: {
+function AnalysisView({ analysis, position, watched, canSell, onWatch, onBuy, onSell }: {
   analysis: Analysis;
+  position: Position | null;
   watched: boolean;
   canSell: boolean;
   onWatch: () => void;
@@ -972,6 +981,9 @@ function AnalysisView({ analysis, watched, canSell, onWatch, onBuy, onSell }: {
         <span className="ai-mark">{analysis.mode === "deepseek" ? "AI" : "算"}</span>
         <div><span>一句话看懂</span><h3>{explanation.summary}</h3><p>只基于页面所列公开数据整理，不构成投资建议。</p></div>
       </section>
+
+      <EvidencePanel analysis={analysis} position={position} />
+      <SmartAssistant key={stock.code} analysis={analysis} position={position} />
 
       <MarketChart analysis={analysis} />
 
@@ -1075,6 +1087,176 @@ function AnalysisView({ analysis, watched, canSell, onWatch, onBuy, onSell }: {
         <div><button className="soft-button" onClick={onWatch}>{watched ? <><CheckCircle size={15} weight="fill" />已关注</> : <><Star size={15} />加入关注</>}</button>{canSell && <button className="soft-button" onClick={onSell}>记录卖出</button>}<button className="primary-button" onClick={onBuy}>我已买入</button></div>
       </section>
     </div>
+  );
+}
+
+function EvidencePanel({ analysis, position }: { analysis: Analysis; position: Position | null }) {
+  const { quote, financials, source } = analysis;
+  const evidence = [
+    {
+      label: "行情位置",
+      value: `${price(quote.price)} · 20日均线${price(quote.ma20)}`,
+      detail: `当前价位于20日均线${quote.price >= quote.ma20 ? "上方" : "下方"}，行情时间${quote.marketTime ? new Date(quote.marketTime).toLocaleString("zh-CN") : "未提供"}。`,
+      confidence: "高",
+      source: source.name,
+    },
+    {
+      label: "风险尺度",
+      value: `观察线${price(quote.support)} · 波动${quote.volatility.toFixed(2)}%`,
+      detail: "观察线来自近期低点，波动率来自近期日涨跌幅，均为程序计算。",
+      confidence: "高",
+      source: "公开行情 · 程序计算",
+    },
+    {
+      label: "财务完整度",
+      value: [financials.revenueGrowth, financials.profitGrowth, financials.pe, financials.roe].filter((value) => value !== null).length >= 3 ? "主要字段可用" : "关键字段不足",
+      detail: "财务数据用于初筛；报告期、口径和一次性损益仍需结合公告核验。",
+      confidence: "中",
+      source: "公开财务接口",
+    },
+  ];
+
+  if (position) {
+    const returnPercent = ((quote.price * 1000 / position.averageCostMillis) - 1) * 100;
+    evidence.unshift({
+      label: "我的持仓",
+      value: `${position.quantity}股 · 成本${millisPrice(position.averageCostMillis)}`,
+      detail: `按当前参考价估算为${returnPercent >= 0 ? "+" : ""}${returnPercent.toFixed(2)}%，不含未来费用和滑点。`,
+      confidence: "高",
+      source: "我的交易记录",
+    });
+  }
+
+  return (
+    <section className="panel evidence-panel">
+      <div className="evidence-heading">
+        <div><span className="eyebrow">结论从哪里来</span><h3>关键证据与可信度</h3></div>
+        <p>数字、时间和缺口分开呈现，避免把推测当事实。</p>
+      </div>
+      <div className="evidence-grid">
+        {evidence.map((item) => (
+          <article key={item.label}>
+            <div><span>{item.label}</span><b className={item.confidence === "高" ? "high" : "medium"}>{item.confidence}可信</b></div>
+            <strong>{item.value}</strong>
+            <p>{item.detail}</p>
+            <small>来源：{item.source}</small>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SmartAssistant({ analysis, position }: { analysis: Analysis; position: Position | null }) {
+  const [question, setQuestion] = useState("");
+  const [asking, setAsking] = useState(false);
+  const [messages, setMessages] = useState<AssistantMessage[]>([{
+    role: "assistant",
+    content: `我已经读完${analysis.stock.name}的当前分析。你可以继续追问风险、财务，${position ? "也可以让我结合你的持仓成本解释。" : "记录持仓后还能获得个性化解释。"}`,
+  }]);
+
+  const positionContext = position ? {
+    quantity: position.quantity,
+    averageCost: position.averageCostMillis / 1000,
+    returnPercent: ((analysis.quote.price * 1000 / position.averageCostMillis) - 1) * 100,
+  } : null;
+
+  async function ask(text: string) {
+    const clean = text.trim();
+    if (!clean || asking) return;
+    const history = messages.slice(-8);
+    setMessages((current) => [...current, { role: "user", content: clean }]);
+    setQuestion("");
+    setAsking(true);
+    try {
+      const result = await jsonRequest<{ answer: string; mode: string }>("/api/assistant", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          question: clean,
+          messages: history,
+          context: {
+            stock: {
+              code: analysis.stock.code,
+              name: analysis.stock.name,
+              industry: analysis.stock.industry,
+              instrumentType: analysis.stock.instrumentType,
+            },
+            quote: {
+              price: analysis.quote.price,
+              changePercent: analysis.quote.changePercent,
+              ma20: analysis.quote.ma20,
+              support: analysis.quote.support,
+              resistance: analysis.quote.resistance,
+              volatility: analysis.quote.volatility,
+              marketTime: analysis.quote.marketTime,
+            },
+            financials: {
+              revenueGrowth: analysis.financials.revenueGrowth,
+              profitGrowth: analysis.financials.profitGrowth,
+              debtRatio: analysis.financials.debtRatio,
+              pe: analysis.financials.pe,
+              pb: analysis.financials.pb,
+              roe: analysis.financials.roe,
+            },
+            summary: analysis.explanation.summary,
+            risks: analysis.explanation.risks,
+            missingInformation: analysis.explanation.missingInformation,
+            source: analysis.source,
+            position: positionContext,
+          },
+        }),
+      });
+      setMessages((current) => [...current, { role: "assistant", content: result.answer }]);
+    } catch (error) {
+      setMessages((current) => [...current, {
+        role: "assistant",
+        content: error instanceof Error ? error.message : "这次追问暂时没有回答，请稍后重试。",
+      }]);
+    } finally {
+      setAsking(false);
+    }
+  }
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    void ask(question);
+  }
+
+  const prompts = position
+    ? ["结合我的成本怎么看？", "主要风险是什么？", "财务数据说明了什么？"]
+    : ["主要风险是什么？", "为什么说波动较高？", "财务数据说明了什么？"];
+
+  return (
+    <section className="panel smart-assistant">
+      <div className="assistant-heading">
+        <div><span className="eyebrow">可连续追问</span><h3>智能复盘助手</h3></div>
+        <span className="assistant-context">{position ? "已结合我的持仓" : "当前未记录持仓"}</span>
+      </div>
+      <div className="assistant-messages" aria-live="polite">
+        {messages.map((message, index) => (
+          <div className={`assistant-message ${message.role}`} key={`${message.role}-${index}`}>
+            <b>{message.role === "assistant" ? "助手" : "我"}</b>
+            <p>{message.content}</p>
+          </div>
+        ))}
+        {asking && <div className="assistant-message assistant"><b>助手</b><p>正在核对当前证据和对话上下文…</p></div>}
+      </div>
+      <div className="assistant-prompts">
+        {prompts.map((prompt) => <button key={prompt} type="button" disabled={asking} onClick={() => void ask(prompt)}>{prompt}</button>)}
+      </div>
+      <form className="assistant-form" onSubmit={submit}>
+        <input
+          value={question}
+          onChange={(event) => setQuestion(event.target.value)}
+          maxLength={300}
+          placeholder={`继续问${analysis.stock.name}，例如“这个结论依据是什么？”`}
+          aria-label="向智能复盘助手提问"
+        />
+        <button type="submit" disabled={asking || !question.trim()}>{asking ? "思考中…" : "发送"}</button>
+      </form>
+      <small className="assistant-disclaimer">回答仅基于当前页面数据与个人记录，不构成投资建议。</small>
+    </section>
   );
 }
 
