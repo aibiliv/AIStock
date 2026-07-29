@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseSectorKline, rankSectorMoves, validateSectorDate, type SectorMove } from "../lib/sectors";
+import { parseEtfKlines, rankSectorMoves, validateSectorDate, type SectorMove } from "../lib/sectors";
 
 function move(name: string, changePercent: number, amount: number): SectorMove {
   return {
-    code: `BK${name}`,
+    code: `ETF${name}`,
     name,
     date: "2026-07-29",
-    close: 100,
+    close: 1,
     changePercent,
     amount,
     amplitude: 0,
@@ -15,22 +15,20 @@ function move(name: string, changePercent: number, amount: number): SectorMove {
   };
 }
 
-test("解析东方财富行业日线字段", () => {
-  const result = parseSectorKline(
-    { code: "BK0427", name: "公用事业" },
-    "2026-07-29,100,102,103,99,12345,456000000,4.00,2.00,2.00,1.50",
+test("解析行业ETF日线并计算涨跌幅", () => {
+  const result = parseEtfKlines(
+    { code: "512480", name: "半导体", symbol: "sh512480" },
+    [
+      ["2026-07-28", "0.99", "1", "1.01", "0.98", "100"],
+      ["2026-07-29", "1.01", "1.05", "1.08", "0.99", "200"],
+    ],
+    "2026-07-29",
   );
 
-  assert.deepEqual(result, {
-    code: "BK0427",
-    name: "公用事业",
-    date: "2026-07-29",
-    close: 102,
-    changePercent: 2,
-    amount: 456000000,
-    amplitude: 4,
-    turnover: 1.5,
-  });
+  assert.equal(result?.code, "512480");
+  assert.ok(Math.abs((result?.changePercent ?? 0) - 5) < 0.0001);
+  assert.equal(result?.amount, 210);
+  assert.ok(Math.abs((result?.amplitude ?? 0) - 9) < 0.0001);
 });
 
 test("异动榜按涨跌幅绝对值排序并保留涨跌方向", () => {
