@@ -374,7 +374,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       const message = `${alert.name}已触发${alert.type}提醒：当前${price(current)}，目标${price(target)}`;
       flash(message);
       if ("Notification" in window && Notification.permission === "granted") {
-        new Notification("我的股票助手", { body: message });
+        new Notification("我的复盘助手", { body: message });
       }
     }
   }, [alerts, flash, quotes]);
@@ -514,7 +514,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       <aside className="sidebar">
         <button className="brand" onClick={() => navigate("home")}>
           <span className="brand-mark">股</span>
-          <span><strong>我的股票助手</strong><small>看懂 · 记录 · 复盘</small></span>
+          <span><strong>我的复盘助手</strong><small>看懂 · 记录 · 复盘</small></span>
         </button>
         <nav aria-label="主导航">
           {navItems.map((item) => {
@@ -538,7 +538,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
 
       <main className="main">
         <header className="topbar">
-          <div><span className="mobile-brand">我的股票助手</span><h1>{navItems.find((item) => item.id === view)?.label}</h1></div>
+          <div><span className="mobile-brand">我的复盘助手</span><h1>{navItems.find((item) => item.id === view)?.label}</h1></div>
           <div className="top-actions">
             <span className="privacy-pill"><ShieldCheck size={15} weight="fill" />私有个人空间</span>
             <a className="account-button" href={signOutUrl} title={`当前账号：${user.email}`}>
@@ -682,7 +682,7 @@ function Home({
     <div className="page-content">
       <section className={analysis ? "search-hero compact" : "search-hero"}>
         <span className="eyebrow">A股新手也能看懂</span>
-        <h2>{analysis ? "继续查一只股票" : "输入股票，先把它看懂。"}</h2>
+        <h2>{analysis ? "继续查" : "输入代码，先把它看懂。"}</h2>
         {!analysis && <p>公开数据提供事实，AI或自动规则负责解释，你负责最后的决定。</p>}
         <form className="stock-search" onSubmit={onAnalyze}>
           <span className="search-icon"><MagnifyingGlass size={21} /></span>
