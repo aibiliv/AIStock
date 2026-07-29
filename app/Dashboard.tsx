@@ -1,6 +1,15 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import {
   ArrowsLeftRight,
   CheckCircle,
@@ -179,6 +188,12 @@ function tradePrice(trade: Trade) {
 
 function compactAmount(value: number) {
   if (value >= 100_000_000) return `${(value / 100_000_000).toFixed(1)}亿`;
+  if (value >= 10_000) return `${(value / 10_000).toFixed(1)}万`;
+  return value.toLocaleString("zh-CN");
+}
+
+function compactVolume(value: number) {
+  if (value >= 100_000_000) return `${(value / 100_000_000).toFixed(2)}亿`;
   if (value >= 10_000) return `${(value / 10_000).toFixed(1)}万`;
   return value.toLocaleString("zh-CN");
 }
@@ -1057,6 +1072,7 @@ function AnalysisView({ analysis, watched, canSell, onWatch, onBuy, onSell }: {
 
 function MarketChart({ analysis }: { analysis: Analysis }) {
   const rows = analysis.history.slice(-60);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const width = 900;
   const priceHeight = 190;
   const volumeTop = 215;
@@ -1076,6 +1092,31 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
     .map((row, index) => row[key] === null ? null : `${x(index).toFixed(1)},${y(row[key] as number).toFixed(1)}`)
     .filter(Boolean)
     .join(" ");
+  const selectedRow = selectedIndex === null ? null : rows[selectedIndex];
+  const previousClose = selectedIndex !== null && selectedIndex > 0 ? rows[selectedIndex - 1].close : null;
+  const selectedChange = selectedRow && previousClose
+    ? ((selectedRow.close / previousClose) - 1) * 100
+    : null;
+  const tooltipX = selectedIndex === null
+    ? 0
+    : x(selectedIndex) > width / 2 ? x(selectedIndex) - 230 : x(selectedIndex) + 12;
+
+  function selectAtPointer(event: ReactPointerEvent<SVGSVGElement>) {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const position = Math.max(0, Math.min(bounds.width, event.clientX - bounds.left));
+    const index = Math.min(rows.length - 1, Math.floor(position / bounds.width * rows.length));
+    setSelectedIndex(index);
+  }
+
+  function navigateChart(event: ReactKeyboardEvent<SVGSVGElement>) {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End", "Escape"].includes(event.key)) return;
+    event.preventDefault();
+    if (event.key === "Escape") return setSelectedIndex(null);
+    if (event.key === "Home") return setSelectedIndex(0);
+    if (event.key === "End") return setSelectedIndex(rows.length - 1);
+    const current = selectedIndex ?? rows.length - 1;
+    setSelectedIndex(Math.max(0, Math.min(rows.length - 1, current + (event.key === "ArrowLeft" ? -1 : 1))));
+  }
 
   return (
     <section className="panel market-chart-card">
@@ -1083,7 +1124,18 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
         <div><span className="eyebrow">近60个交易日</span><h3>K线与成交量</h3></div>
         <div className="chart-legend"><span className="ma5">5日</span><span className="ma20">20日</span><span className="ma60">60日</span></div>
       </div>
-      <svg className="market-chart" viewBox={`0 0 ${width} 280`} role="img" aria-label={`${analysis.stock.name}近60个交易日K线、成交量和均线`}>
+      <p className="chart-interaction-hint">移动鼠标或点按图表查看当天明细，键盘可使用左右方向键。</p>
+      <svg
+        className="market-chart"
+        viewBox={`0 0 ${width} 280`}
+        role="img"
+        tabIndex={0}
+        aria-label={`${analysis.stock.name}近60个交易日K线、成交量和均线。移动鼠标、点按或使用左右方向键查看每日数据。`}
+        onPointerMove={selectAtPointer}
+        onPointerDown={selectAtPointer}
+        onPointerLeave={(event) => { if (event.pointerType !== "touch") setSelectedIndex(null); }}
+        onKeyDown={navigateChart}
+      >
         <line x1="0" y1={priceHeight} x2={width} y2={priceHeight} className="chart-axis" />
         {rows.map((row, index) => {
           const rising = row.close >= row.open;
@@ -1101,12 +1153,44 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
         <polyline points={linePoints("ma5")} className="ma-line ma5-line" />
         <polyline points={linePoints("ma20")} className="ma-line ma20-line" />
         <polyline points={linePoints("ma60")} className="ma-line ma60-line" />
+        {selectedRow && selectedIndex !== null && (
+          <g className="chart-selection" pointerEvents="none">
+            <line x1={x(selectedIndex)} x2={x(selectedIndex)} y1="4" y2="270" className="chart-crosshair" />
+            <circle cx={x(selectedIndex)} cy={y(selectedRow.close)} r="4" className="chart-selection-dot" />
+            <g transform={`translate(${tooltipX}, 8)`} className="chart-tooltip">
+              <rect width="218" height="126" rx="9" />
+              <text x="12" y="20" className="chart-tooltip-date">{selectedRow.date}</text>
+              <text x="206" y="20" textAnchor="end" className={selectedChange !== null && selectedChange < 0 ? "chart-tooltip-down" : "chart-tooltip-up"}>
+                {selectedChange === null ? "—" : `${selectedChange >= 0 ? "+" : ""}${selectedChange.toFixed(2)}%`}
+              </text>
+              <text x="12" y="43">开 <tspan>{price(selectedRow.open)}</tspan></text>
+              <text x="112" y="43">高 <tspan>{price(selectedRow.high)}</tspan></text>
+              <text x="12" y="63">低 <tspan>{price(selectedRow.low)}</tspan></text>
+              <text x="112" y="63">收 <tspan>{price(selectedRow.close)}</tspan></text>
+              <text x="12" y="84">成交量 <tspan>{compactVolume(selectedRow.volume)}</tspan></text>
+              <text x="12" y="106" className="chart-tooltip-ma5">MA5 <tspan>{selectedRow.ma5 === null ? "—" : price(selectedRow.ma5)}</tspan></text>
+              <text x="82" y="106" className="chart-tooltip-ma20">MA20 <tspan>{selectedRow.ma20 === null ? "—" : price(selectedRow.ma20)}</tspan></text>
+              <text x="158" y="106" className="chart-tooltip-ma60">MA60 <tspan>{selectedRow.ma60 === null ? "—" : price(selectedRow.ma60)}</tspan></text>
+            </g>
+          </g>
+        )}
       </svg>
       <div className="chart-summary">
-        <span>5日均线 <b>{price(analysis.quote.ma5)}</b></span>
-        <span>20日均线 <b>{price(analysis.quote.ma20)}</b></span>
-        <span>60日均线 <b>{price(analysis.quote.ma60)}</b></span>
-        <span>最大成交量日 <b>{volumeHighlight?.date ?? "暂无"}</b></span>
+        {selectedRow ? (
+          <>
+            <span>选中日期 <b>{selectedRow.date}</b></span>
+            <span>开盘 / 收盘 <b>{price(selectedRow.open)} / {price(selectedRow.close)}</b></span>
+            <span>最高 / 最低 <b>{price(selectedRow.high)} / {price(selectedRow.low)}</b></span>
+            <span>成交量 <b>{compactVolume(selectedRow.volume)}</b></span>
+          </>
+        ) : (
+          <>
+            <span>5日均线 <b>{price(analysis.quote.ma5)}</b></span>
+            <span>20日均线 <b>{price(analysis.quote.ma20)}</b></span>
+            <span>60日均线 <b>{price(analysis.quote.ma60)}</b></span>
+            <span>最大成交量日 <b>{volumeHighlight?.date ?? "暂无"}</b></span>
+          </>
+        )}
       </div>
     </section>
   );

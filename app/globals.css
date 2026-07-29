@@ -1348,6 +1348,7 @@ svg { display: block; }
 .chart-heading h3 { font-size: var(--fs-md); margin: 3px 0 0; }
 .chart-legend { display: flex; gap: 12px; }
 .chart-legend span { align-items: center; color: var(--text-soft); display: flex; font-size: var(--fs-2xs); font-weight: 700; gap: 5px; }
+.chart-interaction-hint { color: var(--muted); font-size: var(--fs-2xs); margin: 5px 0 0; }
 
 .chart-legend span::before {
   border-radius: 50%;
@@ -1360,7 +1361,8 @@ svg { display: block; }
 .chart-legend .ma5::before { background: #4e7ee8; }
 .chart-legend .ma20::before { background: #24a2b8; }
 .chart-legend .ma60::before { background: #a275d1; }
-.market-chart { display: block; height: auto; margin-top: 12px; max-height: 300px; width: 100%; }
+.market-chart { cursor: crosshair; display: block; height: auto; margin-top: 8px; max-height: 300px; touch-action: pan-y; width: 100%; }
+.market-chart:focus-visible { border-radius: 8px; outline: 2px solid var(--accent); outline-offset: 3px; }
 .chart-axis { stroke: var(--line); stroke-width: 1; }
 .candle-up { fill: var(--red); stroke: var(--red); stroke-width: 1; }
 .candle-down { fill: var(--green); stroke: var(--green); stroke-width: 1; }
@@ -1370,6 +1372,21 @@ svg { display: block; }
 .ma5-line { stroke: #4e7ee8; }
 .ma20-line { stroke: #24a2b8; }
 .ma60-line { stroke: #a275d1; }
+.chart-crosshair { stroke: color-mix(in srgb, var(--text) 38%, transparent); stroke-dasharray: 4 4; stroke-width: 1; }
+.chart-selection-dot { fill: var(--surface); stroke: var(--text); stroke-width: 2; }
+.chart-tooltip rect { fill: color-mix(in srgb, var(--surface-inverse) 94%, transparent); stroke: color-mix(in srgb, var(--bg) 18%, transparent); }
+.chart-tooltip text { fill: color-mix(in srgb, var(--bg) 72%, transparent); font-size: 10px; }
+.chart-tooltip text tspan,
+.chart-tooltip .chart-tooltip-date { fill: var(--bg); font-weight: 700; }
+.chart-tooltip .chart-tooltip-date { font-size: 11px; }
+.chart-tooltip .chart-tooltip-up { fill: #ff8d96; font-weight: 800; }
+.chart-tooltip .chart-tooltip-down { fill: #71d6b6; font-weight: 800; }
+.chart-tooltip .chart-tooltip-ma5,
+.chart-tooltip .chart-tooltip-ma5 tspan { fill: #8cafff; }
+.chart-tooltip .chart-tooltip-ma20,
+.chart-tooltip .chart-tooltip-ma20 tspan { fill: #62d0df; }
+.chart-tooltip .chart-tooltip-ma60,
+.chart-tooltip .chart-tooltip-ma60 tspan { fill: #c7a3ee; }
 
 .chart-summary {
   border-top: 1px solid var(--line);
