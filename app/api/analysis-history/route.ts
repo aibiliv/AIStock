@@ -47,10 +47,13 @@ export async function DELETE(request: Request) {
       return Response.json({ error: "分析记录不正确" }, { status: 400 });
     }
     await ensureSchema();
-    await getDb()
+    const [deleted] = await getDb()
       .delete(analysisReports)
-      .where(and(eq(analysisReports.id, id), eq(analysisReports.symbol, symbol)));
-    return Response.json({ ok: true });
+      .where(and(eq(analysisReports.id, id), eq(analysisReports.symbol, symbol)))
+      .returning({ id: analysisReports.id });
+    return deleted
+      ? Response.json({ ok: true })
+      : Response.json({ error: "分析记录不存在" }, { status: 404 });
   } catch {
     return Response.json({ error: "分析记录删除失败" }, { status: 500 });
   }

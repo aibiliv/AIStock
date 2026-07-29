@@ -58,8 +58,11 @@ export async function POST(request: Request) {
         existed: true,
       });
     }
-    const [item] = await db.insert(watchItems).values({ symbol, name, note }).returning();
-    await db.insert(watchDetails).values({ symbol, conditionText, status: "研究中" });
+    const [itemRows] = await db.batch([
+      db.insert(watchItems).values({ symbol, name, note }).returning(),
+      db.insert(watchDetails).values({ symbol, conditionText, status: "研究中" }),
+    ]);
+    const item = itemRows[0];
     return Response.json({ item: { ...item, conditionText, status: "研究中", lastReviewedAt: null } }, { status: 201 });
   } catch {
     return Response.json({ error: "加入关注失败" }, { status: 500 });
@@ -84,6 +87,13 @@ export async function PATCH(request: Request) {
 
     await ensureSchema();
     const db = getDb();
+    const item = await db.select({ symbol: watchItems.symbol })
+      .from(watchItems)
+      .where(eq(watchItems.symbol, symbol))
+      .limit(1);
+    if (!item.length) {
+      return Response.json({ error: "关注股票不存在" }, { status: 404 });
+    }
     const existing = await db.select().from(watchDetails).where(eq(watchDetails.symbol, symbol)).limit(1);
     const values = {
       conditionText,
@@ -110,9 +120,13 @@ export async function DELETE(request: Request) {
     }
     await ensureSchema();
     const db = getDb();
-    await db.delete(watchDetails).where(eq(watchDetails.symbol, symbol));
-    await db.delete(watchItems).where(eq(watchItems.symbol, symbol));
-    return Response.json({ ok: true });
+    const [, deletedItems] = await db.batch([
+      db.delete(watchDetails).where(eq(watchDetails.symbol, symbol)),
+      db.delete(watchItems).where(eq(watchItems.symbol, symbol)).returning({ symbol: watchItems.symbol }),
+    ]);
+    return deletedItems.length
+      ? Response.json({ ok: true })
+      : Response.json({ error: "关注股票不存在" }, { status: 404 });
   } catch {
     return Response.json({ error: "取消关注失败" }, { status: 500 });
   }

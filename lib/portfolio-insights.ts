@@ -41,7 +41,7 @@ export function calculatePortfolioInsights(
 ): PortfolioInsights {
   const portfolio = calculatePortfolio(trades);
   const completePrices = portfolio.positions.every((position) => Number.isFinite(currentPrices[position.symbol]));
-  const positions = portfolio.positions.map((position) => {
+  const positions: PortfolioInsights["positions"] = portfolio.positions.map((position) => {
     const currentPrice = currentPrices[position.symbol] ?? position.averageCostMillis / 1000;
     const marketValueCents = Math.round(currentPrice * 100 * position.quantity);
     const costCents = Math.round(position.costMillis / 10);
@@ -76,7 +76,9 @@ export function calculatePortfolioInsights(
   const history = initialCapitalCents === null
     ? []
     : buildPortfolioHistory(trades, histories, initialCapitalCents);
-  const totalProfitCents = totalAssetsCents === null ? null : totalAssetsCents - initialCapitalCents;
+  const totalProfitCents = initialCapitalCents === null || totalAssetsCents === null
+    ? null
+    : totalAssetsCents - initialCapitalCents;
 
   return {
     configured: initialCapitalCents !== null,

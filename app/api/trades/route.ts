@@ -1,7 +1,7 @@
 import { desc } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { alertRules, tradeRecords } from "../../../db/schema";
-import { calculatePortfolio, isIsoDate, isStockCode, isTradeSide, toCents, toMillis } from "../../../lib/domain";
+import { findInvalidSell, isIsoDate, isStockCode, isTradeSide, toCents, toMillis } from "../../../lib/domain";
 import { requireApiUser } from "../../../lib/auth";
 
 export async function GET() {
@@ -51,8 +51,15 @@ export async function POST(request: Request) {
     if (!isTradeSide(side)) {
       return Response.json({ error: "买卖方向不正确" }, { status: 400 });
     }
-    if (!Number.isFinite(rawPrice) || priceMillis <= 0 || !Number.isInteger(quantity) || quantity <= 0) {
-      return Response.json({ error: "价格和数量必须大于0" }, { status: 400 });
+    if (
+      !Number.isFinite(rawPrice) ||
+      priceMillis <= 0 ||
+      !Number.isSafeInteger(priceMillis) ||
+      !Number.isSafeInteger(quantity) ||
+      quantity <= 0 ||
+      !Number.isSafeInteger(priceMillis * quantity)
+    ) {
+      return Response.json({ error: "价格和数量必须是有效的正数，且交易金额不能超出安全范围" }, { status: 400 });
     }
     if (!isIsoDate(tradeDate)) {
       return Response.json({ error: "交易日期不正确" }, { status: 400 });
@@ -67,9 +74,11 @@ export async function POST(request: Request) {
     if (
       (rawMaxLoss !== null && (!Number.isFinite(rawMaxLoss) || maxLossCents === null || maxLossCents <= 0)) ||
       !Number.isFinite(rawFee) ||
-      feeCents < 0
+      feeCents < 0 ||
+      !Number.isSafeInteger(maxLossCents ?? 0) ||
+      !Number.isSafeInteger(feeCents)
     ) {
-      return Response.json({ error: "最大亏损和费用不能为负数" }, { status: 400 });
+      return Response.json({ error: "最大亏损和费用必须是安全范围内的非负数" }, { status: 400 });
     }
     const riskPerShareMillis = maxLossCents === null ? null : Math.round(maxLossCents * 10 / quantity);
     if (side === "买入" && riskPerShareMillis !== null && riskPerShareMillis >= priceMillis) {
@@ -78,12 +87,27 @@ export async function POST(request: Request) {
 
     await ensureSchema();
     const db = getDb();
-    if (side === "卖出") {
-      const existingTrades = await db.select().from(tradeRecords);
-      const position = calculatePortfolio(existingTrades).positions.find((item) => item.symbol === symbol);
-      if (!position || quantity > position.quantity) {
-        return Response.json({ error: `可卖数量不足，当前持仓${position?.quantity ?? 0}股` }, { status: 400 });
-      }
+    const existingTrades = await db.select().from(tradeRecords);
+    const nextId = existingTrades.reduce((largest, trade) => Math.max(largest, trade.id), 0) + 1;
+    const invalidSell = side === "卖出"
+      ? findInvalidSell([...existingTrades, {
+          id: nextId,
+          symbol,
+          name,
+          side,
+          priceCents,
+          priceMillis,
+          quantity,
+          tradeDate,
+          reason,
+          maxLossCents,
+          feeCents,
+        }])
+      : null;
+    if (invalidSell) {
+      return Response.json({
+        error: `按交易日期排序后可卖数量不足：${invalidSell.symbol}可卖${invalidSell.availableQuantity}股，本次卖出${invalidSell.requestedQuantity}股`,
+      }, { status: 400 });
     }
     const tradeValues = {
       symbol,

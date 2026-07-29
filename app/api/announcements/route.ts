@@ -128,10 +128,19 @@ async function loadPdf(form: FormData) {
   if (url.protocol !== "https:" || !allowedHosts.has(url.hostname)) {
     throw new RequestError("只允许读取巨潮资讯、上交所或深交所的HTTPS公告链接");
   }
-  const response = await fetch(url, { redirect: "follow", signal: AbortSignal.timeout(15_000) });
-  const finalUrl = new URL(response.url);
-  if (finalUrl.protocol !== "https:" || !allowedHosts.has(finalUrl.hostname)) {
-    throw new RequestError("公告链接跳转到了非官方地址");
+  let response: Response | null = null;
+  for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
+    response = await fetch(url, { redirect: "manual", signal: AbortSignal.timeout(15_000) });
+    if (![301, 302, 303, 307, 308].includes(response.status)) break;
+    const location = response.headers.get("location");
+    if (!location) throw new RequestError("公告链接返回了无效跳转", 422);
+    url = new URL(location, url);
+    if (url.protocol !== "https:" || !allowedHosts.has(url.hostname)) {
+      throw new RequestError("公告链接跳转到了非官方地址");
+    }
+  }
+  if (!response || [301, 302, 303, 307, 308].includes(response.status)) {
+    throw new RequestError("公告链接跳转次数过多", 422);
   }
   const length = Number(response.headers.get("content-length") ?? 0);
   if (!response.ok || length > 8 * 1024 * 1024) {
@@ -181,13 +190,16 @@ export async function POST(request: Request) {
 
     const bytes = await loadPdf(form);
     const pdf = await getDocumentProxy(bytes);
-    if (pdf.numPages > 80) {
+    let extracted: Awaited<ReturnType<typeof extractText>>;
+    try {
+      if (pdf.numPages > 80) {
+        return Response.json({ error: "公告超过80页，请选择需要分析的核心公告" }, { status: 400 });
+      }
+      extracted = await extractText(pdf, { mergePages: true });
+    } finally {
       await closePdf(pdf);
-      return Response.json({ error: "公告超过80页，请选择需要分析的核心公告" }, { status: 400 });
     }
-    const extracted = await extractText(pdf, { mergePages: true });
-    const text = extracted.text.trim();
-    await closePdf(pdf);
+    const text = (Array.isArray(extracted.text) ? extracted.text.join("\n") : extracted.text).trim();
     if (text.length < 40) {
       return Response.json({ error: "没有提取到足够文字，扫描版PDF暂不支持" }, { status: 422 });
     }
