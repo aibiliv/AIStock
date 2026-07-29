@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && \
 # 使用淘宝镜像加速 npm 下载
 COPY package.json package-lock.json ./
 RUN npm config set registry https://registry.npmmirror.com && \
-    npm ci --no-audit --no-fund && \
+    npm install --no-audit --no-fund && \
     npm cache clean --force
 
 # 复制源码并构建（vinext build 产出 dist/）
