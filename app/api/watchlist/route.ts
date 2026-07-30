@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { watchDetails, watchItems } from "../../../db/schema";
 import { isStockCode } from "../../../lib/domain";
+import { canonicalStockName } from "../../../lib/stocks";
 import { requireApiUser } from "../../../lib/auth";
 
 export async function GET() {
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
   try {
     const payload = await request.json() as { symbol?: string; name?: string; note?: string; conditionText?: string };
     const symbol = payload.symbol?.trim() ?? "";
-    const name = payload.name?.trim() ?? "";
+    const name = canonicalStockName(symbol, payload.name?.trim() ?? "");
     const note = payload.note?.trim() ?? "";
     const conditionText = payload.conditionText?.trim() || note || "等待自己的买入条件";
     if (!isStockCode(symbol) || !name || name.length > 30 || note.length > 200 || conditionText.length > 300) {
