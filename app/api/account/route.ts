@@ -14,7 +14,7 @@ export async function GET() {
       db.select().from(capitalFlows).orderBy(desc(capitalFlows.flowDate), desc(capitalFlows.id)),
     ]);
     return Response.json({
-      initialCapitalCents: settings?.initialCapitalCents ?? null,
+      initialCapitalCents: settings[0]?.initialCapitalCents ?? null,
       capitalFlows: flows.map((f) => ({
         id: f.id,
         amountCents: f.amountCents,
