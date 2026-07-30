@@ -44,6 +44,7 @@ import {
   calculatePortfolio,
   localIsoDate,
   type CapitalFlow,
+  type MarketBar,
   type MarketPeriod,
   type Trade,
   type TradeCycle,
@@ -1695,6 +1696,16 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
   const volumeHighlight = rows.length
     ? rows.reduce((largest, row) => row.volume > largest.volume ? row : largest)
     : null;
+  const extremes = useMemo(() => {
+    if (!rows.length) return { maxIndex: -1, minIndex: -1, max: null as MarketBar | null, min: null as MarketBar | null };
+    let maxIndex = 0;
+    let minIndex = 0;
+    for (let index = 1; index < rows.length; index += 1) {
+      if (rows[index].high > rows[maxIndex].high) maxIndex = index;
+      if (rows[index].low < rows[minIndex].low) minIndex = index;
+    }
+    return { maxIndex, minIndex, max: rows[maxIndex], min: rows[minIndex] };
+  }, [rows]);
   const step = width / Math.max(rows.length, 1);
   const candleWidth = Math.max(2, step * 0.55);
   const x = (index: number) => index * step + step / 2;
@@ -1816,6 +1827,26 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
         <polyline points={linePoints("ma5")} className="ma-line ma5-line" />
         <polyline points={linePoints("ma20")} className="ma-line ma20-line" />
         <polyline points={linePoints("ma60")} className="ma-line ma60-line" />
+        {extremes.max && extremes.maxIndex >= 0 && (
+          <g className="chart-extreme chart-extreme-max" pointerEvents="none">
+            <line x1="0" x2={width} y1={y(extremes.max.high)} y2={y(extremes.max.high)} className="chart-extreme-line" />
+            <circle cx={x(extremes.maxIndex)} cy={y(extremes.max.high)} r="3.5" className="chart-extreme-dot" />
+            <g transform={`translate(0, ${Math.max(2, Math.min(priceHeight - 22, y(extremes.max.high) - 10))})`} className="chart-extreme-tag">
+              <rect width="72" height="20" rx="5" />
+              <text x="7" y="14">高 {price(extremes.max.high)}</text>
+            </g>
+          </g>
+        )}
+        {extremes.min && extremes.minIndex >= 0 && (
+          <g className="chart-extreme chart-extreme-min" pointerEvents="none">
+            <line x1="0" x2={width} y1={y(extremes.min.low)} y2={y(extremes.min.low)} className="chart-extreme-line" />
+            <circle cx={x(extremes.minIndex)} cy={y(extremes.min.low)} r="3.5" className="chart-extreme-dot" />
+            <g transform={`translate(0, ${Math.max(2, Math.min(priceHeight - 22, y(extremes.min.low) - 10))})`} className="chart-extreme-tag">
+              <rect width="72" height="20" rx="5" />
+              <text x="7" y="14">低 {price(extremes.min.low)}</text>
+            </g>
+          </g>
+        )}
         {selectedRow && selectedIndex !== null && (
           <g className="chart-selection" pointerEvents="none">
             <line x1={x(selectedIndex)} x2={x(selectedIndex)} y1="4" y2="270" className="chart-crosshair" />
@@ -1864,6 +1895,8 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
             <span>MA20 <b>{latestRow?.ma20 === null || latestRow?.ma20 === undefined ? "暂无" : price(latestRow.ma20)}</b></span>
             <span>MA60 <b>{latestRow?.ma60 === null || latestRow?.ma60 === undefined ? "暂无" : price(latestRow.ma60)}</b></span>
             <span>最大成交量日 <b>{volumeHighlight?.date ?? "暂无"}</b></span>
+            <span>区间最高 <b>{extremes.max ? `${price(extremes.max.high)} · ${extremes.max.date}` : "暂无"}</b></span>
+            <span>区间最低 <b>{extremes.min ? `${price(extremes.min.low)} · ${extremes.min.date}` : "暂无"}</b></span>
           </>
         )}
       </div>

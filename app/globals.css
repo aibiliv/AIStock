@@ -1773,6 +1773,15 @@ svg { display: block; }
 .chart-tooltip .chart-tooltip-ma60,
 .chart-tooltip .chart-tooltip-ma60 tspan { fill: #c7a3ee; }
 
+.chart-extreme-line { stroke: color-mix(in srgb, var(--text) 26%, transparent); stroke-dasharray: 2 4; stroke-width: 1; }
+.chart-extreme-max .chart-extreme-line { stroke: color-mix(in srgb, var(--red) 55%, transparent); }
+.chart-extreme-min .chart-extreme-line { stroke: color-mix(in srgb, var(--green) 55%, transparent); }
+.chart-extreme-dot { stroke: var(--surface); stroke-width: 1.5; }
+.chart-extreme-max .chart-extreme-dot { fill: var(--red); }
+.chart-extreme-min .chart-extreme-dot { fill: var(--green); }
+.chart-extreme-tag rect { fill: color-mix(in srgb, var(--surface-inverse) 92%, transparent); stroke: color-mix(in srgb, var(--bg) 18%, transparent); }
+.chart-extreme-tag text { fill: var(--bg); font-size: 10px; font-variant-numeric: tabular-nums; font-weight: 700; }
+
 .chart-summary {
   border-top: 1px solid var(--line);
   display: grid;
