@@ -46,6 +46,9 @@ export const watchDetails = sqliteTable("watch_details", {
   status: text("status", { enum: ["研究中", "等待条件", "已买入", "暂停"] }).notNull().default("研究中"),
   lastReviewedAt: text("last_reviewed_at"),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  conditionMetric: text("condition_metric"),
+  conditionDirection: text("condition_direction"),
+  conditionValue: real("condition_value"),
 });
 
 export const alertRules = sqliteTable("alert_rules", {
@@ -57,6 +60,7 @@ export const alertRules = sqliteTable("alert_rules", {
   targetPriceMillis: integer("target_price_millis"),
   enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
   acknowledgedAt: text("acknowledged_at"),
+  triggeredAt: text("triggered_at"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 

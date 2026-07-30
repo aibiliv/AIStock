@@ -55,13 +55,15 @@ export async function PATCH(request: Request) {
     if (!Number.isInteger(id) || id <= 0) {
       return Response.json({ error: "提醒编号不正确" }, { status: 400 });
     }
-    if (payload.action !== "disable" && payload.action !== "acknowledge") {
+    if (payload.action !== "disable" && payload.action !== "acknowledge" && payload.action !== "trigger") {
       return Response.json({ error: "提醒操作不正确" }, { status: 400 });
     }
     await ensureSchema();
     const values = payload.action === "disable"
       ? { enabled: false }
-      : { acknowledgedAt: new Date().toISOString() };
+      : payload.action === "acknowledge"
+        ? { acknowledgedAt: new Date().toISOString() }
+        : { triggeredAt: new Date().toISOString() };
     const [alert] = await getDb().update(alertRules).set(values).where(eq(alertRules.id, id)).returning();
     return alert
       ? Response.json({ alert })

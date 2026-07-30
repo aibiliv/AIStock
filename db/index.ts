@@ -63,7 +63,10 @@ export async function ensureSchema() {
         condition_text TEXT NOT NULL DEFAULT '等待自己的买入条件',
         status TEXT NOT NULL DEFAULT '研究中',
         last_reviewed_at TEXT,
-        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        condition_metric TEXT,
+        condition_direction TEXT,
+        condition_value REAL
       )`),
       db.prepare(`CREATE TABLE IF NOT EXISTS alert_rules (
         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -74,6 +77,7 @@ export async function ensureSchema() {
         target_price_millis INTEGER,
         enabled INTEGER NOT NULL DEFAULT 1,
         acknowledged_at TEXT,
+        triggered_at TEXT,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`),
       db.prepare(`CREATE TABLE IF NOT EXISTS reviews (
@@ -134,6 +138,10 @@ export async function ensureSchema() {
     await addColumnIfMissing("trade_records", "price_millis", "price_millis INTEGER");
     await addColumnIfMissing("trade_records", "price_ten_thousandths", "price_ten_thousandths INTEGER");
     await addColumnIfMissing("alert_rules", "target_price_millis", "target_price_millis INTEGER");
+    await addColumnIfMissing("alert_rules", "triggered_at", "triggered_at TEXT");
+    await addColumnIfMissing("watch_details", "condition_metric", "condition_metric TEXT");
+    await addColumnIfMissing("watch_details", "condition_direction", "condition_direction TEXT");
+    await addColumnIfMissing("watch_details", "condition_value", "condition_value REAL");
     await addColumnIfMissing("analysis_reports", "price_millis", "price_millis INTEGER");
   })().catch((error) => {
     schemaReady = null;

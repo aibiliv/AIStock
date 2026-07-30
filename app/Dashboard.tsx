@@ -12,15 +12,30 @@ import {
 } from "react";
 import { SectionHeader, Badge, Stat } from "./components";
 import {
+  ArrowDown,
+  ArrowUp,
   ArrowsLeftRight,
+  Bell,
+  CalendarBlank,
+  CaretRight,
   CheckCircle,
+  ChatCircle,
+  ClipboardText,
+  Database,
   GearSix,
   House,
+  Lock,
   MagnifyingGlass,
+  Note,
+  PencilSimple,
   Plus,
+  Robot,
   ShieldCheck,
   SignOut,
   Star,
+  Trash,
+  Wallet,
+  WarningCircle,
   type Icon,
 } from "@phosphor-icons/react";
 import {
@@ -35,7 +50,7 @@ import {
 } from "../lib/domain";
 import type { SectorHeatmap as SectorHeatmapData } from "../lib/sectors";
 import { calculatePortfolioInsights, type PortfolioInsights } from "../lib/portfolio-insights";
-import { baseCloseSince } from "../lib/stocks";
+import { baseCloseSince, resolveStock } from "../lib/stocks";
 
 type View = "home" | "watchlist" | "trades" | "settings";
 type TradeMode = "buy" | "sell";
@@ -50,6 +65,9 @@ type WatchItem = {
   lastReviewedAt: string | null;
   updatedAt: string;
   createdAt: string;
+  conditionMetric: "price" | "change" | null;
+  conditionDirection: "above" | "below" | null;
+  conditionValue: number | null;
 };
 
 type AlertRule = {
@@ -61,6 +79,7 @@ type AlertRule = {
   targetPriceMillis: number | null;
   enabled: boolean;
   acknowledgedAt: string | null;
+  triggeredAt: string | null;
 };
 
 type Review = {
@@ -383,22 +402,36 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     return () => window.clearTimeout(timer);
   }, [alerts, portfolio.positions, watchlist, quotes, refreshQuote]);
 
+  const markAlertTriggered = useCallback(async (alert: AlertRule, current: number, target: number) => {
+    const message = `${alert.name}已触发${alert.type}提醒：当前${price(current)}，目标${price(target)}`;
+    flash(message);
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification("我的复盘助手", { body: message });
+    }
+    try {
+      const result = await jsonRequest<{ alert: AlertRule }>("/api/alerts", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: alert.id, action: "trigger" }),
+      });
+      setAlerts((prev) => prev.map((a) => (a.id === result.alert.id ? { ...a, triggeredAt: result.alert.triggeredAt } : a)));
+    } catch {
+      /* 提示已发出；写入失败会在下次刷新时基于行情重新提醒 */
+    }
+  }, [flash, price, setAlerts]);
+
   const checkAlerts = useCallback(() => {
     for (const alert of alerts) {
-      if (!alert.enabled || alert.acknowledgedAt || notified.current.has(alert.id)) continue;
+      if (!alert.enabled || alert.acknowledgedAt || alert.triggeredAt || notified.current.has(alert.id)) continue;
       const current = quotes[alert.symbol]?.quote.price;
       if (!current) continue;
       const target = (alert.targetPriceMillis ?? alert.targetPriceCents * 10) / 1000;
       const triggered = alert.type === "止损" ? current <= target : current >= target;
       if (!triggered) continue;
       notified.current.add(alert.id);
-      const message = `${alert.name}已触发${alert.type}提醒：当前${price(current)}，目标${price(target)}`;
-      flash(message);
-      if ("Notification" in window && Notification.permission === "granted") {
-        new Notification("我的复盘助手", { body: message });
-      }
+      void markAlertTriggered(alert, current, target);
     }
-  }, [alerts, flash, quotes]);
+  }, [alerts, quotes, markAlertTriggered]);
 
   useEffect(() => {
     const firstCheck = window.setTimeout(checkAlerts, 0);
@@ -632,7 +665,6 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 quotes={quotes}
                 onSearch={() => navigate("home")}
                 onAnalyze={(symbol) => void fetchAnalysis(symbol)}
-                onRemove={(symbol) => void removeWatch(symbol)}
                 onSaved={() => void loadData()}
               />
             )}
@@ -654,6 +686,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 section={settingsSection}
                 onSection={setSettingsSection}
                 onDisable={(id) => void updateAlert(id, "disable")}
+                onAcknowledge={(id) => void updateAlert(id, "acknowledge")}
                 onNotifications={() => void requestNotifications()}
                 onSaveCapital={saveInitialCapital}
                 onAddFlow={handleAddFlow}
@@ -696,6 +729,93 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   );
 }
 
+const REVIEW_THEMES: Array<{ key: string; label: string; words: string[] }> = [
+  { key: "stop", label: "止损纪律", words: ["止损", "割肉", "砍仓", "止损线", "破位"] },
+  { key: "size", label: "仓位控制", words: ["仓位", "满仓", "轻仓", "重仓", "加仓", "补仓", "资金"] },
+  { key: "chase", label: "追涨杀跌", words: ["追涨", "追高", "追", "杀跌", "抄底", "跟风"] },
+  { key: "panic", label: "情绪管理", words: ["慌", "恐慌", "恐惧", "焦虑", "贪婪", "冲动", "上头", "怕"] },
+  { key: "plan", label: "交易计划", words: ["计划", "纪律", "规则", "预案", "策略", "条件"] },
+  { key: "freq", label: "频繁交易", words: ["频繁", "短线", "来回", "做t", "日内", "炒"] },
+  { key: "hold", label: "持仓耐心", words: ["持有", "拿住", "耐心", "过早", "卖飞"] },
+];
+
+function getCycleSummary(cycle: TradeCycle) {
+  const buys = cycle.trades.filter((trade) => trade.side === "买入");
+  const sells = cycle.trades.filter((trade) => trade.side === "卖出");
+  const buyQty = buys.reduce((sum, trade) => sum + trade.quantity, 0);
+  const sellQty = sells.reduce((sum, trade) => sum + trade.quantity, 0);
+  const buyCostCents = buys.reduce(
+    (sum, trade) => sum + (trade.priceTenThousandths / 10000) * trade.quantity * 100 + trade.feesCents,
+    0,
+  );
+  const sellProceedsCents = sells.reduce(
+    (sum, trade) => sum + (trade.priceTenThousandths / 10000) * trade.quantity * 100 - trade.feesCents,
+    0,
+  );
+  const buyAvgPrice = buyQty ? buyCostCents / buyQty / 100 : 0;
+  const sellAvgPrice = sellQty ? sellProceedsCents / sellQty / 100 : 0;
+  const realizedCents = cycle.realizedCents;
+  const returnPct = buyCostCents ? (realizedCents / buyCostCents) * 100 : null;
+  const start = new Date(cycle.startDate);
+  const end = new Date(cycle.endDate);
+  const holdingDays = Math.max(0, Math.round((end.getTime() - start.getTime()) / 86400000));
+  const planLossCents = buys.reduce((max, trade) => Math.max(max, trade.maxLossCents ?? 0), 0);
+  const hasPlan = planLossCents > 0;
+  const withinPlan = hasPlan ? realizedCents >= -planLossCents : null;
+  return { buyAvgPrice, sellAvgPrice, realizedCents, returnPct, holdingDays, planLossCents, hasPlan, withinPlan };
+}
+
+function summarizeReviews(reviews: Review[], completedCycles: TradeCycle[], pendingReviews: TradeCycle[]) {
+  const reviewedEndIds = new Set(reviews.map((review) => review.cycleEndTradeId));
+  const reviewedCycles = completedCycles.filter(
+    (cycle) => cycle.endTradeId !== null && reviewedEndIds.has(cycle.endTradeId),
+  );
+  const planRate = reviews.length
+    ? Math.round((reviews.filter((review) => review.followedPlan).length / reviews.length) * 100)
+    : 0;
+
+  const counts: Record<string, { label: string; count: number }> = {};
+  for (const review of reviews) {
+    const text = review.lesson ?? "";
+    for (const theme of REVIEW_THEMES) {
+      if (theme.words.some((word) => text.includes(word))) {
+        if (!counts[theme.key]) counts[theme.key] = { label: theme.label, count: 0 };
+        counts[theme.key].count += 1;
+      }
+    }
+  }
+  const top = Object.values(counts).sort((a, b) => b.count - a.count)[0] ?? null;
+
+  let avgHoldingDays: number | null = null;
+  let avgReturnPct: number | null = null;
+  if (reviewedCycles.length) {
+    const days = reviewedCycles.reduce((sum, cycle) => sum + getCycleSummary(cycle).holdingDays, 0);
+    avgHoldingDays = Math.round(days / reviewedCycles.length);
+    const pcts = reviewedCycles
+      .map((cycle) => getCycleSummary(cycle).returnPct)
+      .filter((value): value is number => value !== null);
+    avgReturnPct = pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : null;
+  }
+
+  let advice: string;
+  let headline: string;
+  if (reviews.length === 0) {
+    advice = "继续记录，等完成一轮完整买卖后再总结，不凭一笔输赢下结论。";
+    headline = "暂无复盘";
+  } else if (pendingReviews.length && reviews.length < 3) {
+    advice = "完成最近一笔待复盘，只找一个最值得改的动作。";
+    headline = "先做复盘";
+  } else if (top && top.count >= 2) {
+    advice = `你最近 ${reviews.length} 次复盘里，有 ${top.count} 次提到「${top.label}」，这是当前最值得死磕的一件事。先把这一条变成下一笔交易的检查项，比记十条都管用。`;
+    headline = `高频主题：${top.label}`;
+  } else {
+    const latest = reviews[0];
+    advice = `最近一次复盘你写：「${latest.lesson}」。把这一条先落实到下一笔交易，再谈优化其他。`;
+    headline = latest.lesson.length > 22 ? `${latest.lesson.slice(0, 22)}…` : latest.lesson;
+  }
+  return { advice, headline, planRate, avgHoldingDays, avgReturnPct, topTheme: top };
+}
+
 function Home({
   query, setQuery, analysis, analyzing, portfolio, portfolioInsights, quotes, alerts, pendingReviews,
   trades, reviews, watched, onAnalyze, onBuy, onSell, onWatch, onNavigate,
@@ -728,13 +848,15 @@ function Home({
   const winningCycles = completedCycles.filter((cycle) => cycle.realizedCents > 0).length;
   const winRate = completedCycles.length ? Math.round((winningCycles / completedCycles.length) * 100) : 0;
   const planRate = reviews.length ? Math.round((reviews.filter((review) => review.followedPlan).length / reviews.length) * 100) : 0;
+  const reviewSummary = summarizeReviews(reviews, completedCycles, pendingReviews);
 
   return (
     <div className="page-content">
       <section className={analysis ? "search-hero compact" : "search-hero"}>
-        <span className="eyebrow">A股新手也能看懂</span>
+        <span className="ai-badge">AI 智能分析</span>
+        {!analysis && <span className="eyebrow">公开数据 + AI解释 · 你来做决定</span>}
         <h2>{analysis ? "继续查" : "输入代码，先把它看懂。"}</h2>
-        {!analysis && <p>公开数据提供事实，AI或自动规则负责解释，你负责最后的决定。</p>}
+        {!analysis && <p>输入股票代码或名称，AI自动整理行情、财务与题材，你负责最后的判断。</p>}
         <form className="stock-search" onSubmit={onAnalyze}>
           <span className="search-icon"><MagnifyingGlass size={21} /></span>
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="例如 600519、贵州茅台" aria-label="股票代码或名称" />
@@ -788,7 +910,7 @@ function Home({
             <div><span>已实现盈亏</span><strong className={portfolio.realizedCents >= 0 ? "up" : "down"}>{money(portfolio.realizedCents)}</strong></div>
             <div><span>完整交易胜率</span><strong>{completedCycles.length ? `${winRate}%` : "暂无"}</strong></div>
             <div><span>按计划复盘</span><strong>{reviews.length ? `${planRate}%` : "暂无"}</strong></div>
-            <div><span>最近改进规则</span><strong className="summary-lesson">{reviews[0]?.lesson ?? "暂无"}</strong></div>
+            <div><span>复盘洞察</span><strong className="summary-lesson">{reviewSummary.headline}</strong></div>
           </div>
 
           {!!trades.length && (
@@ -804,13 +926,28 @@ function Home({
           <div className="home-grid">
             <section className="panel reminder-panel">
               <SectionHeader title="价格提醒" subtitle="页面打开期间每5分钟检查" />
-              {activeAlerts.slice(0, 3).map((alert) => (
-                <div className="reminder" key={alert.id}>
-                  <span className={`reminder-icon ${alert.type === "止损" ? "red" : "amber"}`}>!</span>
-                  <div><b>{alert.name} · {alert.type}</b><p>目标价 {alertPrice(alert)} · 免费行情可能延迟</p></div>
-                  <div className="reminder-actions"><button onClick={onAlertPlan}>查看计划</button><button onClick={() => onAcknowledge(alert.id)}>我知道了</button></div>
-                </div>
-              ))}
+              {[...activeAlerts]
+                .sort((a, b) => (a.triggeredAt ? 0 : 1) - (b.triggeredAt ? 0 : 1))
+                .slice(0, 3)
+                .map((alert) => {
+                  const quote = quotes[alert.symbol]?.quote;
+                  const triggered = !!alert.triggeredAt;
+                  return (
+                    <div className={`reminder ${triggered ? "triggered" : ""}`} key={alert.id}>
+                      <span className={`reminder-icon ${alert.type === "止损" ? "red" : "amber"}`}>!</span>
+                      <div>
+                        <b>{alert.name} · {alert.type}</b>
+                        <p>目标价 {alertPrice(alert)} · 免费行情可能延迟</p>
+                        {triggered && <p className="triggered-line">{quote ? `已触发，当前 ${price(quote.price)}` : "已触发，行情待更新"}</p>}
+                        {triggered && <span className="triggered-badge">已触发</span>}
+                      </div>
+                      <div className="reminder-actions">
+                        <button onClick={onAlertPlan}>查看计划</button>
+                        <button onClick={() => onAcknowledge(alert.id)}>我知道了</button>
+                      </div>
+                    </div>
+                  );
+                })}
               {!activeAlerts.length && <div className="empty-inline">暂无提醒。记录买入并填写最大亏损后会自动生成。</div>}
             </section>
             <section className="panel review-panel">
@@ -819,7 +956,7 @@ function Home({
                 return (
                   <div className="review-item" key={cycle.endTradeId}>
                     <span className="stock-avatar pale">{cycle.name.slice(0, 1)}</span>
-                    <div><b>{cycle.name}</b><p>{cycle.startDate} 至 {cycle.endDate}，已经清仓</p></div>
+                    <div><b>{cycle.name}</b><p>{cycle.startDate} 至 {cycle.endDate} · 持有 {getCycleSummary(cycle).holdingDays} 天 · {money(cycle.realizedCents)}</p></div>
                     <button onClick={() => onReview(cycle.endTradeId!)}>开始复盘 →</button>
                   </div>
                 );
@@ -1006,15 +1143,7 @@ function BehaviorCoach({
   }
   const lossPattern = [...lossReasonCounts.entries()].sort((a, b) => b[1] - a[1])[0];
   const followedPlans = reviews.filter((review) => review.followedPlan).length;
-
-  let advice = reviews[0]?.lesson ?? "继续记录，等完成一轮交易后再总结，不凭一笔输赢下结论。";
-  if (plannedBuys.length < buyTrades.length) {
-    advice = "下一次买入前，先写下最多接受亏损；没有退出条件，就先不下单。";
-  } else if (pendingReviews.length) {
-    advice = "完成最近一笔待复盘，只找一个最值得改的动作。";
-  } else if (reviews.some((review) => !review.followedPlan)) {
-    advice = reviews.find((review) => !review.followedPlan)?.lesson ?? "下一笔交易只检查一件事：是否按原计划执行。";
-  }
+  const summary = summarizeReviews(reviews, completedCycles, pendingReviews);
 
   return (
     <section className="panel behavior-coach">
@@ -1023,11 +1152,18 @@ function BehaviorCoach({
         <Stat label="买入计划覆盖" value={`${plannedBuys.length}/${buyTrades.length}`} hint="填写了最多接受亏损" />
         <Stat label="最常见买入原因" value={topReason?.[0] ?? "暂无"} hint={topReason ? `出现 ${topReason[1]} 次` : "继续记录后生成"} />
         <Stat label="亏损交易共性" value={lossPattern?.[0] ?? "暂无样本"} hint={lossPattern ? `${lossPattern[1]} 次亏损周期涉及此原因` : "完成亏损交易后再判断"} />
-        <Stat label="按计划执行" value={reviews.length ? `${Math.round(followedPlans / reviews.length * 100)}%` : "暂无"} hint={reviews.length ? `${followedPlans}/${reviews.length} 次复盘` : "完成清仓复盘后生成"} />
+        <Stat label="按计划执行" value={reviews.length ? `${summary.planRate}%` : "暂无"} hint={reviews.length ? `${followedPlans}/${reviews.length} 次复盘` : "完成清仓复盘后生成"} />
       </div>
+      {reviews.length > 0 && (
+        <div className="review-insight-dims">
+          {summary.avgHoldingDays !== null && <span>平均持有 {summary.avgHoldingDays} 天</span>}
+          {summary.avgReturnPct !== null && <span>平均盈亏 {summary.avgReturnPct >= 0 ? "+" : ""}{summary.avgReturnPct.toFixed(1)}%</span>}
+          {summary.topTheme && <span className="hot">复盘高频主题「{summary.topTheme.label}」</span>}
+        </div>
+      )}
       <div className="weekly-advice">
-        <span>本周只改这一件事</span>
-        <p>{advice}</p>
+        <span>下一笔只改这一件事</span>
+        <p>{summary.advice}</p>
         {!!pendingReviews.length && <button onClick={() => onReview(pendingReviews[0].endTradeId!)}>现在去复盘 →</button>}
       </div>
     </section>
@@ -1069,6 +1205,20 @@ function MarketIndices() {
                 <div className={`index-chip ${direction}`} key={index.code}>
                   <span className="index-name">{index.name}</span>
                   <strong className="index-price">{formatPrice(index.price)}</strong>
+                  <span className="index-change">
+                    {index.changePercent >= 0 ? "+" : ""}{index.changePercent.toFixed(2)}%
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="index-strip">
+            {payload.indices.map((index) => {
+              const dir = index.changePercent > 0 ? "up" : index.changePercent < 0 ? "down" : "";
+              return (
+                <div className={`index-strip__item ${dir}`} key={`strip-${index.code}`}>
+                  <span className="index-name">{index.name}</span>
+                  <span className="index-price">{formatPrice(index.price)}</span>
                   <span className="index-change">
                     {index.changePercent >= 0 ? "+" : ""}{index.changePercent.toFixed(2)}%
                   </span>
@@ -1170,6 +1320,18 @@ function SectorHeatmap() {
           <div className="sector-heatmap-foot">
             <span>{data.date} · 覆盖 {data.sampleSize} 只代表性行业ETF</span>
             <a href={data.source.url} target="_blank" rel="noreferrer">数据来源：{data.source.name} ↗</a>
+          </div>
+          <div className="sector-quick-strip">
+            {data.sectors.slice(0, 8).map((sector) => {
+              const dir = sector.changePercent > 0 ? "up" : "down";
+              return (
+                <div className={`sector-quick-card ${dir}`} key={`quick-${sector.code}`}>
+                  <span className="sq-name">{sector.name}</span>
+                  <span className="sq-change">{sector.changePercent >= 0 ? "+" : ""}{sector.changePercent.toFixed(2)}%</span>
+                  <span className="sq-detail">振幅 {sector.amplitude.toFixed(2)}%</span>
+                </div>
+              );
+            })}
           </div>
         </>
       )}
@@ -1502,7 +1664,7 @@ function SmartAssistant({ analysis, position, portfolioInsights }: {
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
           maxLength={300}
-          placeholder={`继续问${analysis.stock.name}，例如“这个结论依据是什么？”`}
+          placeholder={`继续问${analysis.stock.name}，例如"这个结论依据是什么？"`}
           aria-label="向智能复盘助手提问"
         />
         <button type="submit" disabled={asking || !question.trim()}>{asking ? "思考中…" : "发送"}</button>
@@ -1875,20 +2037,88 @@ function Metric({ label, value, suffix = "", moneyValue = false, marketCapValue 
   return <div><span>{label}</span><strong className={value !== null && value < 0 ? "down" : "neutral"}>{content}</strong><small>{help ?? (value === null ? "数据不足" : "最新可用数据")}</small></div>;
 }
 
-function Watchlist({ items, quotes, onSearch, onAnalyze, onRemove, onSaved }: {
+/**
+ * 关注状态对应的视觉令牌：避免"已买入"误用红色（红在 A 股代表涨/买入）
+ * 用图标 + 文字双通道呈现，对色觉障碍更友好。
+ */
+const watchStatusMap: Record<"研究中" | "等待条件" | "已买入" | "暂停", {
+  tone: "neutral" | "accent" | "red" | "green" | "amber" | "inverse";
+  icon: Icon;
+  label: string;
+}> = {
+  "研究中": { tone: "amber", icon: MagnifyingGlass, label: "研究中" },
+  "等待条件": { tone: "accent", icon: ClipboardText, label: "等待条件" },
+  "已买入": { tone: "inverse", icon: CheckCircle, label: "已买入" },
+  "暂停": { tone: "neutral", icon: Note, label: "暂停" },
+};
+
+/**
+ * Sparkline 迷你走势图：把最近 N 根 K 线画成一条平滑曲线，中间渲染一个
+ * 圆点强调当前价格；用箭头色（红涨绿跌）提示方向，不依赖颜色亦可读懂。
+ */
+function Sparkline({ history, baseClose, change, width = 220, height = 56 }: {
+  history: Array<{ date: string; close: number }>;
+  baseClose: number | null;
+  change: number | null;
+  width?: number;
+  height?: number;
+}) {
+  const rows = history.slice(-30);
+  if (rows.length < 2) {
+    return <div className="sparkline sparkline--empty" aria-hidden="true" />;
+  }
+  const closes = rows.map((row) => row.close);
+  const min = Math.min(...closes, baseClose ?? Infinity);
+  const max = Math.max(...closes, baseClose ?? -Infinity);
+  const range = Math.max(max - min, 0.0001);
+  const step = rows.length > 1 ? width / (rows.length - 1) : width;
+  const pad = 4;
+  const usableH = height - pad * 2;
+  const x = (index: number) => index * step;
+  const y = (value: number) => pad + (max - value) / range * usableH;
+  const points = rows.map((row, index) => `${x(index).toFixed(1)},${y(row.close).toFixed(1)}`).join(" ");
+  const lastX = x(rows.length - 1);
+  const lastY = y(rows[rows.length - 1].close);
+  const direction = change === null ? "flat" : change >= 0 ? "up" : "down";
+  const baseY = baseClose === null ? null : y(baseClose);
+  return (
+    <svg
+      className={`sparkline sparkline--${direction}`}
+      viewBox={`0 0 ${width} ${height}`}
+      role="img"
+      aria-label={change === null ? "价格走势" : `加入关注以来${change >= 0 ? "上涨" : "下跌"}${Math.abs(change).toFixed(2)}%`}
+    >
+      {baseY !== null && (
+        <line x1="0" x2={width} y1={baseY} y2={baseY} className="sparkline__base" />
+      )}
+      <polyline points={points} className="sparkline__line" />
+      <circle cx={lastX} cy={lastY} r="3" className="sparkline__dot" />
+    </svg>
+  );
+}
+
+function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved }: {
   items: WatchItem[];
   quotes: Record<string, Analysis>;
   onSearch: () => void;
   onAnalyze: (symbol: string) => void;
-  onRemove: (symbol: string) => void;
   onSaved: () => void;
 }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [confirming, setConfirming] = useState<string | null>(null);
 
   async function saveCondition(event: FormEvent<HTMLFormElement>, symbol: string) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
+    const metric = ((data.get("conditionMetric") as string | null) ?? "").trim();
+    const direction = ((data.get("conditionDirection") as string | null) ?? "").trim();
+    const valueRaw = data.get("conditionValue");
+    const valueNumber = valueRaw !== null && `${valueRaw}`.trim() !== "" ? Number(valueRaw) : null;
+    if (metric && (valueNumber === null || !Number.isFinite(valueNumber) || valueNumber <= 0)) {
+      setMessage("触发阈值需要是一个大于 0 的数字");
+      return;
+    }
     try {
       await jsonRequest("/api/watchlist", {
         method: "PATCH",
@@ -1897,6 +2127,9 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onRemove, onSaved }: {
           symbol,
           conditionText: data.get("conditionText"),
           status: data.get("status"),
+          conditionMetric: metric || undefined,
+          conditionDirection: metric ? direction : undefined,
+          conditionValue: metric ? valueNumber : undefined,
         }),
       });
       setEditing(null);
@@ -1907,43 +2140,205 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onRemove, onSaved }: {
     }
   }
 
+  async function confirmRemove(symbol: string) {
+    setConfirming(null);
+    try {
+      await jsonRequest(`/api/watchlist?symbol=${symbol}`, { method: "DELETE" });
+      await onSaved();
+      setMessage("已移出关注");
+    } catch (removeError) {
+      setMessage(removeError instanceof Error ? removeError.message : "移出关注失败");
+    }
+  }
+
+  const watchConditionMet = (item: WatchItem, quotePrice: number | undefined, todayChange: number | null): boolean => {
+    const metric = item.conditionMetric;
+    const direction = item.conditionDirection;
+    const value = item.conditionValue;
+    if (!metric || !direction || value === null) return false;
+    if (metric === "price") {
+      if (!quotePrice) return false;
+      return direction === "above" ? quotePrice >= value : quotePrice <= value;
+    }
+    if (metric === "change") {
+      if (todayChange === null) return false;
+      return direction === "above" ? todayChange >= value : todayChange <= value;
+    }
+    return false;
+  };
+
+  const watchConditionDesc = (item: WatchItem): string => {
+    if (!item.conditionMetric || !item.conditionDirection || item.conditionValue === null) return "";
+    const metricLabel = item.conditionMetric === "price" ? "现价" : "今日涨跌幅";
+    const dirLabel = item.conditionDirection === "above" ? "≥" : "≤";
+    const unit = item.conditionMetric === "price" ? "" : "%";
+    return `${metricLabel} ${dirLabel} ${item.conditionValue}${unit}`;
+  };
+
+  // 实时行情刷新节奏感：基础时间戳 + 相对文案
+  const today = new Date();
+
   return (
     <div className="page-content inner-page">
-      <SectionHeader as="h2" size="xl" eyebrow="先研究，再决定" title="我的关注" subtitle="每只股票都保留一个明确的等待条件。" actions={<button className="primary-button" onClick={onSearch}><Plus size={16} weight="bold" />查找股票</button>} />
+      <SectionHeader
+        as="h2"
+        size="xl"
+        eyebrow="先研究，再决定"
+        title="我的关注"
+        subtitle="每只股票都保留一个明确的等待条件。"
+        actions={<button className="primary-button" onClick={onSearch}><Plus size={16} weight="bold" />查找股票</button>}
+      />
       {items.length ? (
         <div className="watch-cards">
           {items.map((item) => {
             const quote = quotes[item.symbol]?.quote;
-            const history = quotes[item.symbol]?.history;
-            const baseClose = quote && history ? baseCloseSince(history, item.createdAt) : null;
-            const sinceChange =
-              quote && baseClose ? ((quote.price - baseClose) / baseClose) * 100 : null;
+            const history = quotes[item.symbol]?.history ?? [];
+            const stockMeta = quotes[item.symbol]?.stock;
+            const baseClose = quote && history.length ? baseCloseSince(history, item.createdAt) : null;
+            const sinceChange = quote && baseClose ? ((quote.price - baseClose) / baseClose) * 100 : null;
+            const todayChange = quote ? quote.changePercent : null;
+            const met = watchConditionMet(item, quote?.price, todayChange);
+            const conditionDesc = watchConditionDesc(item);
+            const status = watchStatusMap[item.status] ?? watchStatusMap["等待条件"];
+            const StatusIcon = status.icon;
+            const industryLabel = stockMeta?.industry || "行业信息待补充";
+            const isEtf = stockMeta?.instrumentType === "etf";
+            const reviewedDate = item.lastReviewedAt
+              ? new Date(item.lastReviewedAt).toLocaleDateString("zh-CN", { year: "numeric", month: "numeric", day: "numeric" })
+              : null;
+            const watchedDays = Math.max(0, Math.round((today.getTime() - new Date(item.createdAt).getTime()) / 86_400_000));
             return (
               <article className="panel watch-card" key={item.symbol}>
-                <div className="watch-card-top"><span className="stock-avatar">{item.name.slice(0, 1)}</span><Badge tone={item.status === "暂停" ? "neutral" : "red"}>{item.status}</Badge></div>
-                <h3>{item.name}</h3><p>{item.symbol} · {quotes[item.symbol]?.stock.industry ?? "行业信息更新中"}</p>
-                <div className="watch-price"><strong>{quote ? price(quote.price) : "行情待更新"}</strong>{quote && <span className={quote.changePercent >= 0 ? "up" : "down"}>{quote.changePercent.toFixed(2)}%</span>}</div>
-              {quote && sinceChange !== null && (
-                <div className="watch-since"><span>加入关注以来</span><strong className={sinceChange >= 0 ? "up" : "down"}>{sinceChange >= 0 ? "+" : ""}{sinceChange.toFixed(2)}%</strong></div>
-              )}
+                <header className="watch-card-head">
+                  <div className="watch-card-id">
+                    <span className="stock-avatar" aria-hidden="true">
+                      {isEtf ? "F" : item.name?.slice(0, 1) || item.symbol.slice(-2)}
+                    </span>
+                    <div className="watch-card-titles">
+                      <h3>
+                        {item.name || item.symbol}
+                        <small>{item.symbol}</small>
+                      </h3>
+                      <p className="watch-card-subtitle">
+                        <span className={`watch-card-tag ${isEtf ? "is-etf" : "is-stock"}`}>{isEtf ? "ETF" : "股票"}</span>
+                        <span>{industryLabel}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <Badge tone={status.tone} className="watch-card-status">
+                    <StatusIcon size={12} weight="fill" />
+                    {status.label}
+                  </Badge>
+                </header>
+
+                <div className="watch-card-price">
+                  <div className="watch-card-price-main">
+                    {quote ? (
+                      <strong className={todayChange !== null && todayChange < 0 ? "down" : "up"}>{price(quote.price)}</strong>
+                    ) : <strong className="quote-pending">行情待更新</strong>}
+                    {todayChange !== null && quote && (
+                      <span className={`watch-card-change ${todayChange >= 0 ? "up" : "down"}`}>
+                        {todayChange >= 0 ? <ArrowUp size={14} weight="bold" /> : <ArrowDown size={14} weight="bold" />}
+                        {Math.abs(todayChange).toFixed(2)}%
+                      </span>
+                    )}
+                  </div>
+                  <div className="watch-card-since">
+                    <span>加入关注以来</span>
+                    <strong className={sinceChange !== null && sinceChange < 0 ? "down" : sinceChange !== null && sinceChange > 0 ? "up" : ""}>
+                      {sinceChange === null ? "—" : `${sinceChange >= 0 ? "+" : ""}${sinceChange.toFixed(2)}%`}
+                      <small>· {watchedDays > 0 ? `${watchedDays}天` : "今日"}</small>
+                    </strong>
+                  </div>
+                </div>
+
+                {met && (
+                  <div className="condition-met">
+                    <span className="condition-met-badge">✓ 条件已满足</span>
+                    <span className="condition-met-desc">{conditionDesc}</span>
+                  </div>
+                )}
+
+                {history.length >= 2 ? (
+                  <Sparkline
+                    history={history}
+                    baseClose={baseClose}
+                    change={sinceChange}
+                    width={300}
+                    height={56}
+                  />
+                ) : (
+                  <div className="sparkline sparkline--empty" aria-hidden="true">
+                    <span>走势数据收集中</span>
+                  </div>
+                )}
+
                 {editing === item.symbol ? (
                   <form className="watch-edit-form" onSubmit={(event) => void saveCondition(event, item.symbol)}>
                     <label>观察状态<select name="status" defaultValue={item.status}><option>研究中</option><option>等待条件</option><option>已买入</option><option>暂停</option></select></label>
-                    <label>行动条件<textarea name="conditionText" defaultValue={item.conditionText} required maxLength={300} /></label>
+                    <fieldset className="condition-fieldset">
+                      <legend>自动触发提醒（可选）</legend>
+                      <div className="condition-row">
+                        <select name="conditionMetric" defaultValue={item.conditionMetric ?? ""}>
+                          <option value="">不设置</option>
+                          <option value="price">现价达到</option>
+                          <option value="change">今日涨跌幅达到</option>
+                        </select>
+                        <select name="conditionDirection" defaultValue={item.conditionDirection ?? "above"}>
+                          <option value="above">≥ 高于/达到</option>
+                          <option value="below">≤ 低于/跌破</option>
+                        </select>
+                        <input type="number" step="0.01" name="conditionValue" defaultValue={item.conditionValue ?? ""} placeholder="阈值" aria-label="触发阈值" />
+                      </div>
+                      <p className="condition-hint">设置后，行情满足时会自动在卡片上标注「条件已满足」。</p>
+                    </fieldset>
+                    <label>行动条件（备注）<textarea name="conditionText" defaultValue={item.conditionText} required maxLength={300} placeholder="写下你会因为什么而买入、什么情况下认错离场" /></label>
                     <div><button type="button" onClick={() => setEditing(null)}>取消</button><button className="primary-button">保存</button></div>
                   </form>
                 ) : (
                   <>
-                    <div className="watch-note"><span>我的条件</span><p>{item.conditionText}</p></div>
-                    <small className="reviewed-time">{item.lastReviewedAt ? `最近检查：${new Date(item.lastReviewedAt).toLocaleDateString("zh-CN")}` : "尚未检查"}</small>
-                    <div className="card-actions"><button className="text-button" onClick={() => onAnalyze(item.symbol)}>查看分析 →</button><button className="text-button" onClick={() => setEditing(item.symbol)}>编辑条件</button><button className="danger-link" onClick={() => onRemove(item.symbol)}>移出关注</button></div>
+                    <div className="watch-note">
+                      <span className="watch-note-label"><ChatCircle size={13} weight="fill" />我的条件</span>
+                      <p>{item.conditionText?.trim() || "还没有写下条件——先想清楚再决定要不要行动。"}</p>
+                    </div>
+                    <div className="watch-card-meta">
+                      <span><CalendarBlank size={13} weight="regular" />最近检查 {reviewedDate ?? "尚未检查"}</span>
+                    </div>
+                    <div className="watch-card-actions">
+                      <button className="primary-button watch-card-primary" onClick={() => onAnalyze(item.symbol)}>
+                        查看分析
+                        <ArrowUp size={14} weight="bold" style={{ transform: "rotate(45deg)" }} />
+                      </button>
+                      <button className="watch-icon-button" onClick={() => setEditing(item.symbol)} aria-label="编辑条件" title="编辑条件">
+                        <PencilSimple size={16} weight="regular" />
+                      </button>
+                      <button className="watch-icon-button watch-icon-button--danger" onClick={() => setConfirming(item.symbol)} aria-label="移出关注" title="移出关注">
+                        <Trash size={16} weight="regular" />
+                      </button>
+                    </div>
                   </>
                 )}
               </article>
             );
           })}
         </div>
-      ) : <div className="empty-state">关注列表还是空的。查一只股票后点击“加入关注”。</div>}
+      ) : <div className="empty-state">关注列表还是空的。查一只股票后点击"加入关注"。</div>}
+      {confirming && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setConfirming(null); }}>
+          <section className="modal watch-confirm" role="alertdialog" aria-modal="true" aria-labelledby="watch-confirm-title">
+            <header><div><span className="eyebrow">确认操作</span><h2 id="watch-confirm-title">移出关注？</h2></div><button onClick={() => setConfirming(null)} aria-label="关闭">×</button></header>
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                void confirmRemove(confirming);
+              }}
+            >
+              <p>{items.find((item) => item.symbol === confirming)?.name || confirming} 将从关注列表中移除，已写的条件也会一并删除。此操作不会影响你的交易记录。</p>
+              <div className="modal-actions"><button type="button" onClick={() => setConfirming(null)}>取消</button><button type="submit" className="primary-button" style={{ background: "var(--red)" }}>确认移出</button></div>
+            </form>
+          </section>
+        </div>
+      )}
       {message && <div className="toast inline-toast" role="status">{message}</div>}
     </div>
   );
@@ -1970,27 +2365,67 @@ function Trades({ trades, reviews, onBuy, onSell, onReview }: {
     if (legacyCycle?.endTradeId) reviewed.add(legacyCycle.endTradeId);
   }
   const winningCycles = completedCycles.filter((cycle) => cycle.realizedCents > 0).length;
+  const losingCycles = completedCycles.length - winningCycles;
+  const winRate = completedCycles.length ? Math.round(winningCycles / completedCycles.length * 100) : null;
+
+  // 已完成的交易周期显示在上方，便于先看结果再补复盘
+  const sortedTrades = [...trades].sort((a, b) => {
+    const cycleA = cycleByTradeId.get(a.id);
+    const cycleB = cycleByTradeId.get(b.id);
+    const aClosed = cycleA?.endTradeId !== null && cycleA?.endTradeId !== undefined;
+    const bClosed = cycleB?.endTradeId !== null && cycleB?.endTradeId !== undefined;
+    if (aClosed !== bClosed) return aClosed ? -1 : 1;
+    return b.tradeDate.localeCompare(a.tradeDate) || b.id - a.id;
+  });
+
+  // 摘要与提示副标题
+  const summaryMeta = completedCycles.length === 0
+    ? "还没有完成的交易"
+    : `${completedCycles.length} 轮已完成 · ${winningCycles} 胜${losingCycles > 0 ? ` · ${losingCycles} 负` : ""}`;
 
   return (
     <div className="page-content inner-page">
       <SectionHeader as="h2" size="xl" eyebrow="真实记录，才能真实复盘" title="交易记录" subtitle="只有完全清仓才会生成待复盘任务；部分卖出仍属于同一持仓周期。" actions={<div className="intro-actions"><button className="soft-button" onClick={onSell} disabled={!portfolio.positions.length}>记录卖出</button><button className="primary-button" onClick={onBuy}><Plus size={16} weight="bold" />记录买入</button></div>} />
-      <div className="summary-strip">
+      <div className="summary-strip trade-summary">
+        <div className="stat-primary">
+          <span>已实现盈亏</span>
+          <strong className={portfolio.realizedCents >= 0 ? "up" : "down"}>{money(portfolio.realizedCents)}</strong>
+          <small className="stat-meta">{summaryMeta}</small>
+        </div>
         <div><span>交易记录</span><strong>{trades.length}</strong></div>
         <div><span>当前持仓</span><strong>{portfolio.positions.length}</strong></div>
-        <div><span>已实现盈亏</span><strong className={portfolio.realizedCents >= 0 ? "up" : "down"}>{money(portfolio.realizedCents)}</strong></div>
-        <div><span>完整交易胜率</span><strong>{completedCycles.length ? `${Math.round(winningCycles / completedCycles.length * 100)}%` : "暂无"}</strong></div>
+        <div>
+          <span>完整胜率</span>
+          <strong>
+            {winRate !== null ? (
+              <span className="num-with-unit">{winRate}<i>%</i></span>
+            ) : "暂无"}
+          </strong>
+        </div>
       </div>
       {trades.length ? (
         <section className="panel trade-list">
           <div className="trade-head"><span>日期</span><span>股票</span><span>操作</span><span>原因</span><span>状态</span></div>
-          {trades.map((trade) => {
+          {sortedTrades.map((trade) => {
             const cycle = cycleByTradeId.get(trade.id);
             const hasReview = cycle?.endTradeId ? reviewed.has(cycle.endTradeId) : false;
+            const isCycleClosingSell = trade.side === "卖出" && cycle?.endTradeId === trade.id;
+            const cyclePnl = isCycleClosingSell ? cycle.realizedCents : null;
             return (
               <div className="trade-row" key={trade.id}>
                 <span><b>{trade.tradeDate}</b><small>{trade.quantity}股</small></span>
                 <span><b>{trade.name}</b><small>{trade.symbol}</small></span>
-                <span><Badge square tone={trade.side === "买入" ? "red" : "green"}>{trade.side}</Badge><small>{tradePrice(trade)}</small></span>
+                <span>
+                  <Badge square tone={trade.side === "买入" ? "red" : "green"}>{trade.side}</Badge>
+                  <small>
+                    {tradePrice(trade)}
+                    {cyclePnl !== null && cyclePnl !== 0 && (
+                      <span className={`trade-pnl ${cyclePnl >= 0 ? "up" : "down"}`}>
+                        {cyclePnl >= 0 ? "+" : ""}{money(cyclePnl)}
+                      </span>
+                    )}
+                  </small>
+                </span>
                 <span className="trade-reason">{trade.reason}</span>
                 <span>
                   {cycle?.endTradeId === null
@@ -2010,7 +2445,7 @@ function Trades({ trades, reviews, onBuy, onSell, onReview }: {
   );
 }
 
-function Settings({ status, initialCapitalCents, capitalFlows, alerts, section, onSection, onDisable, onNotifications, onSaveCapital, onAddFlow, onDeleteFlow }: {
+function Settings({ status, initialCapitalCents, capitalFlows, alerts, section, onSection, onDisable, onAcknowledge, onNotifications, onSaveCapital, onAddFlow, onDeleteFlow }: {
   status: Status | null;
   initialCapitalCents: number | null;
   capitalFlows: CapitalFlow[];
@@ -2018,45 +2453,230 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, section, 
   section: string | null;
   onSection: (section: string | null) => void;
   onDisable: (id: number) => void;
+  onAcknowledge: (id: number) => void;
   onNotifications: () => void;
   onSaveCapital: (initialCapital: number) => Promise<void>;
   onAddFlow: (amountCents: number, flowDate: string, note: string) => Promise<void>;
   onDeleteFlow: (flowId: number) => Promise<void>;
 }) {
   const notificationState = typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported";
-  const cards = [
-    { id: "account", icon: "仓", title: "账户资金", text: "设置初始资金后，系统才能计算现金、总仓位和账户总盈亏。", state: initialCapitalCents === null ? "待设置" : money(initialCapitalCents) },
-    { id: "ai", icon: "AI", title: "AI分析", text: status?.deepseekConfigured ? "AI分析已由服务端安全配置。" : "当前未配置AI密钥，使用基于真实数据的自动解释。", state: status?.deepseekConfigured ? "已连接" : "自动模式" },
-    { id: "data", icon: "数", title: "数据来源", text: `${status?.dataSource ?? "公开行情"}。结果显示获取时间，失败时不会伪装成最新。`, state: "无需账号" },
-    { id: "alerts", icon: "醒", title: "提醒管理", text: `${status?.reminderMode ?? "页面打开期间检查"}。重要止损仍需在券商App重复设置。`, state: `${alerts.filter((item) => item.enabled).length}条启用` },
-    { id: "privacy", icon: "私", title: "隐私与备份", text: "交易数据保存在私有数据库中，可随时下载JSON备份。", state: "默认私有" },
+  const enabledAlertCount = alerts.filter((item) => item.enabled).length;
+  const cardList = [
+    {
+      id: "account",
+      Icon: Wallet,
+      title: "账户资金",
+      caption: "资金基准",
+      text: "设置初始资金后，系统才能计算现金、总仓位和账户总盈亏。",
+      state: initialCapitalCents === null ? "待设置" : money(initialCapitalCents),
+      tone: initialCapitalCents === null ? "amber" : "green",
+    },
+    {
+      id: "ai",
+      Icon: Robot,
+      title: "AI分析",
+      caption: "智能解释引擎",
+      text: status?.deepseekConfigured
+        ? "AI分析已由服务端安全配置。"
+        : "当前未配置AI密钥，使用基于真实数据的自动解释。",
+      state: status?.deepseekConfigured ? "已连接" : "自动模式",
+      tone: status?.deepseekConfigured ? "green" : "neutral",
+    },
+    {
+      id: "data",
+      Icon: Database,
+      title: "数据来源",
+      caption: "行情与财务口径",
+      text: `${status?.dataSource ?? "公开行情"}。结果显示获取时间，失败时不会伪装成最新。`,
+      state: "无需账号",
+      tone: "blue",
+    },
+    {
+      id: "alerts",
+      Icon: Bell,
+      title: "提醒管理",
+      caption: "价格与仓位提醒",
+      text: `${status?.reminderMode ?? "页面打开期间检查"}。重要止损仍需在券商App重复设置。`,
+      state: `${enabledAlertCount}条启用`,
+      tone: enabledAlertCount === 0 ? "amber" : "green",
+    },
+    {
+      id: "privacy",
+      Icon: Lock,
+      title: "隐私与备份",
+      caption: "数据所有权",
+      text: "交易数据保存在私有数据库中，可随时下载JSON备份。",
+      state: "默认私有",
+      tone: "green",
+    },
+  ];
+
+  const boundaries = [
+    { Icon: ShieldCheck, label: "不自动交易", detail: "任何买卖都需要你在券商App操作" },
+    { Icon: ChatCircle, label: "不荐股不承诺收益", detail: "AI 只整理公开信息与你的真实数据" },
+    { Icon: WarningCircle, label: "不承诺提醒必达", detail: "浏览器通知可能被系统拦截" },
+    { Icon: CheckCircle, label: "数据缺失会明说", detail: "查不到的字段显示「暂无」，不补数字" },
+    { Icon: GearSix, label: "最终决定由你作出", detail: "重要止损请在券商App重复设置" },
+    { Icon: Database, label: "数据随时可带走", detail: "所有记录都能导出为JSON备份" },
   ];
 
   return (
-    <div className="page-content inner-page">
-      <SectionHeader as="h2" size="xl" eyebrow="所有边界都说清楚" title="设置" subtitle="这里展示真实连接状态，不再用演示文案冒充功能。" />
-      <div className="settings-grid">
-        {cards.map((card) => (
-          <article className="panel setting-card" key={card.id}>
-            <span className={`setting-icon ${card.id}`}>{card.icon}</span>
-            <div className="setting-copy"><h3>{card.title}</h3><p>{card.text}</p><span className="connected"><CheckCircle size={13} weight="fill" />{card.state}</span></div>
-            <button className="text-button" onClick={() => onSection(section === card.id ? null : card.id)}>{section === card.id ? "收起" : "查看"}</button>
-          </article>
-        ))}
-      </div>
-      {section === "account" && <CapitalSettings initialCapitalCents={initialCapitalCents} capitalFlows={capitalFlows} onSave={onSaveCapital} onAddFlow={onAddFlow} onDeleteFlow={onDeleteFlow} />}
-      {section === "ai" && <section className="panel settings-detail"><h3>AI连接状态</h3><p>{status?.deepseekConfigured ? "AI API密钥只在服务端读取，浏览器无法看到。" : "没有AI密钥时，系统不会假装调用AI，而是明确显示“自动解释”。"}</p></section>}
-      {section === "data" && <section className="panel settings-detail"><h3>数据原则</h3><p>行情来自公开接口，可能延迟或暂时不可用。每次分析都记录来源、行情时间和获取时间；财务数据缺失时显示“暂无”，不会补数字。</p></section>}
-      {section === "alerts" && (
-        <section className="panel settings-detail">
-          <div className="settings-detail-head"><div><h3>提醒管理</h3><p>浏览器权限：{notificationState}</p></div><button className="primary-button" onClick={onNotifications}>申请浏览器通知</button></div>
-          {alerts.length ? alerts.map((alert) => <div className="alert-row" key={alert.id}><span><b>{alert.name} · {alert.type}</b><small>{alertPrice(alert)} · {alert.enabled ? "启用" : "已停用"}</small></span>{alert.enabled && <button className="danger-link" onClick={() => onDisable(alert.id)}>停用</button>}</div>) : <p>暂无提醒规则。</p>}
-        </section>
-      )}
-      {section === "privacy" && <section className="panel settings-detail"><h3>导出个人数据</h3><p>备份包含交易、关注、提醒与复盘，不包含任何API密钥。</p><a className="primary-button download-link" href="/api/export">下载JSON备份</a></section>}
-      <section className="panel boundary-card">
-        <span>产品边界</span>
-        <div><p><CheckCircle size={14} />不自动交易</p><p><CheckCircle size={14} />不荐股</p><p><CheckCircle size={14} />不承诺提醒必达</p><p><CheckCircle size={14} />数据缺失会明说</p><p><CheckCircle size={14} />最终决定由你作出</p><p><CheckCircle size={14} />重要止损在券商App重复设置</p></div>
+    <div className="page-content inner-page settings-page">
+      <header className="settings-hero">
+        <div className="settings-hero__text">
+          <span className="settings-hero__eyebrow">SETTINGS · 真实连接状态</span>
+          <h1 className="settings-hero__title">设置</h1>
+          <p className="settings-hero__subtitle">
+            这里展示真实连接状态，不再用演示文案冒充功能。
+          </p>
+        </div>
+        <div className="settings-hero__badge">
+          <ShieldCheck size={14} weight="fill" />
+          <span>私有个人空间</span>
+        </div>
+      </header>
+
+      <section className="settings-stack" aria-label="设置分组">
+        {cardList.map((card) => {
+          const isOpen = section === card.id;
+          return (
+            <article
+              key={card.id}
+              className={[
+                "settings-card",
+                `settings-card--${card.tone}`,
+                isOpen ? "settings-card--open" : "",
+              ].filter(Boolean).join(" ")}
+            >
+              <button
+                type="button"
+                className="settings-card__hit"
+                onClick={() => onSection(isOpen ? null : card.id)}
+                aria-expanded={isOpen}
+                aria-controls={`settings-detail-${card.id}`}
+              >
+                <span className="settings-card__icon" aria-hidden="true">
+                  <card.Icon size={22} weight="duotone" />
+                </span>
+                <span className="settings-card__body">
+                  <span className="settings-card__caption">{card.caption}</span>
+                  <span className="settings-card__title">{card.title}</span>
+                  <span className="settings-card__text">{card.text}</span>
+                </span>
+                <span className="settings-card__trail">
+                  <span className={`settings-pill settings-pill--${card.tone}`}>
+                    <span className="settings-pill__dot" aria-hidden="true" />
+                    {card.state}
+                  </span>
+                  <span className="settings-card__chevron" aria-hidden="true">
+                    <CaretRight size={16} weight="bold" />
+                  </span>
+                </span>
+              </button>
+
+              <div
+                id={`settings-detail-${card.id}`}
+                className={`settings-card__detail ${isOpen ? "is-open" : ""}`}
+                aria-hidden={!isOpen}
+              >
+                {card.id === "account" && (
+                  <CapitalSettings
+                    initialCapitalCents={initialCapitalCents}
+                    capitalFlows={capitalFlows}
+                    onSave={onSaveCapital}
+                    onAddFlow={onAddFlow}
+                    onDeleteFlow={onDeleteFlow}
+                  />
+                )}
+                {card.id === "ai" && (
+                  <div className="settings-card__panel">
+                    <h3>AI连接状态</h3>
+                    <p>
+                      {status?.deepseekConfigured
+                        ? "AI API密钥只在服务端读取，浏览器无法看到。"
+                        : "没有AI密钥时，系统不会假装调用AI，而是明确显示「自动解释」。"}
+                    </p>
+                    {status?.aiProvider && (
+                      <div className="settings-card__meta">
+                        <span>服务方</span>
+                        <b>{status.aiProvider}</b>
+                      </div>
+                    )}
+                  </div>
+                )}
+                {card.id === "data" && (
+                  <div className="settings-card__panel">
+                    <h3>数据原则</h3>
+                    <p>行情来自公开接口，可能延迟或暂时不可用。每次分析都记录来源、行情时间和获取时间；财务数据缺失时显示「暂无」，不会补数字。</p>
+                  </div>
+                )}
+                {card.id === "alerts" && (
+                  <div className="settings-card__panel">
+                    <div className="settings-card__panel-head">
+                      <div>
+                        <h3>提醒管理</h3>
+                        <p>浏览器权限：{notificationState}</p>
+                      </div>
+                      <button className="primary-button" onClick={onNotifications}>申请浏览器通知</button>
+                    </div>
+                    {alerts.length ? (
+                      <ul className="settings-card__alerts">
+                        {alerts.map((alert) => {
+                          const triggered = !!alert.triggeredAt && !alert.acknowledgedAt;
+                          return (
+                            <li key={alert.id}>
+                              <div>
+                                <b>{alert.name} · {alert.type}</b>
+                                <small>{alertPrice(alert)} · {alert.enabled ? "启用" : "已停用"}{triggered ? " · 已触发" : ""}</small>
+                                {triggered && <span className="triggered-badge small">已触发</span>}
+                              </div>
+                              {triggered && (
+                                <button className="danger-link" onClick={() => onAcknowledge(alert.id)}>我知道了</button>
+                              )}
+                              {alert.enabled && !triggered && (
+                                <button className="danger-link" onClick={() => onDisable(alert.id)}>停用</button>
+                              )}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <p className="settings-card__hint">暂无提醒规则。买入时会自动生成止损与止盈建议。</p>
+                    )}
+                  </div>
+                )}
+                {card.id === "privacy" && (
+                  <div className="settings-card__panel">
+                    <h3>导出个人数据</h3>
+                    <p>备份包含交易、关注、提醒与复盘，不包含任何API密钥。</p>
+                    <a className="primary-button download-link" href="/api/export">下载JSON备份</a>
+                  </div>
+                )}
+              </div>
+            </article>
+          );
+        })}
+      </section>
+
+      <section className="boundary-card" aria-label="产品边界">
+        <header className="boundary-card__head">
+          <span className="boundary-card__eyebrow">诚实陈述</span>
+          <h2>产品边界</h2>
+          <p>只做能稳定交付的事情，其余明确告诉你。</p>
+        </header>
+        <ul className="boundary-card__list">
+          {boundaries.map((item) => (
+            <li key={item.label}>
+              <span className="boundary-card__icon" aria-hidden="true">
+                <item.Icon size={18} weight="duotone" />
+              </span>
+              <span className="boundary-card__copy">
+                <b>{item.label}</b>
+                <small>{item.detail}</small>
+              </span>
+            </li>
+          ))}
+        </ul>
       </section>
     </div>
   );
@@ -2117,7 +2737,7 @@ function CapitalSettings({ initialCapitalCents, capitalFlows, onSave, onAddFlow,
 
   return (
     <>
-      <section className="panel settings-detail">
+      <section className="settings-card__panel">
         <h3>账户初始资金</h3>
         <p>填写开始使用本软件时账户内用于股票交易的总资金。现金按交易流水和出入金记录自动推算。</p>
         <form className="capital-form" onSubmit={submit}>
@@ -2127,7 +2747,7 @@ function CapitalSettings({ initialCapitalCents, capitalFlows, onSave, onAddFlow,
         {message && <p className="form-message" role="status">{message}</p>}
       </section>
 
-      <section className="panel settings-detail">
+      <section className="settings-card__panel">
         <h3>出入金记录</h3>
         <p>发生场外转入或转出时，在此记录。现金余额 = 初始资金 + 累计转入 - 累计转出 - 买入成交额 + 卖出成交额 - 手续费。</p>
 
@@ -2256,6 +2876,7 @@ function ReviewModal({ cycle, onClose, onSaved }: {
   const name = cycle.name;
   const buyReason = related.find((trade) => trade.side === "买入")?.reason ?? "";
   const sellReason = [...related].reverse().find((trade) => trade.side === "卖出")?.reason ?? "";
+  const summary = getCycleSummary(cycle);
 
   useEffect(() => {
     firstInput.current?.focus();
@@ -2296,11 +2917,25 @@ function ReviewModal({ cycle, onClose, onSaved }: {
       <section className="modal review-modal" role="dialog" aria-modal="true" aria-labelledby="review-title">
         <header><div><span className="eyebrow">只改进一件事</span><h2 id="review-title">复盘 {name}</h2></div><button onClick={onClose} aria-label="关闭">×</button></header>
         <form onSubmit={save}>
+          <div className="cycle-facts">
+            <div><span>持有天数</span><strong>{summary.holdingDays} 天</strong></div>
+            <div><span>买入均价</span><strong>¥{summary.buyAvgPrice.toFixed(2)}</strong></div>
+            <div><span>卖出均价</span><strong>¥{summary.sellAvgPrice.toFixed(2)}</strong></div>
+            <div><span>已实现盈亏</span><strong className={summary.realizedCents >= 0 ? "up" : "down"}>{money(summary.realizedCents)}</strong></div>
+            <div><span>收益率</span><strong className={(summary.returnPct ?? 0) >= 0 ? "up" : "down"}>{summary.returnPct === null ? "—" : `${summary.returnPct >= 0 ? "+" : ""}${summary.returnPct.toFixed(1)}%`}</strong></div>
+          </div>
+          {summary.hasPlan && (
+            <div className={`plan-verdict ${summary.withinPlan ? "good" : "bad"}`}>
+              {summary.withinPlan
+                ? `买入时计划最多亏损 ${money(summary.planLossCents)}，本次实际${summary.realizedCents >= 0 ? "盈利" : `亏损 ${money(-summary.realizedCents)}`}，在计划内。`
+                : `买入时计划最多亏损 ${money(summary.planLossCents)}，本次亏损 ${money(-summary.realizedCents)}，已超出计划——止损没守住。`}
+            </div>
+          )}
           <label>为什么买？<textarea ref={firstInput} name="buyReason" defaultValue={buyReason} required maxLength={300} /></label>
           <label>为什么卖？<textarea name="sellReason" defaultValue={sellReason} required maxLength={300} /></label>
-          <fieldset><legend>有没有按计划执行？</legend><div className="reason-options"><label><input className="visually-hidden" type="radio" name="followedPlan" value="yes" required /><span>有，按计划</span></label><label><input className="visually-hidden" type="radio" name="followedPlan" value="no" required /><span>没有</span></label></div></fieldset>
-          <label>下一次只改进哪一件事？<textarea name="lesson" required maxLength={500} placeholder="例如：触发止损后当天执行，不再向下移动止损线。" /></label>
-          <div className="calculation-tip">程序按成交记录计算本次已实现盈亏：{money(cycle.realizedCents)}</div>
+          <fieldset><legend>有没有按计划执行？<small>{summary.hasPlan ? "程序已按计划止损自动预判，可修正" : "买入时未填计划亏损，请凭记忆判断"}</small></legend><div className="reason-options"><label><input className="visually-hidden" type="radio" name="followedPlan" value="yes" required defaultChecked={summary.hasPlan ? summary.withinPlan === true : undefined} /><span>有，按计划</span></label><label><input className="visually-hidden" type="radio" name="followedPlan" value="no" required defaultChecked={summary.hasPlan ? summary.withinPlan === false : undefined} /><span>没有</span></label></div></fieldset>
+          <label>下一次只改进哪一件事？<textarea name="lesson" required maxLength={500} placeholder={summary.hasPlan && !summary.withinPlan ? "例如：触发止损后当天执行，不再向下移动止损线。" : "例如：买入前先把卖出条件写清楚，避免临时起意。"} /></label>
+          <div className="calculation-tip">程序按成交记录计算：持有 {summary.holdingDays} 天，已实现盈亏 <b>{money(summary.realizedCents)}</b>{summary.returnPct === null ? "" : `（收益率 ${summary.returnPct >= 0 ? "+" : ""}${summary.returnPct.toFixed(1)}%）`}。</div>
           {message && <p className="form-message" role="alert">{message}</p>}
           <div className="modal-actions"><button type="button" onClick={onClose}>取消</button><button className="primary-button" type="submit" disabled={saving}>{saving ? "正在保存…" : "保存复盘"}</button></div>
         </form>
