@@ -19,8 +19,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && \
 # 注意：不要将 @cloudflare scope 指向 registry.npmjs.org，国内访问极慢会导致构建卡死。
 COPY package.json package-lock.json ./
 # BuildKit 缓存挂载：跨构建复用 npm tar 包，第二次起大幅提速
-# 依赖 package.json 的 overrides 已把 wrangler 锁到 npmmirror 已同步的稳定版 4.114.0，
-# 故这里可直接用 npmmirror，避免访问 npmjs.org 过慢（也规避了已下架的 4.115.0）。
+# 依赖 package.json 的 overrides 已把 wrangler 锁到 npmmirror 已同步的稳定版 4.116.0，
+# 故这里可直接用 npmmirror，避免访问 npmjs.org 过慢。
 # 依赖安装：使用 npm ci（有 lock 时更快、更确定）。
 # 关键：不要用 npm cache clean 清空 /root/.npm 缓存挂载，否则跨构建的 tar 包
 # 缓存失效，每次都要重新从 registry 下载（尤其访问 npmjs.org 的国内环境极慢）。
