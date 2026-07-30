@@ -18,8 +18,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && \
 # 统一走 npmmirror 国内镜像加速（含 @cloudflare/* 与 wrangler/workerd 二进制包均已同步）。
 # 注意：不要将 @cloudflare scope 指向 registry.npmjs.org，国内访问极慢会导致构建卡死。
 COPY package.json package-lock.json ./
-RUN npm config set registry https://registry.npmmirror.com && \
-    npm install --no-audit --no-fund --fetch-retries=3 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 && \
+# BuildKit 缓存挂载：跨构建复用 npm tar 包，第二次起大幅提速
+# 用 npm ci（lock 已存在）更快且确定；重试 mintimeout 从 20s 降到 5s，避免限流时空等
+RUN --mount=type=cache,target=/root/.npm \
+    npm config set registry https://registry.npmmirror.com && \
+    npm ci --no-audit --no-fund \
+           --fetch-retries=3 --fetch-retry-mintimeout=5000 --fetch-retry-maxtimeout=30000 && \
     npm cache clean --force
 
 # 复制源码并构建（vinext build 产出 dist/）
