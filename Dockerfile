@@ -19,14 +19,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && \
 # 注意：不要将 @cloudflare scope 指向 registry.npmjs.org，国内访问极慢会导致构建卡死。
 COPY package.json package-lock.json ./
 # BuildKit 缓存挂载：跨构建复用 npm tar 包，第二次起大幅提速
-# 注意：package-lock.json 锁定了 wrangler@4.115.0 等“预发布”版本，npmmirror 未镜像这些
-# 预发布包（会 404），故这里用官方 npm registry 保证可解析；缓存挂载让重复构建只下一次。
-# 若你的网络访问 npmjs 过慢/被限，可考虑把 wrangler 等降到 npmmirror 已同步的稳定版再切回 npmmirror。
+# 依赖 package.json 的 overrides 已把 wrangler 锁到 npmmirror 已同步的稳定版 4.114.0，
+# 故这里可直接用 npmmirror，避免访问 npmjs.org 过慢（也规避了已下架的 4.115.0）。
 # 依赖安装：使用 npm ci（有 lock 时更快、更确定）。
 # 关键：不要用 npm cache clean 清空 /root/.npm 缓存挂载，否则跨构建的 tar 包
 # 缓存失效，每次都要重新从 registry 下载（尤其访问 npmjs.org 的国内环境极慢）。
 RUN --mount=type=cache,target=/root/.npm \
-    npm config set registry https://registry.npmjs.org && \
+    npm config set registry https://registry.npmmirror.com && \
     npm ci --no-audit --no-fund --prefer-offline --maxsockets=5 --maxsockets=5 \
            --fetch-retries=10 --fetch-retry-mintimeout=10000 --fetch-retry-maxtimeout=180000 --fetch-timeout=600000
 
