@@ -90,6 +90,13 @@ export function tencentSymbol(code: string) {
   return `sz${code}`;
 }
 
+// 仅用于把基金/ETF 与股票区分开，不影响能否分析：A_STOCK_LIST 是股票列表，
+// 只用来快速解析名称/代码，列表里没有（如基金、未收录股）仍允许分析。
+export function isFundCode(code: string): boolean {
+  const c = code.trim();
+  return /^5\d{5}$/.test(c) || /^1[56]\d{4}$/.test(c);
+}
+
 export function resolveStock(query: string) {
   const clean = query.trim();
   if (/^\d{6}$/.test(clean)) {
@@ -106,6 +113,48 @@ export function resolveStock(query: string) {
     if (etf.name === clean) return { code, name: clean };
   }
   return null;
+}
+
+// 从内置全量 A 股列表解析官方股票名称（查不到时回退到调用方提供的名称）。
+// 用于录入类接口，保证数据库里存储的名称与权威列表一致，避免用户手填的错字。
+export function stockNameFromList(code: string): string | undefined {
+  return A_STOCK_LIST[code];
+}
+
+export function canonicalStockName(code: string, fallback: string = code): string {
+  if (A_STOCK_LIST[code]) return A_STOCK_LIST[code];
+  if (ETF_PROFILES[code]) return ETF_PROFILES[code].name;
+  return fallback;
+}
+
+export type ChartRow = {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  ma5: number | null;
+  ma20: number | null;
+  ma60: number | null;
+};
+
+// 取“加入关注以来”的基准收盘价：加入日当天或之前最近一个交易日的收盘。
+// 日K按时间升序，找到最后一条 date <= 加入时间 的收盘价；若加入时间早于全部数据，退化为最早一条。
+export function baseCloseSince(
+  rows: Array<{ date: string; close: number }>,
+  sinceDate: string,
+): number | null {
+  if (!rows.length) return null;
+  let base: { date: string; close: number } | null = null;
+  for (const row of rows) {
+    if (row.date <= sinceDate) {
+      base = row;
+    } else {
+      break;
+    }
+  }
+  return base ? base.close : rows[0].close;
 }
 
 export function parseStockSuggestions(content: string) {
@@ -399,6 +448,7 @@ export async function analyzeStockData(query: string) {
 
   const symbol = yahooSymbol(stock.code);
   const fund = ETF_PROFILES[stock.code] ?? null;
+  const isFund = Boolean(fund) || isFundCode(stock.code);
   const chart = await getChart(stock.code);
   const { history, currentPrice, previousClose } = chart;
   const closes = history.map((row) => row.close);
@@ -422,7 +472,12 @@ export async function analyzeStockData(query: string) {
   const debt = fundamentals.quarterlyTotalDebt?.at(-1)?.value ?? 0;
   const debtRatio = assets ? (debt / assets) * 100 : null;
 
-  const resolvedName = A_STOCK_LIST[stock.code] ?? profile.name ?? stock.name;
+  let resolvedName = A_STOCK_LIST[stock.code] ?? profile.name ?? stock.name;
+  // 基金/ETF 不在股票列表里，若行情源也没给出中文名，则用名称检索兜底（如腾讯 smartbox）
+  if (isFund && (resolvedName === stock.code || !/[一-龥]/.test(resolvedName))) {
+    const fallback = await searchStockByName(stock.code);
+    if (fallback) resolvedName = fallback.name;
+  }
   const resolvedIndustry = profile.industry ?? profile.sector ?? "行业信息待补充";
 
   return {
@@ -430,7 +485,7 @@ export async function analyzeStockData(query: string) {
       code: stock.code,
       name: resolvedName,
       industry: resolvedIndustry,
-      instrumentType: fund ? "etf" as const : "stock" as const,
+      instrumentType: isFund ? "etf" as const : "stock" as const,
       fund,
       sector: profile.sector,
       businessSummary: profile.businessSummary,
@@ -485,25 +540,51 @@ export function automaticExplanation(data: Awaited<ReturnType<typeof analyzeStoc
     : `最近两期利润变化约为 ${financials.profitGrowth.toFixed(1)}%`;
   const volatilityText = quote.volatility > 3 ? "近期波动较大" : "近期波动处于相对温和区间";
 
-  if (stock.instrumentType === "etf" && stock.fund) {
+  if (stock.instrumentType === "etf") {
+    const fund = stock.fund;
+    if (fund) {
+      return {
+        summary: `${stock.name}跟踪${fund.trackingIndex}，${trend}；近20日平均绝对涨跌幅约${quote.volatility.toFixed(2)}%。ETF价格还会受到指数表现、汇率、跟踪误差和场内折溢价影响。`,
+        company: [
+          `${stock.name}是${fund.category}，不是单一上市公司。`,
+          `跟踪标的为${fund.trackingIndex}，目标是尽量减小跟踪偏离和跟踪误差。`,
+          `基金管理人为${fund.manager}。`,
+          `在${fund.exchange}交易，基金合同生效日为${fund.inceptionDate}。`,
+        ],
+        risks: [
+          "基金集中跟踪香港科技板块，指数成份股整体下跌时会承受市场风险。",
+          "作为QDII产品，人民币与港币等汇率变化可能影响基金回报。",
+          "内地与香港交易日、交易时段不同，场内价格可能出现折价或溢价。",
+          "基金表现可能因费用、申赎和复制方式与标的指数存在跟踪偏离。",
+          `近20日平均绝对涨跌幅约 ${quote.volatility.toFixed(2)}%，请结合自己的承受能力设置计划。`,
+        ],
+        themes: [
+          { name: fund.trackingIndex, confidence: "已核验", reason: "基金产品资料明确列示的标的指数。" },
+          { name: "跨境指数投资", confidence: "已核验", reason: `${fund.category}，主要风险来自指数、汇率和跨市场交易差异。` },
+        ],
+        missingInformation: [
+          "最新基金净值与场内折溢价",
+          "最新基金规模、份额和跟踪误差",
+          "最新成份股持仓与权重",
+        ],
+      };
+    }
+    // 未知基金（不在本地 ETF 资料中，如未收录的 ETF/LOF）：走通用基金文案，
+    // 不引用具体 trackingIndex/manager，避免误把基金当股票套行业主题。
     return {
-      summary: `${stock.name}跟踪${stock.fund.trackingIndex}，${trend}；近20日平均绝对涨跌幅约${quote.volatility.toFixed(2)}%。ETF价格还会受到指数表现、汇率、跟踪误差和场内折溢价影响。`,
+      summary: `${stock.name}是一只基金/ETF，${trend}；近20日平均绝对涨跌幅约${quote.volatility.toFixed(2)}%。基金价格会受跟踪指数表现、市场波动和场内折溢价影响。`,
       company: [
-        `${stock.name}是${stock.fund.category}，不是单一上市公司。`,
-        `跟踪标的为${stock.fund.trackingIndex}，目标是尽量减小跟踪偏离和跟踪误差。`,
-        `基金管理人为${stock.fund.manager}。`,
-        `在${stock.fund.exchange}交易，基金合同生效日为${stock.fund.inceptionDate}。`,
+        `${stock.name}是交易型开放式基金（ETF），不是单一上市公司，净值随跟踪标的波动。`,
+        "建议在基金或指数官方渠道查看最新跟踪标的、基金规模与跟踪误差。",
       ],
       risks: [
-        "基金集中跟踪香港科技板块，指数成份股整体下跌时会承受市场风险。",
-        "作为QDII产品，人民币与港币等汇率变化可能影响基金回报。",
-        "内地与香港交易日、交易时段不同，场内价格可能出现折价或溢价。",
+        "基金集中跟踪标的指数，指数成份股整体下跌时会承受市场风险。",
+        "场内交易可能出现折价或溢价，成交价格与净值不完全一致。",
         "基金表现可能因费用、申赎和复制方式与标的指数存在跟踪偏离。",
         `近20日平均绝对涨跌幅约 ${quote.volatility.toFixed(2)}%，请结合自己的承受能力设置计划。`,
       ],
       themes: [
-        { name: stock.fund.trackingIndex, confidence: "已核验", reason: "基金产品资料明确列示的标的指数。" },
-        { name: "跨境指数投资", confidence: "已核验", reason: `${stock.fund.category}，主要风险来自指数、汇率和跨市场交易差异。` },
+        { name: "指数基金投资", confidence: "已核验", reason: `${stock.name}为指数型产品，风险主要来自标的与市场波动。` },
       ],
       missingInformation: [
         "最新基金净值与场内折溢价",

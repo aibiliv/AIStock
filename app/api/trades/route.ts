@@ -2,6 +2,7 @@ import { desc } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { alertRules, tradeRecords } from "../../../db/schema";
 import { findInvalidSell, isIsoDate, isStockCode, isTradeSide, toCents, toTenThousandths } from "../../../lib/domain";
+import { canonicalStockName } from "../../../lib/stocks";
 import { requireApiUser } from "../../../lib/auth";
 
 export async function GET() {
@@ -26,7 +27,7 @@ export async function POST(request: Request) {
   try {
     const payload = await request.json() as Record<string, unknown>;
     const symbol = String(payload.symbol ?? "").trim();
-    const name = String(payload.name ?? "").trim();
+    const name = canonicalStockName(symbol, String(payload.name ?? "").trim());
     const side = payload.side;
     const rawPrice = Number(payload.price);
     const maxLossNumber = Number(payload.maxLoss);

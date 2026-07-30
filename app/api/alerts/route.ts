@@ -2,6 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { alertRules } from "../../../db/schema";
 import { isStockCode, toMillis } from "../../../lib/domain";
+import { canonicalStockName } from "../../../lib/stocks";
 import { requireApiUser } from "../../../lib/auth";
 
 const alertTypes = new Set(["止损", "止盈一", "止盈二"]);
@@ -24,7 +25,7 @@ export async function POST(request: Request) {
   try {
     const payload = await request.json() as { symbol?: string; name?: string; type?: string; targetPrice?: number };
     const symbol = payload.symbol?.trim() ?? "";
-    const name = payload.name?.trim() ?? "";
+    const name = canonicalStockName(symbol, payload.name?.trim() ?? "");
     const type = payload.type?.trim() ?? "";
     const rawTargetPrice = Number(payload.targetPrice);
     const targetPriceMillis = toMillis(rawTargetPrice);

@@ -34,6 +34,7 @@ import {
 } from "../lib/domain";
 import type { SectorHeatmap as SectorHeatmapData } from "../lib/sectors";
 import { calculatePortfolioInsights, type PortfolioInsights } from "../lib/portfolio-insights";
+import { baseCloseSince } from "../lib/stocks";
 
 type View = "home" | "watchlist" | "trades" | "settings";
 type TradeMode = "buy" | "sell";
@@ -368,6 +369,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     const symbols = new Set([
       ...portfolio.positions.map((position) => position.symbol),
       ...alerts.filter((alert) => alert.enabled).map((alert) => alert.symbol),
+      ...watchlist.map((item) => item.symbol),
     ]);
     const timer = window.setTimeout(() => {
       for (const symbol of symbols) {
@@ -375,7 +377,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [alerts, portfolio.positions, quotes, refreshQuote]);
+  }, [alerts, portfolio.positions, watchlist, quotes, refreshQuote]);
 
   const checkAlerts = useCallback(() => {
     for (const alert of alerts) {
@@ -1825,11 +1827,18 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onRemove, onSaved }: {
         <div className="watch-cards">
           {items.map((item) => {
             const quote = quotes[item.symbol]?.quote;
+            const history = quotes[item.symbol]?.history;
+            const baseClose = quote && history ? baseCloseSince(history, item.createdAt) : null;
+            const sinceChange =
+              quote && baseClose ? ((quote.price - baseClose) / baseClose) * 100 : null;
             return (
               <article className="panel watch-card" key={item.symbol}>
                 <div className="watch-card-top"><span className="stock-avatar">{item.name.slice(0, 1)}</span><Badge tone={item.status === "暂停" ? "neutral" : "red"}>{item.status}</Badge></div>
                 <h3>{item.name}</h3><p>{item.symbol} · {quotes[item.symbol]?.stock.industry ?? "行业信息更新中"}</p>
                 <div className="watch-price"><strong>{quote ? price(quote.price) : "行情待更新"}</strong>{quote && <span className={quote.changePercent >= 0 ? "up" : "down"}>{quote.changePercent.toFixed(2)}%</span>}</div>
+              {quote && sinceChange !== null && (
+                <div className="watch-since"><span>加入关注以来</span><strong className={sinceChange >= 0 ? "up" : "down"}>{sinceChange >= 0 ? "+" : ""}{sinceChange.toFixed(2)}%</strong></div>
+              )}
                 {editing === item.symbol ? (
                   <form className="watch-edit-form" onSubmit={(event) => void saveCondition(event, item.symbol)}>
                     <label>观察状态<select name="status" defaultValue={item.status}><option>研究中</option><option>等待条件</option><option>已买入</option><option>暂停</option></select></label>
@@ -2006,6 +2015,7 @@ function TradeModal({ mode, stock, positions, onClose, onSubmit }: {
   onSubmit: (event: FormEvent<HTMLFormElement>) => Promise<void>;
 }) {
   const firstInput = useRef<HTMLInputElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const defaultPosition = mode === "sell" ? positions[0] : null;
   const symbol = stock?.code ?? stock?.symbol ?? defaultPosition?.symbol ?? "";
@@ -2031,8 +2041,13 @@ function TradeModal({ mode, stock, positions, onClose, onSubmit }: {
         <header><div><span className="eyebrow">{mode === "buy" ? "写下当时的决定" : "记录真实的退出"}</span><h2 id="trade-modal-title">记录{mode === "buy" ? "买入" : "卖出"}</h2></div><button onClick={onClose} aria-label="关闭">×</button></header>
         <form onSubmit={submit}>
           <div className="form-grid">
-            <label>股票代码<input ref={firstInput} name="symbol" defaultValue={symbol} pattern="\d{6}" required /></label>
-            <label>股票名称<input name="name" defaultValue={name} required maxLength={30} /></label>
+            <label>股票代码<input ref={firstInput} name="symbol" defaultValue={symbol} pattern="\d{6}" required onBlur={(event) => {
+              const resolved = resolveStock(event.currentTarget.value);
+              if (resolved && resolved.name !== resolved.code && nameInputRef.current) {
+                nameInputRef.current.value = resolved.name;
+              }
+            }} /></label>
+            <label>股票名称<input ref={nameInputRef} name="name" defaultValue={name} required maxLength={30} /></label>
             <label>{mode === "buy" ? "买入" : "卖出"}价格<input name="price" type="number" min="0" step="any" required /></label>
             <label>数量（股）<input name="quantity" type="number" min="1" step="1" required /></label>
             <label>交易日期<input name="tradeDate" type="date" defaultValue={localIsoDate()} max={localIsoDate()} required /></label>
