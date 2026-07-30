@@ -11,6 +11,8 @@ services:
       dockerfile: Dockerfile
     image: fupanbu-trading-journal:latest
     container_name: fupanbu
+    # 永不从 registry 拉取，强制使用本地镜像（配合 local-build.ps1 预构建推送）
+    pull_policy: never
 
     ports:
       - "9003:8787"
