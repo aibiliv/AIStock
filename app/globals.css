@@ -75,6 +75,8 @@ html {
 
 body {
   background: var(--bg);
+  /* 隐藏普通文字上的闪烁文本光标（caret），输入框中仍保留 */
+  caret-color: transparent;
   color: var(--text);
   font-family: var(--font-sans), "Microsoft YaHei", sans-serif;
   font-size: var(--fs-base);
@@ -90,6 +92,15 @@ select,
 textarea {
   color: inherit;
   font: inherit;
+}
+
+/* 输入框与可编辑区域内保留可见光标，便于输入定位 */
+input,
+textarea,
+select,
+[contenteditable="true"],
+[contenteditable=""] {
+  caret-color: auto;
 }
 
 button,
