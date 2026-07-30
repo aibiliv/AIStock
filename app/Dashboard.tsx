@@ -52,7 +52,7 @@ import {
 } from "../lib/domain";
 import type { SectorHeatmap as SectorHeatmapData } from "../lib/sectors";
 import { calculatePortfolioInsights, type PortfolioInsights } from "../lib/portfolio-insights";
-import { baseCloseSince, resolveStock } from "../lib/stocks";
+import { baseCloseSince, resolveStock, type Oscillators } from "../lib/stocks";
 
 type View = "home" | "watchlist" | "trades" | "settings";
 type TradeMode = "buy" | "sell";
@@ -178,6 +178,7 @@ type Analysis = {
     upDaysWithVolume: number;
     downDaysWithVolume: number;
   } | null;
+  oscillators?: Oscillators | null;
   source: { name: string; url: string; fetchedAt: string };
   mode: "deepseek" | "automatic";
   explanation: Explanation;
@@ -429,7 +430,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     } catch {
       /* 提示已发出；写入失败会在下次刷新时基于行情重新提醒 */
     }
-  }, [flash, price, setAlerts]);
+  }, [flash, setAlerts]);
 
   const checkAlerts = useCallback(() => {
     for (const alert of alerts) {
@@ -481,16 +482,6 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       flash(`${stock.name}已加入关注`);
     } catch (saveError) {
       flash(saveError instanceof Error ? saveError.message : "加入关注失败");
-    }
-  }
-
-  async function removeWatch(symbol: string) {
-    try {
-      await jsonRequest(`/api/watchlist?symbol=${symbol}`, { method: "DELETE" });
-      await loadData();
-      flash("已移出关注");
-    } catch (removeError) {
-      flash(removeError instanceof Error ? removeError.message : "移出关注失败");
     }
   }
 
@@ -756,11 +747,11 @@ function getCycleSummary(cycle: TradeCycle) {
   const buyQty = buys.reduce((sum, trade) => sum + trade.quantity, 0);
   const sellQty = sells.reduce((sum, trade) => sum + trade.quantity, 0);
   const buyCostCents = buys.reduce(
-    (sum, trade) => sum + (trade.priceTenThousandths / 10000) * trade.quantity * 100 + trade.feesCents,
+    (sum, trade) => sum + ((trade.priceTenThousandths ?? 0) / 10000) * trade.quantity * 100 + trade.feeCents,
     0,
   );
   const sellProceedsCents = sells.reduce(
-    (sum, trade) => sum + (trade.priceTenThousandths / 10000) * trade.quantity * 100 - trade.feesCents,
+    (sum, trade) => sum + ((trade.priceTenThousandths ?? 0) / 10000) * trade.quantity * 100 - trade.feeCents,
     0,
   );
   const buyAvgPrice = buyQty ? buyCostCents / buyQty / 100 : 0;
@@ -768,8 +759,8 @@ function getCycleSummary(cycle: TradeCycle) {
   const realizedCents = cycle.realizedCents;
   const returnPct = buyCostCents ? (realizedCents / buyCostCents) * 100 : null;
   const start = new Date(cycle.startDate);
-  const end = new Date(cycle.endDate);
-  const holdingDays = Math.max(0, Math.round((end.getTime() - start.getTime()) / 86400000));
+  const end = cycle.endDate ? new Date(cycle.endDate) : null;
+  const holdingDays = end ? Math.max(0, Math.round((end.getTime() - start.getTime()) / 86400000)) : 0;
   const planLossCents = buys.reduce((max, trade) => Math.max(max, trade.maxLossCents ?? 0), 0);
   const hasPlan = planLossCents > 0;
   const withinPlan = hasPlan ? realizedCents >= -planLossCents : null;
@@ -1191,7 +1182,6 @@ function MarketIndices() {
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
     jsonRequest<IndicesPayload>("/api/indices")
       .then((result) => { if (active) setPayload(result); })
       .catch((err) => { if (active) setMessage(err instanceof Error ? err.message : "大盘指数获取失败"); })
@@ -1617,6 +1607,7 @@ function SmartAssistant({ analysis, position, portfolioInsights }: {
             risks: analysis.explanation.risks,
             missingInformation: analysis.explanation.missingInformation,
             volume: analysis.volume,
+            oscillators: analysis.oscillators,
             source: analysis.source,
             position: positionContext,
             portfolio: {
@@ -2371,7 +2362,7 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved }: {
             );
           })}
         </div>
-      ) : <div className="empty-state">关注列表还是空的。查一只股票后点击"加入关注"。</div>}
+      ) : <div className="empty-state">关注列表还是空的。查一只股票后点击“加入关注”。</div>}
       {confirming && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setConfirming(null); }}>
           <section className="modal watch-confirm" role="alertdialog" aria-modal="true" aria-labelledby="watch-confirm-title">
