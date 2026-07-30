@@ -27,8 +27,8 @@ COPY package.json package-lock.json ./
 # 缓存失效，每次都要重新从 registry 下载（尤其访问 npmjs.org 的国内环境极慢）。
 RUN --mount=type=cache,target=/root/.npm \
     npm config set registry https://registry.npmjs.org && \
-    npm ci --no-audit --no-fund --prefer-offline \
-           --fetch-retries=3 --fetch-retry-mintimeout=5000 --fetch-retry-maxtimeout=30000
+    npm ci --no-audit --no-fund --prefer-offline --maxsockets=5 \
+           --fetch-retries=10 --fetch-retry-mintimeout=10000 --fetch-retry-maxtimeout=180000 --fetch-timeout=600000
 
 # 复制源码并构建（vinext build 产出 dist/）
 # 说明：依赖安装层已通过 BuildKit 缓存挂载复用 npm tar 包；--no-cache 由
