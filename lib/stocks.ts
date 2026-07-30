@@ -1,15 +1,20 @@
 import A_STOCK_LIST from "../db/a_stock_list";
+import { USER_FUND_PROFILES } from "../db/funds_user";
 
-const ETF_PROFILES: Record<string, {
+export type FundProfile = {
   name: string;
   manager: string;
   trackingIndex: string;
   exchange: string;
   category: string;
   inceptionDate: string;
-  sourceName: string;
-  sourceUrl: string;
-}> = {
+  sourceName?: string;
+  sourceUrl?: string;
+};
+
+// 内置基金资料（硬编码的少数示例）。用户自己的基金请登记在 db/funds_user.ts，
+// 合并后用户登记优先（可覆盖内置同名基金），重新部署即可生效。
+const BUILTIN_FUND_PROFILES: Record<string, FundProfile> = {
   "513180": {
     name: "华夏恒生科技ETF",
     manager: "华夏基金管理有限公司",
@@ -32,6 +37,12 @@ const ETF_PROFILES: Record<string, {
   },
 };
 
+// 合并表：内置 + 用户登记。任何基金代码命中即可走精细分析文案，录入时自动带出名称。
+export const FUND_PROFILES: Record<string, FundProfile> = {
+  ...BUILTIN_FUND_PROFILES,
+  ...USER_FUND_PROFILES,
+};
+
 // 股票名称 → 代码 反查表，供本地常用名称直接解析（避免每次都走腾讯接口）。
 const A_STOCK_NAME_TO_CODE: Record<string, string> = {};
 for (const [code, name] of Object.entries(A_STOCK_LIST)) {
@@ -41,7 +52,7 @@ for (const [code, name] of Object.entries(A_STOCK_LIST)) {
 }
 
 export function isEtfCode(code: string) {
-  return Boolean(ETF_PROFILES[code]);
+  return Boolean(FUND_PROFILES[code]);
 }
 
 type YahooChart = {
@@ -101,7 +112,7 @@ export function resolveStock(query: string) {
   const clean = query.trim();
   if (/^\d{6}$/.test(clean)) {
     // 基金代码优先返回产品名称，普通股票走本地全量列表，兜底用代码本身
-    const etf = ETF_PROFILES[clean];
+    const etf = FUND_PROFILES[clean];
     if (etf) return { code: clean, name: etf.name };
     return { code: clean, name: A_STOCK_LIST[clean] ?? clean };
   }
@@ -109,7 +120,7 @@ export function resolveStock(query: string) {
   // 本地常用股票名称直接解析，找不到再交给腾讯 smartbox API
   const code = A_STOCK_NAME_TO_CODE[clean];
   if (code) return { code, name: clean };
-  for (const [code, etf] of Object.entries(ETF_PROFILES)) {
+  for (const [code, etf] of Object.entries(FUND_PROFILES)) {
     if (etf.name === clean) return { code, name: clean };
   }
   return null;
@@ -123,7 +134,7 @@ export function stockNameFromList(code: string): string | undefined {
 
 export function canonicalStockName(code: string, fallback: string = code): string {
   if (A_STOCK_LIST[code]) return A_STOCK_LIST[code];
-  if (ETF_PROFILES[code]) return ETF_PROFILES[code].name;
+  if (FUND_PROFILES[code]) return FUND_PROFILES[code].name;
   return fallback;
 }
 
@@ -236,7 +247,46 @@ async function fetchJson<T>(url: string): Promise<T> {
   }
 }
 
+function eastmoneySecid(code: string) {
+  // 东方财富 secid：上交所(60/68/9 开头)=1，深交所/北交所=0
+  if (/^(5|6|9)/.test(code)) return `1.${code}`;
+  return `0.${code}`;
+}
+
 async function getChart(code: string) {
+  // 主源：东方财富公开行情（大陆原生、字段全、免费），失败再回退 Yahoo/腾讯
+  const secid = eastmoneySecid(code);
+  const emUrl = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}&klt=101&fqt=1&beg=0&end=20500101&lmt=900&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55,f56`;
+  try {
+    const data = await fetchJson<{ data?: { klines?: string[] } }>(emUrl);
+    const rows = (data.data?.klines ?? [])
+      .map((line) => line.split(","))
+      .filter((cells) => cells.length >= 6 && Number.isFinite(Number(cells[2])))
+      .map((cells) => ({
+        date: cells[0],
+        open: Number(cells[1]),
+        close: Number(cells[2]),
+        high: Number(cells[3]),
+        low: Number(cells[4]),
+        volume: Number(cells[5] ?? 0),
+      }));
+    if (rows.length < 20) throw new Error("东方财富行情不足");
+    const history = buildHistory(rows);
+    const closes = history.map((row) => row.close);
+    return {
+      history,
+      currentPrice: closes.at(-1) ?? 0,
+      previousClose: closes.at(-2) ?? closes.at(-1) ?? 0,
+      marketTime: `${rows.at(-1)?.date}T15:00:00+08:00`,
+      sourceName: "东方财富公开行情",
+      sourceUrl: `https://quote.eastmoney.com/${secid}.html`,
+    };
+  } catch {
+    return getChartLegacy(code);
+  }
+}
+
+async function getChartLegacy(code: string) {
   const symbol = yahooSymbol(code);
   const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=3y&interval=1d`;
 
@@ -447,7 +497,7 @@ export async function analyzeStockData(query: string) {
   }
 
   const symbol = yahooSymbol(stock.code);
-  const fund = ETF_PROFILES[stock.code] ?? null;
+  const fund = FUND_PROFILES[stock.code] ?? null;
   const isFund = Boolean(fund) || isFundCode(stock.code);
   const chart = await getChart(stock.code);
   const { history, currentPrice, previousClose } = chart;
@@ -464,7 +514,7 @@ export async function analyzeStockData(query: string) {
   const riskPerShare = Math.max(currentPrice - support, currentPrice * 0.03);
   const [fundamentals, profile] = await Promise.all([
     getFundamentals(symbol),
-    getQuoteSummary(symbol),
+    getQuoteSummary(stock.code),
   ]);
   const revenueGrowth = growth(fundamentals.quarterlyTotalRevenue);
   const profitGrowth = growth(fundamentals.quarterlyNetIncome);
