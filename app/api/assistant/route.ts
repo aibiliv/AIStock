@@ -54,6 +54,26 @@ function validContext(value: unknown): value is AssistantContext {
     finiteOrNull(context.portfolio?.cash) &&
     finiteOrNull(context.portfolio?.totalPositionPercent) &&
     finiteOrNull(context.portfolio?.totalProfitPercent) &&
+    (context.oscillators === undefined || context.oscillators === null || (
+      (context.oscillators.macd === null || (
+        context.oscillators.macd !== null &&
+        Number.isFinite(context.oscillators.macd.dif) &&
+        Number.isFinite(context.oscillators.macd.dea) &&
+        Number.isFinite(context.oscillators.macd.hist)
+      )) &&
+      (context.oscillators.rsi === null || (
+        context.oscillators.rsi !== null &&
+        finiteOrNull(context.oscillators.rsi.rsi6) &&
+        finiteOrNull(context.oscillators.rsi.rsi12) &&
+        finiteOrNull(context.oscillators.rsi.rsi24)
+      )) &&
+      (context.oscillators.kdj === null || (
+        context.oscillators.kdj !== null &&
+        finiteOrNull(context.oscillators.kdj.k) &&
+        finiteOrNull(context.oscillators.kdj.d) &&
+        finiteOrNull(context.oscillators.kdj.j)
+      ))
+    )) &&
     JSON.stringify(value).length <= 40_000
   );
 }
@@ -85,6 +105,21 @@ function summarizeContext(ctx: AssistantContext): string {
     lines.push(`量能：当日成交量 ${ctx.volume.latest}，近5日均量 ${ctx.volume.ma5.toFixed(0)}、近20日均量 ${ctx.volume.ma20.toFixed(0)}，量比 ${ctx.volume.ratio === null ? "缺失" : ctx.volume.ratio.toFixed(2)}，量价背离 ${ctx.volume.divergence ?? "未知"}（近20日上涨放量 ${ctx.volume.upDaysWithVolume} 天、下跌放量 ${ctx.volume.downDaysWithVolume} 天）。`);
   } else {
     lines.push("量能：数据缺失。");
+  }
+  if (ctx.oscillators) {
+    const o = ctx.oscillators;
+    const macd = o.macd
+      ? `DIF=${o.macd.dif.toFixed(3)}, DEA=${o.macd.dea.toFixed(3)}, 柱=${o.macd.hist.toFixed(3)}, 状态=${o.macd.state}, 背离=${o.macd.divergence ?? "未知"}`
+      : "DIF/DEA/柱=缺失";
+    const rsi = o.rsi
+      ? `RSI6=${o.rsi.rsi6?.toFixed(1) ?? "缺失"}, RSI12=${o.rsi.rsi12?.toFixed(1) ?? "缺失"}, RSI24=${o.rsi.rsi24?.toFixed(1) ?? "缺失"}, 区=${o.rsi.zone}`
+      : "RSI=缺失";
+    const kdj = o.kdj
+      ? `K=${o.kdj.k?.toFixed(1) ?? "缺失"}, D=${o.kdj.d?.toFixed(1) ?? "缺失"}, J=${o.kdj.j?.toFixed(1) ?? "缺失"}, 状态=${o.kdj.state}`
+      : "KDJ=缺失";
+    lines.push(`摆动指标：${macd}；${rsi}；${kdj}。`);
+  } else {
+    lines.push("摆动指标：数据缺失。");
   }
   return lines.join("\n");
 }

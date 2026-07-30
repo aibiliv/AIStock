@@ -300,6 +300,9 @@ export function aggregateMarketHistory(
     current.low = Math.min(current.low, row.low);
     current.close = row.close;
     current.volume += row.volume;
+    if (period === "week") {
+      current.date = row.date;
+    }
   }
 
   const closes = grouped.map((row) => row.close);

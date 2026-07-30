@@ -653,6 +653,7 @@ export async function analyzeStockData(query: string) {
     },
     history: history.slice(-800),
     volume: analyzeVolume(history),
+    oscillators: computeOscillators(history),
     volumeHighlight: history.length
       ? history.reduce((largest, row) => row.volume > largest.volume ? row : largest)
       : null,
@@ -710,6 +711,236 @@ export function analyzeVolume(history: ChartRow[]): VolumeAnalysis {
   return { latest, ma5, ma20, ratio, divergence, upDaysWithVolume, downDaysWithVolume };
 }
 
+// ---------------------------------------------------------------------------
+// 摆动/动能指标：MACD、RSI、KDJ。
+// 全部基于已有日K（history 的 OHLCV）本地计算，不需要额外数据源或额度。
+// 设计目标：只产出「中性信号」，供 AI 作为依据之一，不直接给买卖结论。
+// ---------------------------------------------------------------------------
+
+export type MacdState = "金叉" | "死叉" | "多头" | "空头" | "无明显信号";
+export type DivergenceState = "顶背离" | "底背离" | "无明显背离" | null;
+export type RsiZone = "超买" | "超卖" | "中性";
+export type KdjState = "金叉" | "死叉" | "超买钝化" | "超卖钝化" | "无明显信号";
+
+export type Oscillators = {
+  macd: {
+    dif: number;
+    dea: number;
+    hist: number;
+    state: MacdState;
+    divergence: DivergenceState;
+  } | null;
+  rsi: {
+    rsi6: number | null;
+    rsi12: number | null;
+    rsi24: number | null;
+    zone: RsiZone;
+  } | null;
+  kdj: {
+    k: number | null;
+    d: number | null;
+    j: number | null;
+    state: KdjState;
+  } | null;
+};
+
+// EMA：输入无 null 的序列，前 period-1 个位置返回 null；seed 用前 period 根均值。
+function emaSeries(values: number[], period: number): (number | null)[] {
+  const out: (number | null)[] = new Array(values.length).fill(null);
+  if (values.length < period) return out;
+  const k = 2 / (period + 1);
+  let prev = average(values.slice(0, period));
+  out[period - 1] = prev;
+  for (let i = period; i < values.length; i++) {
+    prev = values[i] * k + prev * (1 - k);
+    out[i] = prev;
+  }
+  return out;
+}
+
+function computeMacd(closes: number[]): Oscillators["macd"] {
+  if (closes.length < 26) return null;
+  const ema12 = emaSeries(closes, 12);
+  const ema26 = emaSeries(closes, 26);
+  const dif: number[] = [];
+  for (let i = 0; i < closes.length; i++) {
+    const e12 = ema12[i];
+    const e26 = ema26[i];
+    dif.push(e12 === null || e26 === null ? NaN : e12 - e26);
+  }
+  // DIF 从第 26 根（索引 25）起才有效，从该处抽取纯净序列算 DEA(EMA9)
+  const validFrom = 25;
+  const validDif = dif.slice(validFrom).filter((value) => !Number.isNaN(value));
+  if (validDif.length < 9) return null;
+  const deaValid = emaSeries(validDif, 9);
+  const dea: (number | null)[] = new Array(closes.length).fill(null);
+  for (let i = 0; i < deaValid.length; i++) {
+    dea[validFrom + i] = deaValid[i];
+  }
+
+  const last = closes.length - 1;
+  const dDif = dif[last];
+  const dDea = dea[last];
+  if (dDea === null || Number.isNaN(dDif)) return null;
+  // 用容差比较 DIF 与 DEA，避免完美线性行情下 DIF≈DEA 的浮点误差误判方向
+  const EPS = 1e-6;
+  const hist = (dDif - dDea) * 2;
+  const above = dDif - dDea > EPS;
+  const below = dDea - dDif > EPS;
+
+  let state: MacdState = above ? "多头" : below ? "空头" : "无明显信号";
+  const prevDif = dif[last - 1];
+  const prevDea = dea[last - 1];
+  if (prevDea !== null && !Number.isNaN(prevDif)) {
+    const curDiff = dDif - dDea;
+    const prevDiff = prevDif - prevDea;
+    if (prevDiff <= EPS && curDiff > EPS) state = "金叉";
+    else if (prevDiff >= -EPS && curDiff < -EPS) state = "死叉";
+  }
+
+  // 背离：近 60 根窗口内，价格与 DIF 是否同步
+  let divergence: DivergenceState = null;
+  const startIdx = Math.max(validFrom, closes.length - 60);
+  const windowIdx: number[] = [];
+  for (let i = startIdx; i <= last; i++) {
+    if (!Number.isNaN(dif[i])) windowIdx.push(i);
+  }
+  if (windowIdx.length >= 20) {
+    const maxClose = Math.max(...windowIdx.map((i) => closes[i]));
+    const minClose = Math.min(...windowIdx.map((i) => closes[i]));
+    const maxDif = Math.max(...windowIdx.map((i) => dif[i]));
+    const minDif = Math.min(...windowIdx.map((i) => dif[i]));
+    if (closes[last] >= maxClose * 0.97 && dif[last] < maxDif * 0.9) {
+      divergence = "顶背离";
+    } else if (closes[last] <= minClose * 1.03 && dif[last] > minDif * 0.9) {
+      divergence = "底背离";
+    } else {
+      divergence = "无明显背离";
+    }
+  }
+
+  return { dif: dDif, dea: dDea, hist, state, divergence };
+}
+
+function computeRsi(closes: number[]): Oscillators["rsi"] {
+  if (closes.length < 25) return null;
+  const gains: number[] = [];
+  const losses: number[] = [];
+  for (let i = 1; i < closes.length; i++) {
+    const diff = closes[i] - closes[i - 1];
+    gains.push(diff > 0 ? diff : 0);
+    losses.push(diff < 0 ? -diff : 0);
+  }
+  const rsiValue = (period: number): number | null => {
+    if (closes.length < period + 1) return null;
+    const calc = (g: number, l: number) => (l === 0 ? 100 : 100 - 100 / (1 + g / l));
+    let avgGain = average(gains.slice(0, period));
+    let avgLoss = average(losses.slice(0, period));
+    let value = calc(avgGain, avgLoss);
+    for (let i = period; i < gains.length; i++) {
+      avgGain = (avgGain * (period - 1) + gains[i]) / period;
+      avgLoss = (avgLoss * (period - 1) + losses[i]) / period;
+      value = calc(avgGain, avgLoss);
+    }
+    return value;
+  };
+  const rsi6 = rsiValue(6);
+  const rsi12 = rsiValue(12);
+  const rsi24 = rsiValue(24);
+  let zone: RsiZone = "中性";
+  if (rsi12 !== null) {
+    if (rsi12 > 70) zone = "超买";
+    else if (rsi12 < 30) zone = "超卖";
+  }
+  return { rsi6, rsi12, rsi24, zone };
+}
+
+function computeKdj(history: ChartRow[]): Oscillators["kdj"] {
+  if (history.length < 9) return null;
+  const k: (number | null)[] = new Array(history.length).fill(null);
+  const d: (number | null)[] = new Array(history.length).fill(null);
+  const j: (number | null)[] = new Array(history.length).fill(null);
+  let prevK = 50;
+  let prevD = 50;
+  for (let i = 8; i < history.length; i++) {
+    const window = history.slice(i - 8, i + 1);
+    const lowN = Math.min(...window.map((row) => row.low));
+    const highN = Math.max(...window.map((row) => row.high));
+    const close = history[i].close;
+    const rsv = highN === lowN ? 50 : ((close - lowN) / (highN - lowN)) * 100;
+    const kk = (2 / 3) * prevK + (1 / 3) * rsv;
+    const dd = (2 / 3) * prevD + (1 / 3) * kk;
+    const jj = 3 * kk - 2 * dd;
+    k[i] = kk;
+    d[i] = dd;
+    j[i] = jj;
+    prevK = kk;
+    prevD = dd;
+  }
+  const last = history.length - 1;
+  const lastK = k[last];
+  const lastD = d[last];
+  const lastJ = j[last];
+  if (lastK === null || lastD === null || lastJ === null) return null;
+
+  let state: KdjState;
+  const prevKv = k[last - 1];
+  const prevDv = d[last - 1];
+  if (prevKv !== null && prevDv !== null) {
+    const cur = lastK - lastD;
+    const prev = prevKv - prevDv;
+    if (prev <= 0 && cur > 0) state = "金叉";
+    else if (prev >= 0 && cur < 0) state = "死叉";
+    else if (lastK > 80 && lastD > 80) state = "超买钝化";
+    else if (lastK < 20 && lastD < 20) state = "超卖钝化";
+    else state = "无明显信号";
+  } else if (lastK > 80 && lastD > 80) {
+    state = "超买钝化";
+  } else if (lastK < 20 && lastD < 20) {
+    state = "超卖钝化";
+  } else {
+    state = "无明显信号";
+  }
+  return { k: lastK, d: lastD, j: lastJ, state };
+}
+
+export function computeOscillators(history: ChartRow[]): Oscillators {
+  const closes = history.map((row) => row.close);
+  return {
+    macd: computeMacd(closes),
+    rsi: computeRsi(closes),
+    kdj: computeKdj(history),
+  };
+}
+
+// 把摆动指标转成中性、可放进 summary/risks 的短句（不给出确定性买卖结论）。
+export function buildOscillatorNote(o: Oscillators | null): string {
+  if (!o) return "";
+  const parts: string[] = [];
+  if (o.macd) {
+    const { state, divergence, hist } = o.macd;
+    if (divergence === "顶背离") parts.push("MACD出现顶背离：价格高位但动能未同步放大，追高需谨慎");
+    else if (divergence === "底背离") parts.push("MACD出现底背离：价格低位但动能有企稳迹象，关注是否止跌，但不宜直接抄底");
+    else if (state === "金叉") parts.push("MACD刚金叉、红柱初现，短期动能转强");
+    else if (state === "死叉") parts.push("MACD刚死叉、绿柱初现，短期动能转弱");
+    else if (hist < 0) parts.push("MACD位于零轴下方，整体动能偏弱");
+    else parts.push("MACD位于零轴上方，整体动能偏强");
+  }
+  if (o.rsi) {
+    const v = o.rsi.rsi12?.toFixed(1) ?? "数据缺失";
+    if (o.rsi.zone === "超买") parts.push(`RSI约${v}处于超买区，短线继续追高性价比低`);
+    else if (o.rsi.zone === "超卖") parts.push(`RSI约${v}处于超卖区，超跌后易有技术性反弹但勿盲目抄底`);
+  }
+  if (o.kdj) {
+    const { state } = o.kdj;
+    if (state === "金叉") parts.push("KDJ刚金叉，短线情绪转暖");
+    else if (state === "死叉") parts.push("KDJ刚死叉，短线情绪转冷");
+    else if (state === "超买钝化") parts.push("KDJ在超买区钝化，强势中也可能延续，但追高需防回落");
+    else if (state === "超卖钝化") parts.push("KDJ在超卖区钝化，弱势中也可能延续，抄底需等企稳信号");
+  }
+  return parts.join("；");
+}
+
 export function automaticExplanation(data: Awaited<ReturnType<typeof analyzeStockData>>) {
   const { stock, quote, financials } = data;
   const trend = quote.price >= quote.ma20 ? "近期价格位于20日均线之上" : "近期价格位于20日均线之下";
@@ -717,12 +948,13 @@ export function automaticExplanation(data: Awaited<ReturnType<typeof analyzeStoc
     ? "公开接口暂未返回可比较的利润数据"
     : `最近两期利润变化约为 ${financials.profitGrowth.toFixed(1)}%`;
   const volatilityText = quote.volatility > 3 ? "近期波动较大" : "近期波动处于相对温和区间";
+  const oscNote = buildOscillatorNote(data.oscillators);
 
   if (stock.instrumentType === "etf") {
     const fund = stock.fund;
     if (fund) {
       return {
-        summary: `${stock.name}跟踪${fund.trackingIndex}，${trend}；近20日平均绝对涨跌幅约${quote.volatility.toFixed(2)}%。ETF价格还会受到指数表现、汇率、跟踪误差和场内折溢价影响。`,
+        summary: `${stock.name}跟踪${fund.trackingIndex}，${trend}；近20日平均绝对涨跌幅约${quote.volatility.toFixed(2)}%。${oscNote ? oscNote + "。" : ""}ETF价格还会受到指数表现、汇率、跟踪误差和场内折溢价影响。`,
         company: [
           `${stock.name}是${fund.category}，不是单一上市公司。`,
           `跟踪标的为${fund.trackingIndex}，目标是尽量减小跟踪偏离和跟踪误差。`,
@@ -735,6 +967,7 @@ export function automaticExplanation(data: Awaited<ReturnType<typeof analyzeStoc
           "内地与香港交易日、交易时段不同，场内价格可能出现折价或溢价。",
           "基金表现可能因费用、申赎和复制方式与标的指数存在跟踪偏离。",
           `近20日平均绝对涨跌幅约 ${quote.volatility.toFixed(2)}%，请结合自己的承受能力设置计划。`,
+          oscNote ? oscNote : "MACD/RSI/KDJ 等摆动指标只作技术姿态参考，不单独构成买卖依据。",
         ],
         themes: [
           { name: fund.trackingIndex, confidence: "已核验", reason: "基金产品资料明确列示的标的指数。" },
@@ -750,7 +983,7 @@ export function automaticExplanation(data: Awaited<ReturnType<typeof analyzeStoc
     // 未知基金（不在本地 ETF 资料中，如未收录的 ETF/LOF）：走通用基金文案，
     // 不引用具体 trackingIndex/manager，避免误把基金当股票套行业主题。
     return {
-      summary: `${stock.name}是一只基金/ETF，${trend}；近20日平均绝对涨跌幅约${quote.volatility.toFixed(2)}%。基金价格会受跟踪指数表现、市场波动和场内折溢价影响。`,
+      summary: `${stock.name}是一只基金/ETF，${trend}；近20日平均绝对涨跌幅约${quote.volatility.toFixed(2)}%。${oscNote ? oscNote + "。" : ""}基金价格会受跟踪指数表现、市场波动和场内折溢价影响。`,
       company: [
         `${stock.name}是交易型开放式基金（ETF），不是单一上市公司，净值随跟踪标的波动。`,
         "建议在基金或指数官方渠道查看最新跟踪标的、基金规模与跟踪误差。",
@@ -758,9 +991,10 @@ export function automaticExplanation(data: Awaited<ReturnType<typeof analyzeStoc
       risks: [
         "基金集中跟踪标的指数，指数成份股整体下跌时会承受市场风险。",
         "场内交易可能出现折价或溢价，成交价格与净值不完全一致。",
-        "基金表现可能因费用、申赎和复制方式与标的指数存在跟踪偏离。",
-        `近20日平均绝对涨跌幅约 ${quote.volatility.toFixed(2)}%，请结合自己的承受能力设置计划。`,
-      ],
+          "基金表现可能因费用、申赎和复制方式与标的指数存在跟踪偏离。",
+          `近20日平均绝对涨跌幅约 ${quote.volatility.toFixed(2)}%，请结合自己的承受能力设置计划。`,
+          oscNote ? oscNote : "MACD/RSI/KDJ 等摆动指标只作技术姿态参考，不单独构成买卖依据。",
+        ],
       themes: [
         { name: "指数基金投资", confidence: "已核验", reason: `${stock.name}为指数型产品，风险主要来自标的与市场波动。` },
       ],
@@ -816,13 +1050,14 @@ export function automaticExplanation(data: Awaited<ReturnType<typeof analyzeStoc
       : null;
 
   return {
-    summary: `${stock.name}属于${stock.industry}，${trend}，${volatilityText}${volNote}。先检查基本面变化，再结合自己能承受的亏损设置计划。`,
+    summary: `${stock.name}属于${stock.industry}，${trend}，${volatilityText}${volNote}。${oscNote ? oscNote + "。" : ""}先检查基本面变化，再结合自己能承受的亏损设置计划。`,
     company,
     risks: [
       profitText,
       `20日平均日波动约 ${quote.volatility.toFixed(2)}%，价格提醒可能被短期波动触发。`,
       "免费公开行情可能延迟，重要止损必须同时在券商App设置。",
       ...(volRisk ? [volRisk] : []),
+      oscNote ? oscNote : "MACD/RSI/KDJ 等摆动指标只作技术姿态参考，不单独构成买卖依据，强趋势中可能钝化失效。",
     ],
     themes: builtThemes,
     missingInformation: [
