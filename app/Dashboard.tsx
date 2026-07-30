@@ -11,6 +11,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { SectionHeader, Badge, Stat } from "./components";
+import { MarkdownMessage } from "./MarkdownMessage";
 import {
   ArrowDown,
   ArrowUp,
@@ -1654,7 +1655,11 @@ function SmartAssistant({ analysis, position, portfolioInsights }: {
         {messages.map((message, index) => (
           <div className={`assistant-message ${message.role}`} key={`${message.role}-${index}`}>
             <b>{message.role === "assistant" ? "助手" : "我"}</b>
-            <p>{message.content}</p>
+            {message.role === "assistant" ? (
+              <MarkdownMessage content={message.content} />
+            ) : (
+              <p>{message.content}</p>
+            )}
           </div>
         ))}
         {asking && <div className="assistant-message assistant"><b>助手</b><p>正在核对当前证据和对话上下文…</p></div>}
@@ -1681,6 +1686,7 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
   const [period, setPeriod] = useState<MarketPeriod>("day");
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [pointerPrice, setPointerPrice] = useState<number | null>(null);
+  const [chartActive, setChartActive] = useState(false);
   const rows = useMemo(
     () => aggregateMarketHistory(analysis.history, period).slice(-60),
     [analysis.history, period],
@@ -1728,6 +1734,7 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
   const priceLabelWidth = Math.max(62, crosshairLabel.length * 7 + 14);
   const periodLabel = period === "day" ? "日K" : period === "week" ? "周K" : "月K";
   const latestRow = rows.at(-1);
+  const showExtremes = chartActive || selectedIndex !== null;
 
   function selectAtPointer(event: ReactPointerEvent<SVGSVGElement>) {
     const matrix = event.currentTarget.getScreenCTM();
@@ -1801,13 +1808,20 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
         role="img"
         tabIndex={0}
         aria-label={`${analysis.stock.name}${periodLabel}、成交量和均线。移动鼠标、点按或使用左右方向键查看每根K线数据。`}
-        onPointerMove={selectAtPointer}
+        onPointerMove={(event) => {
+          setChartActive(true);
+          selectAtPointer(event);
+        }}
         onPointerDown={selectAtPointer}
+        onPointerEnter={() => setChartActive(true)}
         onPointerLeave={(event) => {
           if (event.pointerType === "touch") return;
+          setChartActive(false);
           setSelectedIndex(null);
           setPointerPrice(null);
         }}
+        onFocus={() => setChartActive(true)}
+        onBlur={() => setChartActive(false)}
         onKeyDown={navigateChart}
       >
         <line x1="0" y1={priceHeight} x2={width} y2={priceHeight} className="chart-axis" />
@@ -1827,7 +1841,7 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
         <polyline points={linePoints("ma5")} className="ma-line ma5-line" />
         <polyline points={linePoints("ma20")} className="ma-line ma20-line" />
         <polyline points={linePoints("ma60")} className="ma-line ma60-line" />
-        {extremes.max && extremes.maxIndex >= 0 && (
+        {showExtremes && extremes.max && extremes.maxIndex >= 0 && (
           <g className="chart-extreme chart-extreme-max" pointerEvents="none">
             <line x1="0" x2={width} y1={y(extremes.max.high)} y2={y(extremes.max.high)} className="chart-extreme-line" />
             <circle cx={x(extremes.maxIndex)} cy={y(extremes.max.high)} r="3.5" className="chart-extreme-dot" />
@@ -1837,7 +1851,7 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
             </g>
           </g>
         )}
-        {extremes.min && extremes.minIndex >= 0 && (
+        {showExtremes && extremes.min && extremes.minIndex >= 0 && (
           <g className="chart-extreme chart-extreme-min" pointerEvents="none">
             <line x1="0" x2={width} y1={y(extremes.min.low)} y2={y(extremes.min.low)} className="chart-extreme-line" />
             <circle cx={x(extremes.minIndex)} cy={y(extremes.min.low)} r="3.5" className="chart-extreme-dot" />
