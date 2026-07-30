@@ -46,9 +46,10 @@
     "vinext": "0.0.50",
     "vite": "8.1.5",
     "vitest": "^3.2.7",
-    "wrangler": "4.115.0"
+    "wrangler": "4.114.0"
   },
   "overrides": {
+    "wrangler": "4.114.0",
     "@babel/core": "7.29.7",
     "@esbuild-kit/core-utils": {
       "esbuild": "0.25.12"
