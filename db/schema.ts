@@ -105,3 +105,11 @@ export const accountSettings = sqliteTable("account_settings", {
   initialCapitalCents: integer("initial_capital_cents").notNull(),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const capitalFlows = sqliteTable("capital_flows", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  amountCents: integer("amount_cents").notNull(),
+  flowDate: text("flow_date").notNull(),
+  note: text("note"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});

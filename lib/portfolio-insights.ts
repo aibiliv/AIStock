@@ -1,4 +1,4 @@
-import { calculatePortfolio, type Trade } from "./domain";
+import { calculatePortfolio, type CapitalFlow, type Trade } from "./domain";
 
 export type PriceHistory = Record<string, Array<{ date: string; close: number }>>;
 
@@ -14,6 +14,9 @@ export type PortfolioInsights = {
   realizedCents: number;
   totalProfitCents: number | null;
   totalProfitPercent: number | null;
+  totalDepositCents: number;
+  totalWithdrawalCents: number;
+  netFlowCents: number;
   positions: Array<{
     symbol: string;
     name: string;
@@ -40,7 +43,16 @@ export function calculatePortfolioInsights(
   currentPrices: Record<string, number>,
   histories: PriceHistory,
   initialCapitalCents: number | null,
+  capitalFlows: CapitalFlow[] = [],
 ): PortfolioInsights {
+  const totalDepositCents = capitalFlows
+    .filter((f) => f.amountCents > 0)
+    .reduce((sum, f) => sum + f.amountCents, 0);
+  const totalWithdrawalCents = capitalFlows
+    .filter((f) => f.amountCents < 0)
+    .reduce((sum, f) => sum + Math.abs(f.amountCents), 0);
+  const netFlowCents = totalDepositCents - totalWithdrawalCents;
+
   const portfolio = calculatePortfolio(trades);
   const completePrices = portfolio.positions.every((position) => Number.isFinite(currentPrices[position.symbol]));
   const positions: PortfolioInsights["positions"] = portfolio.positions.map((position) => {
@@ -64,7 +76,7 @@ export function calculatePortfolioInsights(
         trade.side === "买入"
           ? cash - tradeValueCents(trade) - trade.feeCents
           : cash + tradeValueCents(trade) - trade.feeCents
-      ), initialCapitalCents);
+      ), initialCapitalCents + netFlowCents);
   const totalAssetsCents = cashCents === null ? null : cashCents + marketValueCents;
 
   for (const position of positions) {
@@ -77,10 +89,11 @@ export function calculatePortfolioInsights(
 
   const history = initialCapitalCents === null
     ? []
-    : buildPortfolioHistory(trades, histories, initialCapitalCents);
-  const totalProfitCents = initialCapitalCents === null || totalAssetsCents === null
+    : buildPortfolioHistory(trades, histories, initialCapitalCents, capitalFlows);
+  const adjustedBase = initialCapitalCents !== null ? initialCapitalCents + netFlowCents : null;
+  const totalProfitCents = adjustedBase === null || totalAssetsCents === null
     ? null
-    : totalAssetsCents - initialCapitalCents;
+    : totalAssetsCents - adjustedBase;
 
   return {
     configured: initialCapitalCents !== null,
@@ -93,19 +106,30 @@ export function calculatePortfolioInsights(
     unrealizedCents,
     realizedCents: portfolio.realizedCents,
     totalProfitCents,
-    totalProfitPercent: totalProfitCents === null || !initialCapitalCents
+    totalProfitPercent: totalProfitCents === null || !adjustedBase
       ? null
-      : totalProfitCents / initialCapitalCents * 100,
+      : totalProfitCents / adjustedBase * 100,
+    totalDepositCents,
+    totalWithdrawalCents,
+    netFlowCents,
     positions,
     history,
   };
 }
 
-function buildPortfolioHistory(trades: Trade[], histories: PriceHistory, initialCapitalCents: number) {
+function buildPortfolioHistory(
+  trades: Trade[],
+  histories: PriceHistory,
+  initialCapitalCents: number,
+  capitalFlows: CapitalFlow[] = [],
+) {
   if (!trades.length) return [];
+  const orderedFlows = [...capitalFlows].sort((left, right) => left.flowDate.localeCompare(right.flowDate));
   const firstTradeDate = [...trades].sort((left, right) => left.tradeDate.localeCompare(right.tradeDate))[0].tradeDate;
+  const firstFlowDate = orderedFlows.length > 0 ? orderedFlows[0].flowDate : null;
+  const startDate = firstFlowDate && firstFlowDate < firstTradeDate ? firstFlowDate : firstTradeDate;
   const dates = [...new Set(Object.values(histories).flatMap((rows) => rows.map((row) => row.date)))]
-    .filter((date) => date >= firstTradeDate)
+    .filter((date) => date >= startDate)
     .sort()
     .slice(-180);
   const orderedTrades = [...trades].sort((left, right) =>
@@ -114,6 +138,7 @@ function buildPortfolioHistory(trades: Trade[], histories: PriceHistory, initial
 
   let cashCents = initialCapitalCents;
   let tradeIndex = 0;
+  let flowIndex = 0;
   const quantities = new Map<string, number>();
   const latestPrices = new Map<string, number>();
   const historyRows = Object.fromEntries(
@@ -122,6 +147,10 @@ function buildPortfolioHistory(trades: Trade[], histories: PriceHistory, initial
   const points: Array<{ date: string; totalAssetsCents: number; positionPercent: number }> = [];
 
   for (const date of dates) {
+    while (flowIndex < orderedFlows.length && orderedFlows[flowIndex].flowDate <= date) {
+      cashCents += orderedFlows[flowIndex].amountCents;
+      flowIndex += 1;
+    }
     while (tradeIndex < orderedTrades.length && orderedTrades[tradeIndex].tradeDate <= date) {
       const trade = orderedTrades[tradeIndex];
       const direction = trade.side === "买入" ? 1 : -1;

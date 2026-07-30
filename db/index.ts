@@ -118,6 +118,13 @@ export async function ensureSchema() {
         initial_capital_cents INTEGER NOT NULL CHECK(initial_capital_cents > 0),
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`),
+      db.prepare(`CREATE TABLE IF NOT EXISTS capital_flows (
+        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+        amount_cents INTEGER NOT NULL,
+        flow_date TEXT NOT NULL,
+        note TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+      )`),
       db.prepare("CREATE INDEX IF NOT EXISTS trade_records_symbol_idx ON trade_records(symbol)"),
       db.prepare("CREATE INDEX IF NOT EXISTS alert_rules_symbol_idx ON alert_rules(symbol)"),
       db.prepare("CREATE INDEX IF NOT EXISTS reviews_symbol_idx ON reviews(symbol)"),

@@ -1351,7 +1351,7 @@ svg { display: block; }
   max-width: 92%;
 }
 
-.assistant-message.user { justify-self: end; }
+.assistant-message.user { justify-self: end; grid-template-columns: minmax(0, 1fr) 38px; }
 .assistant-message b { color: var(--muted); font-size: var(--fs-2xs); padding-top: 9px; }
 .assistant-message p {
   background: var(--surface);
@@ -1972,6 +1972,65 @@ svg { display: block; }
   width: 100%;
 }
 .capital-form button { height: 42px; }
+
+/* 出入金流水 */
+.flow-form {
+  flex-wrap: wrap;
+}
+.flow-form label select {
+  background: var(--surface-soft);
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  display: block;
+  height: 42px;
+  margin-top: 6px;
+  padding: 0 11px;
+  width: 100%;
+  font-size: var(--fs-sm);
+  color: var(--text);
+  cursor: pointer;
+  appearance: none;
+}
+.flow-note-label { flex: 1.5 !important; }
+.flows-summary {
+  display: flex;
+  gap: 18px;
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.flows-summary span { font-size: var(--fs-xs); color: var(--text-muted); }
+.flows-summary strong { font-weight: 700; margin-left: 4px; }
+.flows-list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.flow-row {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 48px 1fr 92px auto 44px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-xs);
+}
+.flow-row:last-child { border-bottom: none; }
+.flow-tag {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 5px;
+  padding: 3px 7px;
+  text-align: center;
+}
+.flow-in { background: rgba(26, 26, 24, .07); color: var(--text); }
+.flow-out { background: var(--red-soft); color: var(--red); }
+.flow-amount { font-weight: 700; font-variant-numeric: tabular-nums; }
+.flow-date { color: var(--text-muted); font-feature-settings: "tnum"; }
+.flow-note { color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.danger-link { background: none; border: none; color: var(--red); cursor: pointer; font-size: var(--fs-xs); padding: 3px 6px; border-radius: 5px; }
+.danger-link:hover { background: var(--red-soft); }
 
 .login-page {
   align-items: center;

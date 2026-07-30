@@ -51,6 +51,14 @@ export type InvalidSell = {
   requestedQuantity: number;
 };
 
+export type CapitalFlow = {
+  id: number;
+  amountCents: number;
+  flowDate: string;
+  note: string | null;
+  createdAt: string;
+};
+
 export type MarketPeriod = "day" | "week" | "month";
 
 export type MarketBar = {
