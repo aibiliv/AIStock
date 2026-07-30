@@ -33,6 +33,7 @@ export default defineConfig(async ({ mode }) => {
     APP_USERNAME: localEnv.APP_USERNAME ?? process.env.APP_USERNAME ?? "",
     APP_PASSWORD: localEnv.APP_PASSWORD ?? process.env.APP_PASSWORD ?? "",
     APP_AUTH_SECRET: localEnv.APP_AUTH_SECRET ?? process.env.APP_AUTH_SECRET ?? "",
+    MAIRUI_TOKEN: localEnv.MAIRUI_TOKEN ?? process.env.MAIRUI_TOKEN ?? "",
   };
   const vars = Object.fromEntries(
     Object.entries(runtimeVars).filter(([, v]) => v.trim().length > 0),

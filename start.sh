@@ -18,6 +18,7 @@ node --input-type=module -e '
     "APP_USERNAME",
     "APP_PASSWORD",
     "APP_AUTH_SECRET",
+    "MAIRUI_TOKEN",
   ];
   const lines = names
     .filter((name) => process.env[name])
