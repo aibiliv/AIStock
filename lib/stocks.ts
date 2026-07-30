@@ -1,6 +1,7 @@
 import A_STOCK_LIST from "../db/a_stock_list";
 
 const ETF_PROFILES: Record<string, {
+  name: string;
   manager: string;
   trackingIndex: string;
   exchange: string;
@@ -10,6 +11,7 @@ const ETF_PROFILES: Record<string, {
   sourceUrl: string;
 }> = {
   "513180": {
+    name: "华夏恒生科技ETF",
     manager: "华夏基金管理有限公司",
     trackingIndex: "恒生科技指数",
     exchange: "上海证券交易所",
@@ -19,6 +21,7 @@ const ETF_PROFILES: Record<string, {
     sourceUrl: "https://www.chinaamc.com.cn/fund/513180/index.shtml",
   },
   "159583": {
+    name: "富国中证通信设备主题ETF",
     manager: "富国基金管理有限公司",
     trackingIndex: "中证通信设备主题指数",
     exchange: "深圳证券交易所",
@@ -28,6 +31,14 @@ const ETF_PROFILES: Record<string, {
     sourceUrl: "https://www.fullgoal.com.cn/fundDetail/159583/index.html",
   },
 };
+
+// 股票名称 → 代码 反查表，供本地常用名称直接解析（避免每次都走腾讯接口）。
+const A_STOCK_NAME_TO_CODE: Record<string, string> = {};
+for (const [code, name] of Object.entries(A_STOCK_LIST)) {
+  if (!(name in A_STOCK_NAME_TO_CODE)) {
+    A_STOCK_NAME_TO_CODE[name] = code;
+  }
+}
 
 export function isEtfCode(code: string) {
   return Boolean(ETF_PROFILES[code]);
@@ -82,11 +93,18 @@ export function tencentSymbol(code: string) {
 export function resolveStock(query: string) {
   const clean = query.trim();
   if (/^\d{6}$/.test(clean)) {
-    // 优先从本地全量列表查名称，兜底用代码本身
+    // 基金代码优先返回产品名称，普通股票走本地全量列表，兜底用代码本身
+    const etf = ETF_PROFILES[clean];
+    if (etf) return { code: clean, name: etf.name };
     return { code: clean, name: A_STOCK_LIST[clean] ?? clean };
   }
 
-  // 名称搜索走腾讯 smartbox API，本地 5534 条全量搜索代价大
+  // 本地常用股票名称直接解析，找不到再交给腾讯 smartbox API
+  const code = A_STOCK_NAME_TO_CODE[clean];
+  if (code) return { code, name: clean };
+  for (const [code, etf] of Object.entries(ETF_PROFILES)) {
+    if (etf.name === clean) return { code, name: clean };
+  }
   return null;
 }
 

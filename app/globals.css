@@ -637,12 +637,7 @@ svg { display: block; }
   margin-top: 17px;
 }
 
-.behavior-grid > div {
-  background: var(--surface-soft);
-  border-radius: 10px;
-  min-width: 0;
-  padding: 13px;
-}
+
 
 .behavior-grid span,
 .behavior-grid small { color: var(--muted); display: block; font-size: var(--fs-2xs); }
@@ -798,12 +793,7 @@ svg { display: block; }
   grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
-.portfolio-metrics > div {
-  background: var(--surface-soft);
-  border-radius: 9px;
-  min-width: 0;
-  padding: 11px;
-}
+
 
 .portfolio-metrics span,
 .portfolio-metrics small { color: var(--muted); display: block; font-size: var(--fs-2xs); }
@@ -1432,11 +1422,7 @@ svg { display: block; }
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.fund-facts > div {
-  background: var(--surface-soft);
-  border-radius: 9px;
-  padding: 12px;
-}
+
 
 .fund-facts span {
   color: var(--muted);
@@ -2456,4 +2442,146 @@ svg { display: block; }
 @keyframes skeleton-shift {
   from { background-position: 150% 0; }
   to { background-position: -50% 0; }
+}
+
+/* ================================================================== */
+/* 设计系统基础组件（与 app/components.tsx 配套）                       */
+/* 把过去分散在多种 class 中的同类内容收敛到统一视觉，避免风格各异。     */
+/* ================================================================== */
+
+/* ---- SectionHeader：区块标题（eyebrow + 标题 + 副标题 + 操作区） ---- */
+.section-header {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+}
+.section-header--stack {
+  flex-direction: column;
+  align-items: flex-start;
+}
+.section-header--lg { margin-bottom: 20px; }
+.section-header--xl { margin-bottom: 22px; }
+.section-header--bordered {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 18px;
+}
+.section-header__main {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  min-width: 0;
+}
+.section-header--stack .section-header__main { align-items: flex-start; }
+.section-header__num {
+  flex: none;
+  font: 700 13px/1 var(--font-sans);
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-radius: 10px;
+  padding: 9px 10px;
+}
+.section-header__text { min-width: 0; }
+.section-header__title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--text);
+}
+.section-header--md .section-header__title { font-size: var(--fs-lg); }
+.section-header--lg .section-header__title { font-size: var(--fs-2xl); }
+.section-header--xl .section-header__title { font-size: var(--fs-3xl); }
+.section-header__subtitle {
+  margin: 6px 0 0;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+.section-header__actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex: none;
+}
+
+/* ---- Badge：状态 / 标签药丸（统一色调与形状） ---- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  line-height: 1;
+  padding: 4px 9px;
+  border-radius: var(--radius-pill);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.badge--square { border-radius: var(--radius-sm); }
+.badge--neutral { color: var(--text-muted); background: var(--surface-2); border-color: var(--border); }
+.badge--accent { color: var(--accent-ink); background: var(--accent-soft); border-color: var(--accent-soft); }
+.badge--red { color: var(--up); background: var(--up-soft); border-color: var(--up-soft); }
+.badge--green { color: var(--down); background: var(--down-soft); border-color: var(--down-soft); }
+.badge--amber { color: var(--amber); background: var(--amber-soft); border-color: var(--amber-soft); }
+.badge--inverse { color: #fff; background: var(--text); border-color: var(--text); }
+
+/* ---- Stat：统计块（统一“标签 + 数值 + 说明”三栏） ---- */
+.stat {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  min-width: 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+.stat__label {
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+.stat__value {
+  font-family: var(--font-display);
+  font-weight: 750;
+  font-size: var(--fs-xl);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--text);
+}
+.stat__hint {
+  font-size: var(--fs-xs);
+  color: var(--text-faint);
+}
+
+/* ================================================================== */
+/* 深色主题：复用全部 :root 令牌，仅重映射调色板，风险可控。            */
+/* ================================================================== */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg0: #0a0e16;
+    --bg: #0b0f17;
+    --surface: #121826;
+    --surface-2: #1a2233;
+    --surface-3: #232c3f;
+    --text: #e8edf6;
+    --text-muted: #9aa6b8;
+    --text-faint: #6b7689;
+    --border: #25304a;
+    --border-strong: #34415f;
+    --accent: #4d8bff;
+    --accent-ink: #7aa9ff;
+    --accent-soft: #16233d;
+    --up: #ff6b5e;
+    --up-soft: #2c1714;
+    --down: #4cd08a;
+    --down-soft: #11271c;
+    --amber: #e0a84b;
+    --amber-soft: #2a2113;
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+  }
 }
