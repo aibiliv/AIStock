@@ -3854,53 +3854,6 @@ svg { display: block; }
 .index-strip__item.down .index-price,
 .index-strip__item.down .index-change { color: var(--green); }
 
-/* ---- 板块快览横向滚动 ---- */
-.sector-quick-strip {
-  display: flex;
-  gap: 9px;
-  margin-top: 12px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-}
-.sector-quick-strip::-webkit-scrollbar { display: none; }
-.sector-quick-card {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-control);
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  flex: 0 0 auto;
-  min-width: 125px;
-  padding: 13px 15px;
-  transition: border-color 160ms ease, box-shadow 160ms ease;
-}
-.sector-quick-card:hover {
-  border-color: var(--line-strong);
-  box-shadow: var(--shadow);
-}
-.sector-quick-card .sq-name {
-  font-size: var(--fs-xs);
-  color: var(--text-soft);
-  font-weight: 650;
-}
-.sector-quick-card .sq-change {
-  font-size: var(--fs-xl);
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-}
-.sector-quick-card .sq-detail {
-  font-size: var(--fs-2xs);
-  color: var(--muted);
-}
-.sector-quick-card.up { border-color: color-mix(in srgb, var(--red) 28%, var(--line)); background: color-mix(in srgb, var(--red) 6%, var(--surface)); }
-.sector-quick-card.up .sq-change { color: var(--red); }
-.sector-quick-card.down { border-color: color-mix(in srgb, var(--green) 28%, var(--line)); background: color-mix(in srgb, var(--green) 6%, var(--surface)); }
-.sector-quick-card.down .sq-change { color: var(--green); }
-
 /* ---- 移动端底部导航升级 ---- */
 .mobile-nav button {
   position: relative;
@@ -3973,7 +3926,6 @@ svg { display: block; }
     gap: 7px;
   }
   .index-strip__item { padding: 10px 11px; }
-  .sector-quick-card { min-width: 108px; padding: 10px 12px; }
   .holding-card { padding: 14px; }
 }
 
@@ -3983,6 +3935,5 @@ svg { display: block; }
     gap: 6px;
   }
   .index-strip__item { padding: 9px 10px; }
-  .sector-quick-card { min-width: 100px; padding: 9px 11px; }
   .search-hero.compact { padding: 20px 17px; }
 }
