@@ -1,0 +1,234 @@
+"use client";
+
+import "./analytics.css";
+import { useMemo, useRef, useState } from "react";
+import { Badge, SectionHeader, Stat } from "./components";
+import { BarList, DonutChart } from "./charts";
+import { EquityCurveChart } from "./equity-chart";
+import { calculateTradeStatistics } from "../lib/trade-statistics";
+import type { CapitalFlow, Trade } from "../lib/domain";
+import type { PortfolioInsights } from "../lib/portfolio-insights";
+
+export type AnalyticsReview = {
+  cycleEndTradeId: number | null;
+  symbol: string;
+  resultCents: number | null;
+  tags: string[];
+  followedPlan: boolean;
+};
+
+type AnalyticsViewProps = {
+  trades: Trade[];
+  capitalFlows: CapitalFlow[];
+  reviews: AnalyticsReview[];
+  portfolioInsights: PortfolioInsights;
+  initialCapitalCents: number | null;
+};
+
+function money(cents: number): string {
+  return `¥${(cents / 100).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function pct(value: number): string {
+  if (!Number.isFinite(value)) return "∞";
+  return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+}
+
+function todayStamp(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+export function AnalyticsView({
+  trades,
+  capitalFlows,
+  reviews,
+  portfolioInsights,
+  initialCapitalCents,
+}: AnalyticsViewProps) {
+  const viewRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
+
+  const stats = useMemo(
+    () => calculateTradeStatistics(trades, capitalFlows, reviews, initialCapitalCents),
+    [trades, capitalFlows, reviews, initialCapitalCents],
+  );
+
+  const allocationSegments = useMemo(() => {
+    const positions = [...portfolioInsights.positions]
+      .sort((a, b) => b.marketValueCents - a.marketValueCents)
+      .map((position) => ({ label: position.name || position.symbol, value: position.marketValueCents }));
+    if (positions.length > 8) {
+      const top = positions.slice(0, 8);
+      const rest = positions.slice(8).reduce((sum, item) => sum + item.value, 0);
+      top.push({ label: "其他", value: rest });
+      return top;
+    }
+    return positions;
+  }, [portfolioInsights.positions]);
+
+  const plan = stats.planAdherence;
+
+  async function exportImage() {
+    if (!viewRef.current || exporting) return;
+    setExporting(true);
+    try {
+      const { toPng } = await import("html-to-image");
+      const dataUrl = await toPng(viewRef.current, { backgroundColor: "#ffffff", pixelRatio: 2, cacheBust: true });
+      const link = document.createElement("a");
+      link.download = `复盘分析_${todayStamp()}.png`;
+      link.href = dataUrl;
+      link.click();
+    } catch (error) {
+      console.error("导出图片失败", error);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function exportPdf() {
+    if (!viewRef.current || exporting) return;
+    setExporting(true);
+    try {
+      const { toPng } = await import("html-to-image");
+      const { jsPDF } = await import("jspdf");
+      const dataUrl = await toPng(viewRef.current, { backgroundColor: "#ffffff", pixelRatio: 2, cacheBust: true });
+      const img = new Image();
+      img.src = dataUrl;
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error("图片生成失败"));
+      });
+      const pdf = new jsPDF({
+        orientation: img.width >= img.height ? "landscape" : "portrait",
+        unit: "pt",
+        format: [img.width, img.height],
+      });
+      pdf.addImage(dataUrl, "PNG", 0, 0, img.width, img.height);
+      pdf.save(`复盘分析_${todayStamp()}.pdf`);
+    } catch (error) {
+      console.error("导出 PDF 失败", error);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return (
+    <div className="analytics-view" ref={viewRef}>
+      <SectionHeader
+        eyebrow="复盘分析"
+        title="交易绩效与行为画像"
+        subtitle="从记账升级到分析：胜率、盈亏比、回撤、按计划执行度，帮你找到自己的优势与弱点。"
+        actions={
+          <div className="export-toolbar">
+            <button type="button" className="btn btn--ghost" onClick={exportImage} disabled={exporting}>
+              {exporting ? "导出中…" : "导出图片"}
+            </button>
+            <button type="button" className="btn btn--ghost" onClick={exportPdf} disabled={exporting}>
+              {exporting ? "导出中…" : "导出 PDF"}
+            </button>
+          </div>
+        }
+      />
+
+      <div className="stat-grid stat-grid--analytics">
+        <Stat label="已平仓交易" value={stats.totalTrades} hint={stats.scratchTrades ? `含 ${stats.scratchTrades} 笔平手` : undefined} />
+        <Stat label="累计盈亏" value={money(stats.realizedCents)} hint={stats.realizedCents >= 0 ? "盈利" : "亏损"} />
+        <Stat label="胜率" value={`${(stats.winRate * 100).toFixed(1)}%`} hint={`${stats.winningTrades}胜 / ${stats.losingTrades}负`} />
+        <Stat label="盈亏比" value={stats.profitFactor === Infinity ? "∞" : stats.profitFactor.toFixed(2)} hint="总盈利 / 总亏损" />
+        <Stat label="期望值" value={money(stats.expectancyCents)} hint="每笔平均盈亏" />
+        <Stat label="最大回撤" value={money(stats.maxDrawdownCents)} hint={pct(stats.maxDrawdownPercent)} />
+        <Stat label="平均持仓" value={`${Math.round(stats.avgHoldingDays)} 天`} hint={`最长 ${stats.maxHoldingDays} 天`} />
+        <Stat
+          label="连胜 / 连亏"
+          value={`${stats.longestWinStreak} / ${stats.longestLossStreak}`}
+          hint={`当前 ${stats.currentWinStreak > 0 ? `${stats.currentWinStreak}连胜` : stats.currentLossStreak > 0 ? `${stats.currentLossStreak}连亏` : "—"}`}
+        />
+      </div>
+
+      <section className="analytics-panel">
+        <SectionHeader eyebrow="资金曲线" title="权益走势与回撤" subtitle="基于本金、资金流水与已实现盈亏重建，无需实时行情。" />
+        {stats.equityCurve.length > 1 ? (
+          <EquityCurveChart title="资金权益曲线" points={stats.equityCurve} />
+        ) : (
+          <p className="chart-empty">暂无足够数据绘制曲线（需要先有清仓交易或资金流水）。</p>
+        )}
+      </section>
+
+      <section className="analytics-panel">
+        <SectionHeader
+          eyebrow="纪律"
+          title="计划 vs 执行偏差"
+          subtitle="按计划 vs 没按计划的盈亏和胜率对比，定位纪律缺口；复盘里填写「偏离原因」会越积越准。"
+        />
+        {reviews.length ? (
+          <>
+            <div className="stat-grid stat-grid--analytics">
+              <Stat label="计划执行率" value={`${(plan.rate * 100).toFixed(1)}%`} hint={`${plan.followed}/${plan.total} 笔按计划`} />
+              <Stat label="按计划盈亏" value={money(plan.followedRealizedCents)} hint={`胜率 ${(plan.followedWinRate * 100).toFixed(0)}%`} />
+              <Stat label="偏离计划盈亏" value={money(plan.deviatedRealizedCents)} hint={`胜率 ${(plan.deviatedWinRate * 100).toFixed(0)}%`} />
+            </div>
+            <BarList
+              items={[
+                { label: "按计划", value: plan.followedRealizedCents, sub: `${plan.followed} 笔` },
+                { label: "偏离计划", value: plan.deviatedRealizedCents, sub: `${plan.total - plan.followed} 笔` },
+              ]}
+            />
+          </>
+        ) : (
+          <p className="chart-empty">还没有复盘记录，完成交易复盘后会统计计划执行度。</p>
+        )}
+      </section>
+
+      <div className="analytics-cols">
+        <section className="analytics-panel">
+          <SectionHeader eyebrow="行为标签" title="按标签看盈亏" subtitle="来自复盘时打的标签，定位最赚钱/最亏钱的打法或错误。" />
+          {stats.byTag.length ? (
+            <BarList items={stats.byTag.map((item) => ({ label: item.tag, value: item.realizedCents, sub: `${Math.round(item.winRate * 100)}%胜` }))} />
+          ) : (
+            <p className="chart-empty">还没有给复盘打标签。在「交易记录」完成一笔复盘时添加标签，这里就会按标签统计。</p>
+          )}
+        </section>
+
+        <section className="analytics-panel">
+          <SectionHeader eyebrow="当前持仓" title="仓位占比" subtitle="按市值分布的持仓结构。" />
+          <DonutChart segments={allocationSegments} />
+        </section>
+      </div>
+
+      <div className="analytics-cols">
+        <section className="analytics-panel">
+          <SectionHeader eyebrow="个股" title="按标的盈亏排行" />
+          <BarList items={stats.bySymbol.map((item) => ({ label: item.name || item.symbol, value: item.realizedCents, sub: `${item.trades}笔` }))} />
+        </section>
+
+        <section className="analytics-panel">
+          <SectionHeader eyebrow="时间" title="按月盈亏" />
+          <BarList items={stats.byMonth.map((item) => ({ label: item.month, value: item.realizedCents, sub: `${Math.round(item.winRate * 100)}%胜` }))} />
+        </section>
+      </div>
+
+      <section className="analytics-panel">
+        <SectionHeader
+          eyebrow="优势定位"
+          title="你的 Edge"
+          subtitle="哪些打法贡献了主要利润，哪些错误吞噬了利润。"
+          actions={<Badge tone="accent">数据驱动复盘</Badge>}
+        />
+        <div className="edge-grid">
+          <div>
+            <h4>最赚钱的标签</h4>
+            {stats.byTag.filter((item) => item.realizedCents > 0).slice(0, 3).map((item) => (
+              <p key={item.tag}><Badge tone="green">{item.tag}</Badge> {money(item.realizedCents)}</p>
+            )) || <p className="chart-empty">暂无盈利标签</p>}
+          </div>
+          <div>
+            <h4>最亏钱的标签</h4>
+            {stats.byTag.filter((item) => item.realizedCents < 0).slice(0, 3).map((item) => (
+              <p key={item.tag}><Badge tone="red">{item.tag}</Badge> {money(item.realizedCents)}</p>
+            )) || <p className="chart-empty">暂无亏损标签</p>}
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}

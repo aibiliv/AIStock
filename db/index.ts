@@ -90,6 +90,8 @@ export async function ensureSchema() {
         followed_plan INTEGER NOT NULL,
         lesson TEXT NOT NULL,
         result_cents INTEGER NOT NULL DEFAULT 0,
+        tags TEXT NOT NULL DEFAULT '[]',
+        deviation_reason TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`),
       db.prepare(`CREATE TABLE IF NOT EXISTS analysis_reports (
@@ -143,6 +145,8 @@ export async function ensureSchema() {
     await addColumnIfMissing("watch_details", "condition_direction", "condition_direction TEXT");
     await addColumnIfMissing("watch_details", "condition_value", "condition_value REAL");
     await addColumnIfMissing("analysis_reports", "price_millis", "price_millis INTEGER");
+    await addColumnIfMissing("reviews", "tags", "tags TEXT NOT NULL DEFAULT '[]'");
+    await addColumnIfMissing("reviews", "deviation_reason", "deviation_reason TEXT NOT NULL DEFAULT ''");
   })().catch((error) => {
     schemaReady = null;
     throw error;

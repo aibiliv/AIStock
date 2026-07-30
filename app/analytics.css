@@ -1,0 +1,249 @@
+/* 分析视图 / 图表 / 标签 / 导入 相关样式（与 app/AnalyticsView、charts、ImportPanel 配套） */
+
+.analytics-view {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.analytics-panel {
+  background: var(--card, #fff);
+  border: 1px solid var(--line, #e7ebf0);
+  border-radius: var(--radius-card, 16px);
+  padding: 16px 16px 18px;
+}
+
+.analytics-cols {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.stat-grid--analytics {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.export-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.equity-chart {
+  width: 100%;
+  height: 220px;
+}
+
+.chart-empty {
+  color: var(--muted, #6b7785);
+  font-size: var(--fs-sm, 13px);
+  padding: 18px 4px;
+  text-align: center;
+}
+
+/* ---- 资金权益曲线 ---- */
+.equity-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.equity-chart .chart-grid {
+  stroke: var(--line, #e7ebf0);
+  stroke-width: 1;
+}
+.equity-chart .chart-axis-label {
+  fill: var(--muted, #6b7785);
+  font-size: 10px;
+}
+.equity-chart .chart-line {
+  stroke: var(--accent, #2f6df0);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.equity-chart .chart-zero {
+  stroke: var(--muted, #6b7785);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+  opacity: 0.5;
+}
+
+/* ---- 排行条形图 ---- */
+.bar-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bar-row {
+  display: grid;
+  grid-template-columns: 92px 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+.bar-label {
+  font-size: var(--fs-sm, 13px);
+  color: var(--text, #1f2a36);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bar-track {
+  height: 10px;
+  background: var(--bg-soft, #f1f4f8);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 320ms cubic-bezier(.2, .7, .2, 1);
+}
+.bar--profit { background: #2faa6a; }
+.bar--loss { background: #e0584f; }
+.bar--flat { background: #b9c2cc; }
+.bar-value {
+  font-size: var(--fs-sm, 13px);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bar-value small { color: var(--muted, #6b7785); margin-left: 4px; }
+
+/* ---- 占比环图 ---- */
+.donut-wrap {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.donut-chart { width: 180px; height: 180px; flex: none; }
+.donut-segment { transition: opacity 160ms ease; }
+.donut-segment:hover { opacity: 0.82; }
+.donut-center { fill: var(--text, #1f2a36); font-size: 22px; font-weight: 750; }
+.donut-center-sub { fill: var(--muted, #6b7785); font-size: 11px; }
+.donut-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.donut-legend li { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm, 13px); }
+.donut-dot { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+.donut-legend-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text, #1f2a36);
+}
+.donut-legend-percent { color: var(--muted, #6b7785); font-variant-numeric: tabular-nums; }
+
+/* ---- Edge 优势定位 ---- */
+.edge-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.edge-grid h4 { margin: 0 0 10px; font-size: var(--fs-base, 15px); color: var(--text, #1f2a36); }
+.edge-grid p { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: var(--fs-sm, 13px); }
+
+/* ---- 标签编辑器 ---- */
+.tag-editor { margin-bottom: 8px; }
+.tag-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--accent-soft, #eaf1fe);
+  color: var(--accent, #2f6df0);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: var(--fs-sm, 13px);
+}
+.tag-chip button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0;
+}
+.tag-input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--line, #e7ebf0);
+  border-radius: 10px;
+  font-size: var(--fs-sm, 13px);
+  background: var(--card, #fff);
+  color: var(--text, #1f2a36);
+}
+.tag-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.tag-suggestion {
+  border: 1px dashed var(--line, #e7ebf0);
+  background: transparent;
+  color: var(--muted, #6b7785);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: var(--fs-2xs, 12px);
+  cursor: pointer;
+}
+.tag-suggestion:hover { color: var(--accent, #2f6df0); border-color: var(--accent, #2f6df0); }
+
+/* ---- 导入面板 ---- */
+.import-panel {
+  background: var(--card, #fff);
+  border: 1px solid var(--line, #e7ebf0);
+  border-radius: var(--radius-card, 16px);
+  padding: 16px 18px 18px;
+  margin-bottom: 18px;
+}
+.import-panel header { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
+.import-panel .eyebrow {
+  font-size: var(--fs-2xs, 12px);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--accent, #2f6df0);
+}
+.import-panel h3 { margin: 0; font-size: var(--fs-lg, 17px); }
+.import-panel .hint { margin: 0; color: var(--muted, #6b7785); font-size: var(--fs-sm, 13px); }
+.import-csv {
+  width: 100%;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: var(--fs-sm, 13px);
+  padding: 10px 12px;
+  border: 1px solid var(--line, #e7ebf0);
+  border-radius: 10px;
+  background: var(--bg-soft, #f7f9fc);
+  color: var(--text, #1f2a36);
+  resize: vertical;
+}
+.import-actions { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.import-count { color: var(--muted, #6b7785); font-size: var(--fs-sm, 13px); }
+.import-result {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--bg-soft, #f7f9fc);
+  font-size: var(--fs-sm, 13px);
+}
+.import-errors { margin: 8px 0 0; padding-left: 18px; color: var(--loss, #e0584f); }
+.form-message { color: var(--loss, #e0584f); font-size: var(--fs-sm, 13px); margin: 8px 0 0; }
+
+@media (max-width: 900px) {
+  .analytics-cols,
+  .edge-grid,
+  .stat-grid--analytics { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 760px) {
+  .bar-row { grid-template-columns: 76px 1fr auto; }
+  .donut-wrap { justify-content: center; }
+}

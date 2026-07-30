@@ -74,6 +74,8 @@ export const reviews = sqliteTable("reviews", {
   followedPlan: integer("followed_plan", { mode: "boolean" }).notNull(),
   lesson: text("lesson").notNull(),
   resultCents: integer("result_cents").notNull().default(0),
+  tags: text("tags").notNull().default("[]"),
+  deviationReason: text("deviation_reason").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 

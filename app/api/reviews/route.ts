@@ -4,12 +4,30 @@ import { reviews, tradeRecords } from "../../../db/schema";
 import { buildTradeCycles, isStockCode } from "../../../lib/domain";
 import { requireApiUser } from "../../../lib/auth";
 
+export function parseReviewTags(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const result: string[] = [];
+  for (const item of raw) {
+    if (typeof item !== "string") continue;
+    const tag = item.trim().slice(0, 20);
+    if (!tag || seen.has(tag)) continue;
+    seen.add(tag);
+    result.push(tag);
+    if (result.length === 10) break;
+  }
+  return result;
+}
+
 export async function GET() {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
     await ensureSchema();
-    return Response.json({ reviews: await getDb().select().from(reviews).orderBy(desc(reviews.id)) });
+    const rows = await getDb().select().from(reviews).orderBy(desc(reviews.id));
+    return Response.json({
+      reviews: rows.map((review) => ({ ...review, tags: parseReviewTags(review.tags) })),
+    });
   } catch {
     return Response.json({ error: "复盘暂时无法读取" }, { status: 503 });
   }
@@ -26,7 +44,9 @@ export async function POST(request: Request) {
     const sellReason = String(payload.sellReason ?? "").trim();
     const lesson = String(payload.lesson ?? "").trim();
     const followedPlan = payload.followedPlan === true;
+    const deviationReason = String(payload.deviationReason ?? "").trim();
     const cycleEndTradeId = Number(payload.cycleEndTradeId);
+    const tags = parseReviewTags(payload.tags);
     if (!isStockCode(symbol) || !name || !buyReason || !sellReason || !lesson) {
       return Response.json({ error: "请完整填写复盘内容" }, { status: 400 });
     }
@@ -35,6 +55,9 @@ export async function POST(request: Request) {
     }
     if (buyReason.length > 300 || sellReason.length > 300 || lesson.length > 500) {
       return Response.json({ error: "复盘内容过长" }, { status: 400 });
+    }
+    if (deviationReason.length > 300) {
+      return Response.json({ error: "偏差原因过长" }, { status: 400 });
     }
     await ensureSchema();
     const db = getDb();
@@ -57,9 +80,11 @@ export async function POST(request: Request) {
       sellReason,
       followedPlan,
       lesson,
+      tags: JSON.stringify(tags),
+      deviationReason,
       resultCents: cycle.realizedCents,
     }).returning();
-    return Response.json({ review }, { status: 201 });
+    return Response.json({ review: { ...review, tags } }, { status: 201 });
   } catch {
     return Response.json({ error: "复盘保存失败" }, { status: 500 });
   }

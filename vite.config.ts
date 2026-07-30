@@ -34,6 +34,8 @@ export default defineConfig(async ({ mode }) => {
     APP_PASSWORD: localEnv.APP_PASSWORD ?? process.env.APP_PASSWORD ?? "",
     APP_AUTH_SECRET: localEnv.APP_AUTH_SECRET ?? process.env.APP_AUTH_SECRET ?? "",
     MAIRUI_TOKEN: localEnv.MAIRUI_TOKEN ?? process.env.MAIRUI_TOKEN ?? "",
+    NOTIFY_WEBHOOK_URLS: localEnv.NOTIFY_WEBHOOK_URLS ?? process.env.NOTIFY_WEBHOOK_URLS ?? "",
+    CRON_SECRET: localEnv.CRON_SECRET ?? process.env.CRON_SECRET ?? "",
   };
   const vars = Object.fromEntries(
     Object.entries(runtimeVars).filter(([, v]) => v.trim().length > 0),
@@ -60,6 +62,7 @@ export default defineConfig(async ({ mode }) => {
           },
         ]
       : [],
+    triggers: { crons: ["*/15 * * * *"] },
   };
 
   return {

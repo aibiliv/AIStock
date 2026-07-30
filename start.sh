@@ -19,6 +19,8 @@ node --input-type=module -e '
     "APP_PASSWORD",
     "APP_AUTH_SECRET",
     "MAIRUI_TOKEN",
+    "NOTIFY_WEBHOOK_URLS",
+    "CRON_SECRET",
   ];
   const lines = names
     .filter((name) => process.env[name])

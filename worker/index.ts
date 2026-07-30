@@ -1,6 +1,7 @@
 /** Cloudflare Worker entry point for the vinext-starter template. */
 import { handleImageOptimization, DEFAULT_DEVICE_SIZES, DEFAULT_IMAGE_SIZES } from "vinext/server/image-optimization";
 import handler from "vinext/server/app-router-entry";
+import * as schema from "../db/schema";
 
 interface Env {
   ASSETS: Fetcher;
@@ -41,6 +42,17 @@ const worker = {
     }
 
     return handler.fetch(request, env, ctx);
+  },
+
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    try {
+      const { drizzle } = await import("drizzle-orm/d1");
+      const { checkAndNotifyAlerts } = await import("../lib/notify");
+      const db = drizzle(env.DB, { schema, logger: false });
+      ctx.waitUntil(checkAndNotifyAlerts(db));
+    } catch (error) {
+      console.error("scheduled alert check failed", error);
+    }
   },
 };
 
