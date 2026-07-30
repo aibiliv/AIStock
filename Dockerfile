@@ -19,10 +19,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl && \
 # 注意：不要将 @cloudflare scope 指向 registry.npmjs.org，国内访问极慢会导致构建卡死。
 COPY package.json package-lock.json ./
 # BuildKit 缓存挂载：跨构建复用 npm tar 包，第二次起大幅提速
-# 用 npm ci（lock 已存在）更快且确定；重试 mintimeout 从 20s 降到 5s，避免限流时空等
+# 注意：当前 package-lock.json 与 package.json 不同步（lock 陈旧），npm ci 会直接报错，
+# 故先用 npm install（宽松、可容忍不同步）；重试 mintimeout 降到 5s 避免限流空等
 RUN --mount=type=cache,target=/root/.npm \
     npm config set registry https://registry.npmmirror.com && \
-    npm ci --no-audit --no-fund \
+    npm install --no-audit --no-fund --prefer-offline \
            --fetch-retries=3 --fetch-retry-mintimeout=5000 --fetch-retry-maxtimeout=30000 && \
     npm cache clean --force
 
