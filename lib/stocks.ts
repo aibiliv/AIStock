@@ -1,5 +1,6 @@
 import A_STOCK_LIST from "../db/a_stock_list";
 import { USER_FUND_PROFILES } from "../db/funds_user";
+import { getMairuiRealtime } from "./mairui";
 
 export type FundProfile = {
   name: string;
@@ -549,6 +550,24 @@ export async function analyzeStockData(query: string) {
   const isFund = Boolean(fund) || isFundCode(stock.code);
   const chart = await getChart(stock.code);
   const { history, currentPrice, previousClose } = chart;
+
+  // 麦蕊实时行情增强层（有 token 时覆盖现价/涨跌，历史 K 线仍走免费公开源以省额度）。
+  // 任何缺失/失败都静默回退到由历史 K 线推算的值。
+  const mairui = await getMairuiRealtime(stock.code);
+  let livePrice = currentPrice;
+  let livePreviousClose = previousClose;
+  let liveChangePercent = previousClose ? ((currentPrice - previousClose) / previousClose) * 100 : 0;
+  let realtimeName: string | null = null;
+  if (mairui) {
+    if (mairui.price !== null) livePrice = mairui.price;
+    if (mairui.previousClose !== null) livePreviousClose = mairui.previousClose;
+    if (mairui.changePercent !== null) {
+      liveChangePercent = mairui.changePercent;
+    } else if (livePreviousClose) {
+      liveChangePercent = ((livePrice - livePreviousClose) / livePreviousClose) * 100;
+    }
+    realtimeName = mairui.name;
+  }
   const closes = history.map((row) => row.close);
   const highs = history.map((row) => row.high);
   const lows = history.map((row) => row.low);
@@ -559,7 +578,7 @@ export async function analyzeStockData(query: string) {
   );
   const support = Math.min(...lows.slice(-20));
   const resistance = Math.max(...highs.slice(-60));
-  const riskPerShare = Math.max(currentPrice - support, currentPrice * 0.03);
+  const riskPerShare = Math.max(livePrice - support, livePrice * 0.03);
   const [fundamentals, profile] = await Promise.all([
     getFundamentals(symbol),
     getQuoteSummary(stock.code),
@@ -576,6 +595,10 @@ export async function analyzeStockData(query: string) {
     const fallback = await searchStockByName(stock.code);
     if (fallback) resolvedName = fallback.name;
   }
+  // 麦蕊实时返回的官方名称作为兜底（免费公开源没给出中文名时）
+  if ((resolvedName === stock.code || !/[一-龥]/.test(resolvedName)) && realtimeName) {
+    resolvedName = realtimeName;
+  }
   const resolvedIndustry = profile.industry ?? profile.sector ?? "行业信息待补充";
 
   return {
@@ -590,9 +613,9 @@ export async function analyzeStockData(query: string) {
       marketSymbol: symbol,
     },
     quote: {
-      price: currentPrice,
-      previousClose,
-      changePercent: previousClose ? ((currentPrice - previousClose) / previousClose) * 100 : 0,
+      price: livePrice,
+      previousClose: livePreviousClose,
+      changePercent: liveChangePercent,
       ma5: average(closes.slice(-5)),
       ma20: average(recent20),
       ma60: average(recent60),
@@ -601,8 +624,8 @@ export async function analyzeStockData(query: string) {
       support,
       resistance,
       volatility: average(dailyMoves.slice(-20)),
-      target1: currentPrice + riskPerShare,
-      target2: currentPrice + riskPerShare * 2,
+      target1: livePrice + riskPerShare,
+      target2: livePrice + riskPerShare * 2,
       marketTime: chart.marketTime,
     },
     financials: {
@@ -610,8 +633,8 @@ export async function analyzeStockData(query: string) {
       profitGrowth,
       debtRatio,
       marketCap: profile.marketCap,
-      pe: profile.pe,
-      pb: profile.pb,
+      pe: mairui?.pe ?? profile.pe,
+      pb: mairui?.pb ?? profile.pb,
       roe: profile.roe,
       grossMargin: profile.grossMargin,
       profitMargin: profile.profitMargin,
@@ -623,7 +646,7 @@ export async function analyzeStockData(query: string) {
       ? history.reduce((largest, row) => row.volume > largest.volume ? row : largest)
       : null,
     source: {
-      name: chart.sourceName,
+      name: mairui ? `东方财富历史K线 · 麦蕊实时行情` : chart.sourceName,
       url: chart.sourceUrl,
       fetchedAt: new Date().toISOString(),
     },

@@ -1198,20 +1198,6 @@ function MarketIndices() {
       {!loading && message && <div className="market-indices-state error" role="alert">{message}</div>}
       {!loading && payload && (
         <>
-          <div className="market-indices-row">
-            {payload.indices.map((index) => {
-              const direction = index.changePercent > 0 ? "up" : index.changePercent < 0 ? "down" : "flat";
-              return (
-                <div className={`index-chip ${direction}`} key={index.code}>
-                  <span className="index-name">{index.name}</span>
-                  <strong className="index-price">{formatPrice(index.price)}</strong>
-                  <span className="index-change">
-                    {index.changePercent >= 0 ? "+" : ""}{index.changePercent.toFixed(2)}%
-                  </span>
-                </div>
-              );
-            })}
-          </div>
           <div className="index-strip">
             {payload.indices.map((index) => {
               const dir = index.changePercent > 0 ? "up" : index.changePercent < 0 ? "down" : "";

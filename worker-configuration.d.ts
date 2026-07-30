@@ -9,5 +9,6 @@ declare namespace Cloudflare {
     APP_USERNAME?: string;
     APP_PASSWORD?: string;
     APP_AUTH_SECRET?: string;
+    MAIRUI_TOKEN?: string;
   }
 }
