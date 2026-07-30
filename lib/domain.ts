@@ -270,18 +270,22 @@ export function aggregateMarketHistory(
 
   for (const row of history) {
     let key = row.date;
-    if (period === "month") key = row.date.slice(0, 7);
-    if (period === "week") {
+    let labelDate = row.date;
+    if (period === "month") {
+      key = row.date.slice(0, 7);
+      labelDate = `${key}-01`;
+    } else if (period === "week") {
       const monday = new Date(`${row.date}T00:00:00Z`);
       const weekday = monday.getUTCDay() || 7;
       monday.setUTCDate(monday.getUTCDate() - weekday + 1);
       key = monday.toISOString().slice(0, 10);
+      labelDate = key;
     }
 
     const current = grouped.at(-1);
     if (period === "day" || key !== lastKey || !current) {
       grouped.push({
-        date: row.date,
+        date: labelDate,
         open: row.open,
         high: row.high,
         low: row.low,
@@ -292,7 +296,6 @@ export function aggregateMarketHistory(
       continue;
     }
 
-    current.date = row.date;
     current.high = Math.max(current.high, row.high);
     current.low = Math.min(current.low, row.low);
     current.close = row.close;
