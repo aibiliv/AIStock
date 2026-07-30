@@ -23,6 +23,9 @@ export async function GET() {
         status: detailsBySymbol.get(item.symbol)?.status ?? "研究中",
         lastReviewedAt: detailsBySymbol.get(item.symbol)?.lastReviewedAt ?? null,
         updatedAt: detailsBySymbol.get(item.symbol)?.updatedAt ?? item.createdAt,
+        conditionMetric: detailsBySymbol.get(item.symbol)?.conditionMetric ?? null,
+        conditionDirection: detailsBySymbol.get(item.symbol)?.conditionDirection ?? null,
+        conditionValue: detailsBySymbol.get(item.symbol)?.conditionValue ?? null,
       })),
     });
   } catch {
@@ -78,12 +81,32 @@ export async function PATCH(request: Request) {
       symbol?: string;
       conditionText?: string;
       status?: string;
+      conditionMetric?: string;
+      conditionDirection?: string;
+      conditionValue?: number;
     };
     const symbol = payload.symbol?.trim() ?? "";
     const conditionText = payload.conditionText?.trim() ?? "";
     const statuses = new Set(["研究中", "等待条件", "已买入", "暂停"]);
     if (!isStockCode(symbol) || !conditionText || conditionText.length > 300 || !statuses.has(payload.status ?? "")) {
       return Response.json({ error: "观察条件或状态不正确" }, { status: 400 });
+    }
+
+    const metric = (payload.conditionMetric ?? "").trim();
+    const direction = (payload.conditionDirection ?? "").trim();
+    const rawValue = Number(payload.conditionValue);
+    const metricSet = new Set(["price", "change"]);
+    const directionSet = new Set(["above", "below"]);
+    let conditionMetric: string | null = null;
+    let conditionDirection: string | null = null;
+    let conditionValue: number | null = null;
+    if (metric) {
+      if (!metricSet.has(metric) || !directionSet.has(direction) || !Number.isFinite(rawValue)) {
+        return Response.json({ error: "触发条件不正确" }, { status: 400 });
+      }
+      conditionMetric = metric;
+      conditionDirection = direction;
+      conditionValue = rawValue;
     }
 
     await ensureSchema();
@@ -101,6 +124,9 @@ export async function PATCH(request: Request) {
       status: payload.status as "研究中" | "等待条件" | "已买入" | "暂停",
       lastReviewedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      conditionMetric,
+      conditionDirection,
+      conditionValue,
     };
     const [detail] = existing.length
       ? await db.update(watchDetails).set(values).where(eq(watchDetails.symbol, symbol)).returning()
