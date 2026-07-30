@@ -28,6 +28,7 @@ import {
   buildTradeCycles,
   calculatePortfolio,
   localIsoDate,
+  type CapitalFlow,
   type MarketPeriod,
   type Trade,
   type TradeCycle,
@@ -255,6 +256,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const [reviews, setReviews] = useState<Review[]>([]);
   const [status, setStatus] = useState<Status | null>(null);
   const [initialCapitalCents, setInitialCapitalCents] = useState<number | null>(null);
+  const [capitalFlows, setCapitalFlows] = useState<CapitalFlow[]>([]);
   const [tradeMode, setTradeMode] = useState<TradeMode | null>(null);
   const [reviewCycleEndTradeId, setReviewCycleEndTradeId] = useState<number | null>(null);
   const [settingsSection, setSettingsSection] = useState<string | null>(null);
@@ -276,7 +278,8 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     Object.fromEntries(Object.entries(quotes).map(([symbol, item]) => [symbol, item.quote.price])),
     Object.fromEntries(Object.entries(quotes).map(([symbol, item]) => [symbol, item.history])),
     initialCapitalCents,
-  ), [initialCapitalCents, quotes, trades]);
+    capitalFlows,
+  ), [initialCapitalCents, capitalFlows, quotes, trades]);
   const tradeCycles = useMemo(() => buildTradeCycles(trades), [trades]);
   const closedCycles = tradeCycles.filter((cycle) => cycle.endTradeId !== null);
   const reviewedCycleIds = useMemo(() => {
@@ -306,7 +309,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         jsonRequest<{ alerts: AlertRule[] }>("/api/alerts"),
         jsonRequest<{ reviews: Review[] }>("/api/reviews"),
         jsonRequest<Status>("/api/status"),
-        jsonRequest<{ initialCapitalCents: number | null }>("/api/account"),
+        jsonRequest<{ initialCapitalCents: number | null; capitalFlows: CapitalFlow[] }>("/api/account"),
       ]);
       setTrades(tradeData.trades);
       setWatchlist(watchData.items);
@@ -314,6 +317,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       setReviews(reviewData.reviews);
       setStatus(statusData);
       setInitialCapitalCents(accountData.initialCapitalCents);
+      setCapitalFlows(accountData.capitalFlows);
       setError("");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "个人数据暂时无法读取");
@@ -515,7 +519,34 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       body: JSON.stringify({ initialCapital }),
     });
     setInitialCapitalCents(result.initialCapitalCents);
+    await reloadAccount();
     flash("账户初始资金已保存");
+  }
+
+  async function reloadAccount() {
+    try {
+      const accountData = await jsonRequest<{ initialCapitalCents: number | null; capitalFlows: CapitalFlow[] }>("/api/account");
+      setInitialCapitalCents(accountData.initialCapitalCents);
+      setCapitalFlows(accountData.capitalFlows);
+    } catch { /* 静默忽略 */ }
+  }
+
+  async function handleAddFlow(amountCents: number, flowDate: string, note: string) {
+    await jsonRequest<{ ok: boolean }>("/api/account", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "create_flow", amountCents, flowDate, note }),
+    });
+    await reloadAccount();
+  }
+
+  async function handleDeleteFlow(flowId: number) {
+    await jsonRequest<{ ok: boolean }>("/api/account", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "delete_flow", flowId }),
+    });
+    await reloadAccount();
   }
 
   const analyzedPosition = portfolio.positions.find((position) => position.symbol === analysis?.stock.code);
@@ -618,12 +649,15 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
               <Settings
                 status={status}
                 initialCapitalCents={initialCapitalCents}
+                capitalFlows={capitalFlows}
                 alerts={alerts}
                 section={settingsSection}
                 onSection={setSettingsSection}
                 onDisable={(id) => void updateAlert(id, "disable")}
                 onNotifications={() => void requestNotifications()}
                 onSaveCapital={saveInitialCapital}
+                onAddFlow={handleAddFlow}
+                onDeleteFlow={handleDeleteFlow}
               />
             )}
           </>
@@ -1976,15 +2010,18 @@ function Trades({ trades, reviews, onBuy, onSell, onReview }: {
   );
 }
 
-function Settings({ status, initialCapitalCents, alerts, section, onSection, onDisable, onNotifications, onSaveCapital }: {
+function Settings({ status, initialCapitalCents, capitalFlows, alerts, section, onSection, onDisable, onNotifications, onSaveCapital, onAddFlow, onDeleteFlow }: {
   status: Status | null;
   initialCapitalCents: number | null;
+  capitalFlows: CapitalFlow[];
   alerts: AlertRule[];
   section: string | null;
   onSection: (section: string | null) => void;
   onDisable: (id: number) => void;
   onNotifications: () => void;
   onSaveCapital: (initialCapital: number) => Promise<void>;
+  onAddFlow: (amountCents: number, flowDate: string, note: string) => Promise<void>;
+  onDeleteFlow: (flowId: number) => Promise<void>;
 }) {
   const notificationState = typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported";
   const cards = [
@@ -2007,7 +2044,7 @@ function Settings({ status, initialCapitalCents, alerts, section, onSection, onD
           </article>
         ))}
       </div>
-      {section === "account" && <CapitalSettings initialCapitalCents={initialCapitalCents} onSave={onSaveCapital} />}
+      {section === "account" && <CapitalSettings initialCapitalCents={initialCapitalCents} capitalFlows={capitalFlows} onSave={onSaveCapital} onAddFlow={onAddFlow} onDeleteFlow={onDeleteFlow} />}
       {section === "ai" && <section className="panel settings-detail"><h3>AI连接状态</h3><p>{status?.deepseekConfigured ? "AI API密钥只在服务端读取，浏览器无法看到。" : "没有AI密钥时，系统不会假装调用AI，而是明确显示“自动解释”。"}</p></section>}
       {section === "data" && <section className="panel settings-detail"><h3>数据原则</h3><p>行情来自公开接口，可能延迟或暂时不可用。每次分析都记录来源、行情时间和获取时间；财务数据缺失时显示“暂无”，不会补数字。</p></section>}
       {section === "alerts" && (
@@ -2025,12 +2062,17 @@ function Settings({ status, initialCapitalCents, alerts, section, onSection, onD
   );
 }
 
-function CapitalSettings({ initialCapitalCents, onSave }: {
+function CapitalSettings({ initialCapitalCents, capitalFlows, onSave, onAddFlow, onDeleteFlow }: {
   initialCapitalCents: number | null;
+  capitalFlows: CapitalFlow[];
   onSave: (initialCapital: number) => Promise<void>;
+  onAddFlow: (amount: number, date: string, note: string) => Promise<void>;
+  onDeleteFlow: (flowId: number) => Promise<void>;
 }) {
   const [saving, setSaving] = useState(false);
+  const [flowSaving, setFlowSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const [flowMsg, setFlowMsg] = useState("");
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -2047,16 +2089,97 @@ function CapitalSettings({ initialCapitalCents, onSave }: {
     }
   }
 
+  async function submitFlow(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const fd = new FormData(form);
+    const amountYuan = Number(fd.get("flowAmount"));
+    const flowDate = String(fd.get("flowDate")).trim();
+    const note = String(fd.get("flowNote")).trim();
+    const direction = String(fd.get("flowDirection"));
+    if (!amountYuan || amountYuan <= 0 || !flowDate) return;
+    const amountCents = Math.round(amountYuan * 100) * (direction === "out" ? -1 : 1);
+    setFlowSaving(true);
+    setFlowMsg("");
+    try {
+      await onAddFlow(amountCents, flowDate, note);
+      form.reset();
+      setFlowMsg("已记录");
+    } catch (error) {
+      setFlowMsg(error instanceof Error ? error.message : "记录失败");
+    } finally {
+      setFlowSaving(false);
+    }
+  }
+
+  const totalDeposit = capitalFlows.filter((f) => f.amountCents > 0).reduce((s, f) => s + f.amountCents, 0);
+  const totalWithdrawal = capitalFlows.filter((f) => f.amountCents < 0).reduce((s, f) => s + Math.abs(f.amountCents), 0);
+
   return (
-    <section className="panel settings-detail">
-      <h3>账户初始资金</h3>
-      <p>填写开始使用本软件时账户内用于股票交易的总资金。现金按交易流水自动推算；发生场外转入或转出后，请在这里更新资金基准。</p>
-      <form className="capital-form" onSubmit={submit}>
-        <label>初始资金（元）<input name="initialCapital" type="number" min="100" max="1000000000" step="0.01" defaultValue={initialCapitalCents === null ? "" : initialCapitalCents / 100} placeholder="例如 100000" required /></label>
-        <button className="primary-button" type="submit" disabled={saving}>{saving ? "保存中…" : "保存资金基准"}</button>
-      </form>
-      {message && <p className="form-message" role="status">{message}</p>}
-    </section>
+    <>
+      <section className="panel settings-detail">
+        <h3>账户初始资金</h3>
+        <p>填写开始使用本软件时账户内用于股票交易的总资金。现金按交易流水和出入金记录自动推算。</p>
+        <form className="capital-form" onSubmit={submit}>
+          <label>初始资金（元）<input name="initialCapital" type="number" min="100" max="1000000000" step="0.01" defaultValue={initialCapitalCents === null ? "" : initialCapitalCents / 100} placeholder="例如 100000" required /></label>
+          <button className="primary-button" type="submit" disabled={saving}>{saving ? "保存中…" : "保存资金基准"}</button>
+        </form>
+        {message && <p className="form-message" role="status">{message}</p>}
+      </section>
+
+      <section className="panel settings-detail">
+        <h3>出入金记录</h3>
+        <p>发生场外转入或转出时，在此记录。现金余额 = 初始资金 + 累计转入 - 累计转出 - 买入成交额 + 卖出成交额 - 手续费。</p>
+
+        <form className="capital-form flow-form" onSubmit={submitFlow}>
+          <label>
+            <span>方向</span>
+            <select name="flowDirection" defaultValue="in">
+              <option value="in">转入</option>
+              <option value="out">转出</option>
+            </select>
+          </label>
+          <label>
+            <span>金额（元）</span>
+            <input name="flowAmount" type="number" min="0.01" max="1000000000" step="0.01" placeholder="例如 5000" required />
+          </label>
+          <label>
+            <span>日期</span>
+            <input name="flowDate" type="date" defaultValue={localIsoDate(new Date())} required />
+          </label>
+          <label className="flow-note-label">
+            <span>备注</span>
+            <input name="flowNote" type="text" maxLength={60} placeholder="选填" className="flow-note-input" />
+          </label>
+          <button className="primary-button" type="submit" disabled={flowSaving}>{flowSaving ? "保存中…" : "记录流水"}</button>
+        </form>
+        {flowMsg && <p className="form-message" role="status">{flowMsg}</p>}
+
+        {capitalFlows.length > 0 && (
+          <div className="flows-summary">
+            <span>累计转入 <strong className="up">+{money(totalDeposit)}</strong></span>
+            <span>累计转出 <strong className="down">-{money(totalWithdrawal)}</strong></span>
+            <span>净流入 <strong className={totalDeposit - totalWithdrawal >= 0 ? "up" : "down"}>{totalDeposit - totalWithdrawal >= 0 ? "+" : ""}{money(totalDeposit - totalWithdrawal)}</strong></span>
+          </div>
+        )}
+
+        {capitalFlows.length > 0 && (
+          <ul className="flows-list">
+            {capitalFlows.slice(0, 20).map((flow) => (
+              <li key={flow.id} className="flow-row">
+                <span className={`flow-tag ${flow.amountCents > 0 ? "flow-in" : "flow-out"}`}>
+                  {flow.amountCents > 0 ? "转入" : "转出"}
+                </span>
+                <span className="flow-amount">{flow.amountCents > 0 ? "+" : ""}{money(flow.amountCents)}</span>
+                <span className="flow-date">{flow.flowDate}</span>
+                {flow.note && <span className="flow-note">{flow.note}</span>}
+                <button className="danger-link" onClick={() => onDeleteFlow(flow.id)} title="删除">删除</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </>
   );
 }
 
