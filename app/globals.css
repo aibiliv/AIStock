@@ -5,34 +5,48 @@
   /* 系统字体栈：在 Cloudflare worker 环境下不依赖 next/font 的本地字体文件 */
   --font-sans: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", "Hiragino Sans GB",
     system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --bg: #f2f8ff;
+  /* 极简编辑风：纸感中性底 + 墨色文字 + 沉静钢蓝点缀，无玻璃渐变 */
+  --bg: #fafaf8;
   --surface: #ffffff;
-  --surface-soft: #f7fbff;
-  --surface-strong: #e9f3ff;
-  --surface-inverse: #2f6fdc;
-  --sidebar: #ffffff;
-  --sidebar-soft: #f2f7fd;
-  --sidebar-line: #dce8f5;
-  --text: #18324f;
-  --text-soft: #526b86;
-  --muted: #7c91aa;
-  --line: #dce8f5;
-  --line-strong: #c8daec;
-  --accent: #3b82f6;
-  --accent-hover: #2563eb;
-  --accent-soft: #eaf3ff;
-  --accent-ink: #245eb8;
-  --red: #d34b59;
-  --red-soft: #fff0f1;
-  --green: #148566;
-  --green-soft: #eaf8f3;
-  --amber: #a66b0a;
-  --amber-soft: #fff6df;
-  --focus: rgba(59, 130, 246, .22);
-  --shadow: 0 10px 30px rgba(63, 112, 168, .08);
-  --shadow-raised: 0 18px 48px rgba(63, 112, 168, .14);
-  --radius-card: 14px;
-  --radius-control: 9px;
+  --surface-soft: #f4f4f1;
+  --surface-strong: #ebebe7;
+  --surface-inverse: #1d1d1b;
+  --sidebar: #fafaf8;
+  --sidebar-soft: #f1f1ed;
+  --sidebar-line: #e6e6e0;
+  --text: #1a1a18;
+  --text-soft: #56564f;
+  --muted: #8c8c83;
+  --line: #e8e8e1;
+  --line-strong: #d8d8d0;
+  --accent: #3a5a78;
+  --accent-hover: #2e4860;
+  --accent-soft: #eceff2;
+  --accent-ink: #2c4a64;
+  --red: #c2434f;
+  --red-soft: #fbeced;
+  --green: #1f8a63;
+  --green-soft: #eaf6f1;
+  --amber: #9a6a12;
+  --amber-soft: #fbf3df;
+  --focus: rgba(58, 90, 120, .26);
+  --shadow: 0 1px 2px rgba(20, 20, 18, .04), 0 6px 20px rgba(20, 20, 18, .05);
+  --shadow-raised: 0 2px 8px rgba(20, 20, 18, .06), 0 20px 44px rgba(20, 20, 18, .08);
+  --radius-card: 10px;
+  --radius-control: 7px;
+  /* 补全被组件引用、亮色模式原本缺失的令牌（红涨绿跌：--up=红 --down=绿） */
+  --border: #e8e8e1;
+  --text-muted: #8c8c83;
+  --text-faint: #a6a69d;
+  --surface-2: #f4f4f1;
+  --up: #c2434f;
+  --up-soft: #fbeced;
+  --down: #1f8a63;
+  --down-soft: #eaf6f1;
+  --radius-sm: 7px;
+  --font-display: "Microsoft YaHei", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  --font-serif: "Source Han Serif SC", "Songti SC", "STSong", "SimSun", Georgia, "Times New Roman", serif;
+  --font-mono: "SFMono-Regular", "JetBrains Mono", "Roboto Mono", ui-monospace, Menlo, Consolas, "Courier New", monospace;
   --sidebar-width: 244px;
   /* 字体排版比例：统一字号阶梯，消除 8px~40px 跨度过大的问题 */
   --fs-2xs: 11px;
@@ -134,10 +148,9 @@ svg { display: block; }
 
 .brand-mark {
   align-items: center;
-  background: var(--accent);
-  border-radius: 11px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .18);
-  color: #f8fafc;
+  background: var(--text);
+  border-radius: 9px;
+  color: var(--bg);
   display: flex;
   flex: 0 0 auto;
   font-size: var(--fs-lg);
@@ -352,13 +365,13 @@ svg { display: block; }
 
 .primary-button {
   background: var(--accent);
-  box-shadow: 0 5px 14px rgba(53, 111, 230, .16);
+  box-shadow: 0 1px 2px rgba(20, 20, 18, .12);
   color: #f8fafc;
 }
 
 .primary-button:hover {
   background: var(--accent-hover);
-  box-shadow: 0 7px 18px rgba(53, 111, 230, .22);
+  box-shadow: 0 2px 6px rgba(20, 20, 18, .16);
 }
 
 .soft-button {
@@ -383,15 +396,14 @@ svg { display: block; }
 .eyebrow {
   color: var(--accent-ink);
   display: block;
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
-  font-weight: 750;
-  letter-spacing: .12em;
+  font-weight: 700;
+  letter-spacing: .14em;
 }
 
 .search-hero {
-  background:
-    linear-gradient(100deg, rgba(53, 111, 230, .08), transparent 62%),
-    var(--surface);
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow);
@@ -408,10 +420,11 @@ svg { display: block; }
 }
 
 .search-hero h2 {
+  font-family: var(--font-serif);
   font-size: clamp(24px, 3vw, 34px);
-  font-weight: 760;
-  letter-spacing: -.045em;
-  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
   margin: 8px 0 9px;
 }
 
@@ -427,8 +440,8 @@ svg { display: block; }
   align-items: center;
   background: var(--surface);
   border: 1px solid var(--line-strong);
-  border-radius: 11px;
-  box-shadow: 0 10px 30px rgba(34, 47, 64, .08);
+  border-radius: var(--radius-control);
+  box-shadow: var(--shadow);
   display: flex;
   max-width: 720px;
   padding: 6px;
@@ -1962,9 +1975,7 @@ svg { display: block; }
 
 .login-page {
   align-items: center;
-  background:
-    radial-gradient(circle at 14% 18%, color-mix(in srgb, var(--accent) 15%, transparent), transparent 30%),
-    var(--bg);
+  background: var(--bg);
   display: flex;
   min-height: 100dvh;
   padding: 28px;
@@ -1987,9 +1998,7 @@ svg { display: block; }
 }
 
 .login-card::before {
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent) 13%, transparent), transparent 56%),
-    var(--surface-soft);
+  background: var(--surface-soft);
   border: 1px solid var(--line);
   border-radius: 13px;
   bottom: 20px;
@@ -2533,10 +2542,10 @@ svg { display: block; }
 .section-header--stack .section-header__main { align-items: flex-start; }
 .section-header__num {
   flex: none;
-  font: 700 13px/1 var(--font-sans);
+  font: 700 13px/1 var(--font-mono);
   color: var(--accent-ink);
   background: var(--accent-soft);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 9px 10px;
 }
 .section-header__text { min-width: 0; }
@@ -2597,7 +2606,9 @@ svg { display: block; }
   border-radius: var(--radius-card);
 }
 .stat__label {
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
+  letter-spacing: .04em;
   color: var(--text-muted);
 }
 .stat__value {
@@ -2626,10 +2637,10 @@ svg { display: block; }
     --text: #e8edf6;
     --text-muted: #9aa6b8;
     --text-faint: #6b7689;
-    --border: #25304a;
-    --border-strong: #34415f;
-    --accent: #4d8bff;
-    --accent-ink: #7aa9ff;
+    --border: #262b33;
+    --border-strong: #333a44;
+    --accent: #5e87b8;
+    --accent-ink: #8fb2d6;
     --accent-soft: #16233d;
     --up: #ff6b5e;
     --up-soft: #2c1714;
