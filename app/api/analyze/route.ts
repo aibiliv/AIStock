@@ -44,6 +44,46 @@ function normalizeExplanation(value: unknown, fallback: Explanation): Explanatio
   };
 }
 
+function slimFactsForPrompt(facts: Awaited<ReturnType<typeof analyzeStockData>>) {
+  const { stock, quote, financials } = facts;
+  return {
+    stock: {
+      code: stock.code,
+      name: stock.name,
+      industry: stock.industry,
+      instrumentType: stock.instrumentType,
+      sector: stock.sector ?? null,
+    },
+    quote: {
+      price: quote.price,
+      previousClose: quote.previousClose,
+      changePercent: quote.changePercent,
+      ma5: quote.ma5,
+      ma20: quote.ma20,
+      ma60: quote.ma60,
+      recentHigh: quote.recentHigh,
+      recentLow: quote.recentLow,
+      support: quote.support,
+      resistance: quote.resistance,
+      volatility: quote.volatility,
+      target1: quote.target1,
+      target2: quote.target2,
+      marketTime: quote.marketTime,
+    },
+    financials: {
+      revenueGrowth: financials.revenueGrowth,
+      profitGrowth: financials.profitGrowth,
+      debtRatio: financials.debtRatio,
+      marketCap: financials.marketCap,
+      pe: financials.pe,
+      pb: financials.pb,
+      roe: financials.roe,
+      grossMargin: financials.grossMargin,
+      profitMargin: financials.profitMargin,
+    },
+  };
+}
+
 async function getDeepSeekExplanation(facts: Awaited<ReturnType<typeof analyzeStockData>>) {
   const fallback = automaticExplanation(facts);
   const ai = getAiConfig();
@@ -68,16 +108,21 @@ async function getDeepSeekExplanation(facts: Awaited<ReturnType<typeof analyzeSt
           {
             role: "system",
             content: [
-              "你是个人股票复盘工具中的信息解释助手。",
-              "只能使用用户提供的事实，不补充或编造数字。",
-              "不荐股，不使用必涨、买入、卖出等确定性指令。",
-              "输出JSON，字段必须包含summary、company、risks、themes、missingInformation。",
-              "company和risks为字符串数组；themes为{name,confidence,reason}数组，应为区分行业与概念的多条题材，至少给出行业与1-2个概念板块（如人工智能、新能源、高股息等），不要仅重复行业名。",
+              "你是个人股票复盘工具中的信息解释助手，服务于炒股新手。",
+              "【硬约束】",
+              "1. 只能使用用户提供的 facts 字段中的数字，禁止推算、插值或编造任何估值、价格或结论。",
+              "2. facts 中为 null 或缺失的字段，对应输出必须写“数据缺失”，禁止用行业常识填补。",
+              "3. 不荐股，不出现“必涨、买入、卖出、抄底、逃顶、必跌”等确定性措辞。",
+              "4. 输出严格为 JSON，字段必须包含：summary、company、risks、themes、missingInformation。",
+              "【confidence 取值规范】已核验=来自ETF资料或公告级字段；较强=由行情/财务等结构化数据直接得出；中=板块分类推断；待核验=关键词模糊匹配的概念题材，必须注明“需以公告为准”。",
+              "【themes 要求】至少输出“行业本身 + 1-2 个概念板块”（如人工智能、新能源、高股息），不要把行业名重复当作概念。",
+              "【示例】行业=半导体 时，themes 应类似：[{name:\"半导体\",confidence:\"较强\",reason:\"主营所属行业为半导体\"},{name:\"国产替代\",confidence:\"待核验\",reason:\"与半导体相关的常见概念，需以公告为准\"}]。",
+              "summary 用一句有观点的大白话：属于什么行业、价格相对20日均线的位置与强弱、波动大小，并点明当前技术姿态（如“站上均线偏强”或“跌破均线偏弱”）；不下达买卖指令，但可提示与用户计划的关系。",
             ].join("\n"),
           },
           {
             role: "user",
-            content: JSON.stringify(facts),
+            content: JSON.stringify(slimFactsForPrompt(facts)),
           },
         ],
       }),

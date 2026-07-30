@@ -1005,6 +1005,61 @@ svg { display: block; }
 
 .sector-heatmap-foot a { color: var(--accent-ink); }
 
+/* ---- 大盘指数条 ---- */
+.market-indices-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+.index-chip {
+  flex: 1 1 140px;
+  min-width: 130px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+}
+.index-name {
+  font-size: var(--fs-xs);
+  color: var(--text-soft);
+  font-weight: 600;
+}
+.index-price {
+  font-size: var(--fs-lg);
+  font-weight: 800;
+  color: var(--text);
+  letter-spacing: -0.2px;
+}
+.index-change {
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  color: var(--text-soft);
+}
+.index-chip.up .index-price,
+.index-chip.up .index-change { color: var(--red); }
+.index-chip.down .index-price,
+.index-chip.down .index-change { color: var(--green); }
+.market-indices-state {
+  margin-top: 14px;
+  font-size: var(--fs-sm);
+  color: var(--text-soft);
+}
+.market-indices-state.error { color: var(--red); }
+.market-indices-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+  font-size: var(--fs-2xs);
+  color: var(--muted);
+}
+.market-indices-foot a { color: var(--accent-ink); }
+
 .home-grid {
   display: grid;
   gap: 14px;

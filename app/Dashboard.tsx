@@ -724,6 +724,7 @@ function Home({
         <>
           {!trades.length && <BeginnerStart onBuy={onBuy} />}
           <PortfolioOverview insights={portfolioInsights} onConfigure={onCapitalSettings} />
+          <MarketIndices />
           <SectorHeatmap />
           <SectionHeader eyebrow="今天只处理重要的事" title="我的持仓" actions={<button onClick={() => onNavigate("trades")}>查看交易记录 →</button>} />
           {portfolio.positions.length ? (
@@ -995,6 +996,58 @@ function BehaviorCoach({
         <p>{advice}</p>
         {!!pendingReviews.length && <button onClick={() => onReview(pendingReviews[0].endTradeId!)}>现在去复盘 →</button>}
       </div>
+    </section>
+  );
+}
+
+type MarketIndex = { code: string; name: string; price: number; changePercent: number; change: number };
+type IndicesPayload = { indices: MarketIndex[]; source: { name: string; url: string; fetchedAt: string } };
+
+function MarketIndices() {
+  const [payload, setPayload] = useState<IndicesPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    jsonRequest<IndicesPayload>("/api/indices")
+      .then((result) => { if (active) setPayload(result); })
+      .catch((err) => { if (active) setMessage(err instanceof Error ? err.message : "大盘指数获取失败"); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  const formatPrice = (value: number) =>
+    value.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  return (
+    <section className="panel market-indices-card" aria-label="大盘指数">
+      <SectionHeader eyebrow="市场温度" title="大盘指数" subtitle="主要指数实时表现" />
+      {loading && <div className="market-indices-state">正在获取大盘行情…</div>}
+      {!loading && message && <div className="market-indices-state error" role="alert">{message}</div>}
+      {!loading && payload && (
+        <>
+          <div className="market-indices-row">
+            {payload.indices.map((index) => {
+              const direction = index.changePercent > 0 ? "up" : index.changePercent < 0 ? "down" : "flat";
+              return (
+                <div className={`index-chip ${direction}`} key={index.code}>
+                  <span className="index-name">{index.name}</span>
+                  <strong className="index-price">{formatPrice(index.price)}</strong>
+                  <span className="index-change">
+                    {index.changePercent >= 0 ? "+" : ""}{index.changePercent.toFixed(2)}%
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="market-indices-foot">
+            <span>数据时间 {new Date(payload.source.fetchedAt).toLocaleString("zh-CN")}</span>
+            <a href={payload.source.url} target="_blank" rel="noreferrer">数据来源：{payload.source.name} ↗</a>
+          </div>
+        </>
+      )}
     </section>
   );
 }

@@ -402,45 +402,93 @@ type ProfileSummary = {
   businessSummary: string | null;
 };
 
-async function getQuoteSummary(symbol: string): Promise<ProfileSummary> {
+async function getEastmoneyQuote(code: string): Promise<Partial<ProfileSummary>> {
+  const secid = eastmoneySecid(code);
+  const fields = "f43,f44,f45,f46,f57,f58,f60,f116,f162,f167";
+  const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=${fields}&invt=2&_=${Date.now()}`;
+  try {
+    const res = await fetch(url, {
+      headers: { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return {};
+    const data = await res.json() as { data?: Record<string, string | null> };
+    const d = data.data;
+    if (!d) return {};
+    const num = (value?: string | null) => {
+      if (value == null) return null;
+      const n = Number(value);
+      return Number.isFinite(n) ? n : null;
+    };
+    return {
+      name: typeof d.f58 === "string" && d.f58 ? d.f58 : null,
+      marketCap: num(d.f116),
+      pe: num(d.f162),
+      pb: num(d.f167),
+    };
+  } catch {
+    return {};
+  }
+}
+
+async function getQuoteSummary(code: string): Promise<ProfileSummary> {
   const empty: ProfileSummary = {
     name: null, marketCap: null, pe: null, pb: null, roe: null,
     grossMargin: null, profitMargin: null, operatingCashflow: null,
     sector: null, industry: null, businessSummary: null,
   };
+  const symbol = yahooSymbol(code);
   const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=price,defaultKeyStatistics,financialData,assetProfile`;
+  let yahoo: ProfileSummary = empty;
   try {
     const res = await fetch(url, {
       headers: { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" },
       signal: AbortSignal.timeout(15_000),
     });
-    if (!res.ok) return empty;
-    const data = await res.json() as {
-      quoteSummary?: { result?: Array<{
-        price?: { marketCap?: { raw?: number }; trailingPE?: { raw?: number }; priceToBook?: { raw?: number }; shortName?: string; longName?: string };
-        financialData?: { returnOnEquity?: { raw?: number }; grossMargins?: { raw?: number }; profitMargins?: { raw?: number }; operatingCashflow?: { raw?: number } };
-        assetProfile?: { industry?: string; sector?: string; longBusinessSummary?: string };
-      }> | null };
-    };
-    const result = data.quoteSummary?.result?.[0];
-    if (!result) return empty;
-    const num = (value?: { raw?: number }) => (typeof value?.raw === "number" ? value.raw : null);
-    return {
-      name: result.price?.longName || result.price?.shortName || null,
-      marketCap: num(result.price?.marketCap),
-      pe: num(result.price?.trailingPE),
-      pb: num(result.price?.priceToBook),
-      roe: num(result.financialData?.returnOnEquity),
-      grossMargin: num(result.financialData?.grossMargins),
-      profitMargin: num(result.financialData?.profitMargins),
-      operatingCashflow: num(result.financialData?.operatingCashflow),
-      sector: result.assetProfile?.sector ?? null,
-      industry: result.assetProfile?.industry ?? null,
-      businessSummary: result.assetProfile?.longBusinessSummary ?? null,
-    };
+    if (res.ok) {
+      const data = await res.json() as {
+        quoteSummary?: { result?: Array<{
+          price?: { marketCap?: { raw?: number }; trailingPE?: { raw?: number }; priceToBook?: { raw?: number }; shortName?: string; longName?: string };
+          financialData?: { returnOnEquity?: { raw?: number }; grossMargins?: { raw?: number }; profitMargins?: { raw?: number }; operatingCashflow?: { raw?: number } };
+          assetProfile?: { industry?: string; sector?: string; longBusinessSummary?: string };
+        }> | null };
+      };
+      const result = data.quoteSummary?.result?.[0];
+      if (result) {
+        const num = (value?: { raw?: number }) => (typeof value?.raw === "number" ? value.raw : null);
+        yahoo = {
+          name: result.price?.longName || result.price?.shortName || null,
+          marketCap: num(result.price?.marketCap),
+          pe: num(result.price?.trailingPE),
+          pb: num(result.price?.priceToBook),
+          roe: num(result.financialData?.returnOnEquity),
+          grossMargin: num(result.financialData?.grossMargins),
+          profitMargin: num(result.financialData?.profitMargins),
+          operatingCashflow: num(result.financialData?.operatingCashflow),
+          sector: result.assetProfile?.sector ?? null,
+          industry: result.assetProfile?.industry ?? null,
+          businessSummary: result.assetProfile?.longBusinessSummary ?? null,
+        };
+      }
+    }
   } catch {
-    return empty;
+    yahoo = empty;
   }
+  // 东方财富对 A 股的名称/总市值/PE/PB 更可靠，优先采用；其余字段用 Yahoo
+  const em = await getEastmoneyQuote(code);
+  return {
+    name: em.name ?? yahoo.name,
+    marketCap: em.marketCap ?? yahoo.marketCap,
+    pe: em.pe ?? yahoo.pe,
+    pb: em.pb ?? yahoo.pb,
+    roe: yahoo.roe,
+    grossMargin: yahoo.grossMargin,
+    profitMargin: yahoo.profitMargin,
+    operatingCashflow: yahoo.operatingCashflow,
+    sector: yahoo.sector,
+    industry: yahoo.industry,
+    businessSummary: yahoo.businessSummary,
+  };
 }
 
 // 关键词→概念题材 模糊匹配，覆盖全A股常见行业

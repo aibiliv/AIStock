@@ -15,15 +15,11 @@ RUN sed -i 's/deb.debian.org/mirrors.ustc.edu.cn/g' /etc/apt/sources.list.d/debi
 RUN apt-get update && apt-get install -y --no-install-recommends curl && \
     rm -rf /var/lib/apt/lists/*
 
-# 混合镜像源策略：
-# - wrangler 先从 npmjs 单独装好（此包在 npmmirror 未缓存，后续 install 会跳过）
-# - @cloudflare/* 通过 scoped registry 走官方源
-# - 其余所有包走 npmmirror 国内镜像加速
+# 统一走 npmmirror 国内镜像加速（含 @cloudflare/* 与 wrangler/workerd 二进制包均已同步）。
+# 注意：不要将 @cloudflare scope 指向 registry.npmjs.org，国内访问极慢会导致构建卡死。
 COPY package.json package-lock.json ./
 RUN npm config set registry https://registry.npmmirror.com && \
-    npm config set @cloudflare:registry https://registry.npmjs.org && \
-    npm install wrangler@4.115.0 --no-save --no-audit --no-fund --registry=https://registry.npmjs.org && \
-    npm install --no-audit --no-fund && \
+    npm install --no-audit --no-fund --fetch-retries=3 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 && \
     npm cache clean --force
 
 # 复制源码并构建（vinext build 产出 dist/）
