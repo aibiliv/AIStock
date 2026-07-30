@@ -53,9 +53,12 @@ if grep -q "dev-only-secret-key-please-change-me-in-production" .env 2>/dev/null
 fi
 
 # ---------- 部署 ----------
-echo "==> 拉取最新镜像 & 重建容器 ..."
+echo "==> 构建并重建容器 ..."
 $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
-$COMPOSE_CMD build --pull --no-cache
+# 注意：不要用 --no-cache，否则每次都从零 npm install（约 3 分钟）。
+# Dockerfile 已分层（先装依赖再拷源码）+ BuildKit 缓存挂载，源码改动时
+# node_modules 层可复用；仅当 package-lock.json 变化时才重装依赖。
+$COMPOSE_CMD build
 $COMPOSE_CMD up -d
 
 # 等待容器健康
