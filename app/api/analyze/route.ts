@@ -81,6 +81,15 @@ function slimFactsForPrompt(facts: Awaited<ReturnType<typeof analyzeStockData>>)
       grossMargin: financials.grossMargin,
       profitMargin: financials.profitMargin,
     },
+    volume: {
+      latest: facts.volume.latest,
+      ma5: facts.volume.ma5,
+      ma20: facts.volume.ma20,
+      ratio: facts.volume.ratio,
+      divergence: facts.volume.divergence,
+      upDaysWithVolume: facts.volume.upDaysWithVolume,
+      downDaysWithVolume: facts.volume.downDaysWithVolume,
+    },
   };
 }
 
@@ -118,6 +127,7 @@ async function getDeepSeekExplanation(facts: Awaited<ReturnType<typeof analyzeSt
               "【themes 要求】至少输出“行业本身 + 1-2 个概念板块”（如人工智能、新能源、高股息），不要把行业名重复当作概念。",
               "【示例】行业=半导体 时，themes 应类似：[{name:\"半导体\",confidence:\"较强\",reason:\"主营所属行业为半导体\"},{name:\"国产替代\",confidence:\"待核验\",reason:\"与半导体相关的常见概念，需以公告为准\"}]。",
               "summary 用一句有观点的大白话：属于什么行业、价格相对20日均线的位置与强弱、波动大小，并点明当前技术姿态（如“站上均线偏强”或“跌破均线偏弱”）；不下达买卖指令，但可提示与用户计划的关系。",
+              "5. 量价关系：必须结合 volume.ratio（量比）与 volume.divergence（量价背离）判断强弱。放量突破才可信，缩量上涨或高位放巨量滞涨需提示风险；当 divergence 为“顶背离”时，summary 与 themes 不得给出偏多结论；volume 字段缺失时对应输出写“量能数据缺失”。",
             ].join("\n"),
           },
           {

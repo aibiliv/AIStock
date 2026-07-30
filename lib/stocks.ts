@@ -1,6 +1,6 @@
 import A_STOCK_LIST from "../db/a_stock_list";
 import { USER_FUND_PROFILES } from "../db/funds_user";
-import { getMairuiRealtime } from "./mairui";
+import { getMairuiRealtime, getMairuiFundamentals } from "./mairui";
 
 export type FundProfile = {
   name: string;
@@ -421,11 +421,14 @@ async function getEastmoneyQuote(code: string): Promise<Partial<ProfileSummary>>
       const n = Number(value);
       return Number.isFinite(n) ? n : null;
     };
+    const peRaw = num(d.f162);
+    const pbRaw = num(d.f167);
     return {
       name: typeof d.f58 === "string" && d.f58 ? d.f58 : null,
       marketCap: num(d.f116),
-      pe: num(d.f162),
-      pb: num(d.f167),
+      // 东财 push2 的市盈率/市净率字段为「百分之一」单位（真实值 ×100），需还原。
+      pe: peRaw !== null ? peRaw / 100 : null,
+      pb: pbRaw !== null ? pbRaw / 100 : null,
     };
   } catch {
     return {};
@@ -477,18 +480,24 @@ async function getQuoteSummary(code: string): Promise<ProfileSummary> {
   }
   // 东方财富对 A 股的名称/总市值/PE/PB 更可靠，优先采用；其余字段用 Yahoo
   const em = await getEastmoneyQuote(code);
+
+  // 麦蕊财务/资料增强层：用其原生 A 股数据覆盖 Yahoo 独供字段
+  // （roe / profitMargin / businessSummary / industry）。无 token / 网络错 /
+  // 超额(401) 时返回 null，下方全部回退到 Yahoo，流程零影响。
+  const mairuiFund = await getMairuiFundamentals(code);
   return {
     name: em.name ?? yahoo.name,
     marketCap: em.marketCap ?? yahoo.marketCap,
     pe: em.pe ?? yahoo.pe,
     pb: em.pb ?? yahoo.pb,
-    roe: yahoo.roe,
+    roe: mairuiFund?.roe ?? yahoo.roe,
+    // 麦蕊 cwzb 指标表无「毛利率率」字段，保留 Yahoo 兜底
     grossMargin: yahoo.grossMargin,
-    profitMargin: yahoo.profitMargin,
+    profitMargin: mairuiFund?.profitMargin ?? yahoo.profitMargin,
     operatingCashflow: yahoo.operatingCashflow,
     sector: yahoo.sector,
-    industry: yahoo.industry,
-    businessSummary: yahoo.businessSummary,
+    industry: mairuiFund?.industry ?? yahoo.industry,
+    businessSummary: mairuiFund?.businessSummary ?? yahoo.businessSummary,
   };
 }
 
@@ -633,8 +642,9 @@ export async function analyzeStockData(query: string) {
       profitGrowth,
       debtRatio,
       marketCap: profile.marketCap,
-      pe: mairui?.pe ?? profile.pe,
-      pb: mairui?.pb ?? profile.pb,
+      // 麦蕊实时接口不返回 pe/pb（已在 mairui.ts 标注），这里直接用 profile 兜底值
+      pe: profile.pe,
+      pb: profile.pb,
       roe: profile.roe,
       grossMargin: profile.grossMargin,
       profitMargin: profile.profitMargin,
@@ -642,6 +652,7 @@ export async function analyzeStockData(query: string) {
       series: fundamentals,
     },
     history: history.slice(-800),
+    volume: analyzeVolume(history),
     volumeHighlight: history.length
       ? history.reduce((largest, row) => row.volume > largest.volume ? row : largest)
       : null,
@@ -651,6 +662,52 @@ export async function analyzeStockData(query: string) {
       fetchedAt: new Date().toISOString(),
     },
   };
+}
+
+type VolumeAnalysis = {
+  latest: number;
+  ma5: number;
+  ma20: number;
+  ratio: number | null;
+  divergence: "顶背离" | "底背离" | "无明显背离" | null;
+  upDaysWithVolume: number;
+  downDaysWithVolume: number;
+};
+
+export function analyzeVolume(history: ChartRow[]): VolumeAnalysis {
+  const volumes = history.map((row) => row.volume);
+  const count = volumes.length;
+  const latest = volumes[count - 1] ?? 0;
+  const ma5 = count >= 5 ? average(volumes.slice(-5)) : average(volumes);
+  const ma20 = count >= 20 ? average(volumes.slice(-20)) : average(volumes);
+  const ratio = ma20 > 0 ? latest / ma20 : null;
+
+  let upDaysWithVolume = 0;
+  let downDaysWithVolume = 0;
+  for (const row of history.slice(-20)) {
+    if (row.volume > ma20) {
+      if (row.close >= row.open) upDaysWithVolume += 1;
+      else downDaysWithVolume += 1;
+    }
+  }
+
+  let divergence: VolumeAnalysis["divergence"] = null;
+  if (count >= 20 && ma20 > 0) {
+    const window = history.slice(-Math.min(60, count));
+    const maxClose = Math.max(...window.map((row) => row.close));
+    const minClose = Math.min(...window.map((row) => row.close));
+    const maxVol = Math.max(...window.map((row) => row.volume));
+    const last = window[window.length - 1];
+    if (last.close >= maxClose * 0.97 && last.volume < maxVol * 0.6) {
+      divergence = "顶背离";
+    } else if (last.close <= minClose * 1.03 && last.volume < maxVol * 0.6) {
+      divergence = "底背离";
+    } else {
+      divergence = "无明显背离";
+    }
+  }
+
+  return { latest, ma5, ma20, ratio, divergence, upDaysWithVolume, downDaysWithVolume };
 }
 
 export function automaticExplanation(data: Awaited<ReturnType<typeof analyzeStockData>>) {
@@ -744,13 +801,28 @@ export function automaticExplanation(data: Awaited<ReturnType<typeof analyzeStoc
     company.push(`所属板块分类为${stock.sector}。`);
   }
 
+  const volume = data.volume;
+  const volNote = volume && volume.ratio !== null
+    ? volume.ratio >= 1.5
+      ? `，当日量比约${volume.ratio.toFixed(2)}、明显放量`
+      : volume.ratio < 0.6
+        ? `，当日量比约${volume.ratio.toFixed(2)}、明显缩量`
+        : ""
+    : "";
+  const volRisk = volume && volume.divergence === "顶背离"
+    ? "量价出现顶背离：价格处于阶段高位但成交量未能跟随放大，追高需谨慎。"
+    : volume && volume.divergence === "底背离"
+      ? "低位缩量、抛压有衰竭迹象，关注是否止跌企稳，但不宜直接抄底。"
+      : null;
+
   return {
-    summary: `${stock.name}属于${stock.industry}，${trend}，${volatilityText}。先检查基本面变化，再结合自己能承受的亏损设置计划。`,
+    summary: `${stock.name}属于${stock.industry}，${trend}，${volatilityText}${volNote}。先检查基本面变化，再结合自己能承受的亏损设置计划。`,
     company,
     risks: [
       profitText,
       `20日平均日波动约 ${quote.volatility.toFixed(2)}%，价格提醒可能被短期波动触发。`,
       "免费公开行情可能延迟，重要止损必须同时在券商App设置。",
+      ...(volRisk ? [volRisk] : []),
     ],
     themes: builtThemes,
     missingInformation: [
