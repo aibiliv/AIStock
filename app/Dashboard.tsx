@@ -1308,18 +1308,7 @@ function SectorHeatmap() {
             <span>{data.date} · 覆盖 {data.sampleSize} 只代表性行业ETF</span>
             <a href={data.source.url} target="_blank" rel="noreferrer">数据来源：{data.source.name} ↗</a>
           </div>
-          <div className="sector-quick-strip">
-            {data.sectors.slice(0, 8).map((sector) => {
-              const dir = sector.changePercent > 0 ? "up" : "down";
-              return (
-                <div className={`sector-quick-card ${dir}`} key={`quick-${sector.code}`}>
-                  <span className="sq-name">{sector.name}</span>
-                  <span className="sq-change">{sector.changePercent >= 0 ? "+" : ""}{sector.changePercent.toFixed(2)}%</span>
-                  <span className="sq-detail">振幅 {sector.amplitude.toFixed(2)}%</span>
-                </div>
-              );
-            })}
-          </div>
+
         </>
       )}
     </section>
