@@ -11,6 +11,8 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { SectionHeader, Badge, Stat } from "./components";
+import { AnalyticsView } from "./AnalyticsView";
+import { ImportPanel } from "./ImportPanel";
 import { MarkdownMessage } from "./MarkdownMessage";
 import {
   ArrowDown,
@@ -19,6 +21,7 @@ import {
   Bell,
   CalendarBlank,
   CaretRight,
+  ChartLineUp,
   CheckCircle,
   ChatCircle,
   ClipboardText,
@@ -54,7 +57,7 @@ import type { SectorHeatmap as SectorHeatmapData } from "../lib/sectors";
 import { calculatePortfolioInsights, type PortfolioInsights } from "../lib/portfolio-insights";
 import { baseCloseSince, resolveStock, type Oscillators } from "../lib/stocks";
 
-type View = "home" | "watchlist" | "trades" | "settings";
+type View = "home" | "watchlist" | "trades" | "settings" | "analytics";
 type TradeMode = "buy" | "sell";
 
 type WatchItem = {
@@ -92,6 +95,8 @@ type Review = {
   followedPlan: boolean;
   lesson: string;
   resultCents: number;
+  tags: string[];
+  deviationReason: string;
 };
 
 type Explanation = {
@@ -207,6 +212,7 @@ const navItems: Array<{ id: View; label: string; icon: Icon }> = [
   { id: "home", label: "首页", icon: House },
   { id: "watchlist", label: "关注", icon: Star },
   { id: "trades", label: "交易记录", icon: ArrowsLeftRight },
+  { id: "analytics", label: "分析", icon: ChartLineUp },
   { id: "settings", label: "设置", icon: GearSix },
 ];
 
@@ -661,6 +667,15 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 onCapitalSettings={() => { setSettingsSection("account"); setView("settings"); }}
               />
             )}
+            {view === "analytics" && portfolioInsights && (
+              <AnalyticsView
+                trades={trades}
+                capitalFlows={capitalFlows}
+                reviews={reviews}
+                portfolioInsights={portfolioInsights}
+                initialCapitalCents={initialCapitalCents}
+              />
+            )}
             {view === "watchlist" && (
               <Watchlist
                 items={watchlist}
@@ -671,13 +686,16 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
               />
             )}
             {view === "trades" && (
-              <Trades
-                trades={trades}
-                reviews={reviews}
-                onBuy={() => setTradeMode("buy")}
-                onSell={() => setTradeMode("sell")}
-                onReview={setReviewCycleEndTradeId}
-              />
+              <>
+                <ImportPanel onImported={loadData} />
+                <Trades
+                  trades={trades}
+                  reviews={reviews}
+                  onBuy={() => setTradeMode("buy")}
+                  onSell={() => setTradeMode("sell")}
+                  onReview={setReviewCycleEndTradeId}
+                />
+              </>
             )}
             {view === "settings" && (
               <Settings
@@ -2898,14 +2916,33 @@ function ReviewModal({ cycle, onClose, onSaved }: {
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
+  const related = cycle.trades;
+  const name = cycle.name;
+  const summary = getCycleSummary(cycle);
+  const buyReason = related.find((trade) => trade.side === "买入")?.reason ?? "";
+  const sellReason = [...related].reverse().find((trade) => trade.side === "卖出")?.reason ?? "";
   const firstInput = useRef<HTMLTextAreaElement>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const related = cycle.trades;
-  const name = cycle.name;
-  const buyReason = related.find((trade) => trade.side === "买入")?.reason ?? "";
-  const sellReason = [...related].reverse().find((trade) => trade.side === "卖出")?.reason ?? "";
-  const summary = getCycleSummary(cycle);
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
+  const [followedPlan, setFollowedPlan] = useState<"yes" | "no" | null>(
+    summary.hasPlan ? (summary.withinPlan ? "yes" : "no") : null,
+  );
+  const [deviationReason, setDeviationReason] = useState("");
+
+  function addTagFromInput() {
+    const value = tagInput.trim().slice(0, 20);
+    if (!value || tags.includes(value) || tags.length >= 10) {
+      setTagInput("");
+      return;
+    }
+    setTags([...tags, value]);
+    setTagInput("");
+  }
+  function removeTag(target: string) {
+    setTags(tags.filter((tag) => tag !== target));
+  }
 
   useEffect(() => {
     firstInput.current?.focus();
@@ -2932,6 +2969,8 @@ function ReviewModal({ cycle, onClose, onSaved }: {
           sellReason: data.get("sellReason"),
           followedPlan: data.get("followedPlan") === "yes",
           lesson: data.get("lesson"),
+          deviationReason,
+          tags,
         }),
       });
       await onSaved();
@@ -2962,8 +3001,37 @@ function ReviewModal({ cycle, onClose, onSaved }: {
           )}
           <label>为什么买？<textarea ref={firstInput} name="buyReason" defaultValue={buyReason} required maxLength={300} /></label>
           <label>为什么卖？<textarea name="sellReason" defaultValue={sellReason} required maxLength={300} /></label>
-          <fieldset><legend>有没有按计划执行？<small>{summary.hasPlan ? "程序已按计划止损自动预判，可修正" : "买入时未填计划亏损，请凭记忆判断"}</small></legend><div className="reason-options"><label><input className="visually-hidden" type="radio" name="followedPlan" value="yes" required defaultChecked={summary.hasPlan ? summary.withinPlan === true : undefined} /><span>有，按计划</span></label><label><input className="visually-hidden" type="radio" name="followedPlan" value="no" required defaultChecked={summary.hasPlan ? summary.withinPlan === false : undefined} /><span>没有</span></label></div></fieldset>
+          <fieldset><legend>有没有按计划执行？<small>{summary.hasPlan ? "程序已按计划止损自动预判，可修正" : "买入时未填计划亏损，请凭记忆判断"}</small></legend><div className="reason-options"><label><input className="visually-hidden" type="radio" name="followedPlan" value="yes" required checked={followedPlan === "yes"} onChange={() => setFollowedPlan("yes")} /><span>有，按计划</span></label><label><input className="visually-hidden" type="radio" name="followedPlan" value="no" required checked={followedPlan === "no"} onChange={() => setFollowedPlan("no")} /><span>没有</span></label></div></fieldset>
+          {followedPlan === "no" && (
+            <label>这次偏离计划在哪？<small>写清和计划的差异，便于「分析」视图统计纪律缺口（最多 300 字）</small>
+              <textarea name="deviationReason" value={deviationReason} maxLength={300} onChange={(event) => setDeviationReason(event.target.value)} placeholder="例如：触发止损后没执行，又扛了两天才割；临时追高，超出了原定买点。" />
+            </label>
+          )}
           <label>下一次只改进哪一件事？<textarea name="lesson" required maxLength={500} placeholder={summary.hasPlan && !summary.withinPlan ? "例如：触发止损后当天执行，不再向下移动止损线。" : "例如：买入前先把卖出条件写清楚，避免临时起意。"} /></label>
+          <label>给这次复盘打标签<small>用于「分析」视图按标签统计盈亏（最多 10 个）</small>
+            <div className="tag-editor">
+              <div className="tag-chips">
+                {tags.map((tag) => (
+                  <span key={tag} className="tag-chip">{tag}<button type="button" onClick={() => removeTag(tag)} aria-label={`移除${tag}`}>×</button></span>
+                ))}
+              </div>
+              <input
+                className="tag-input"
+                value={tagInput}
+                placeholder="输入标签后回车，如：按计划 / 追高"
+                onChange={(event) => setTagInput(event.target.value)}
+                onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); addTagFromInput(); } }}
+              />
+            </div>
+            <div className="tag-suggestions">
+              {["按计划", "没按计划", "追高", "恐慌卖", "突破", "均线回踩", "题材", "止损纪律", "情绪化"]
+                .filter((suggestion) => !tags.includes(suggestion))
+                .slice(0, 8)
+                .map((suggestion) => (
+                  <button type="button" key={suggestion} className="tag-suggestion" onClick={() => { if (tags.length < 10 && !tags.includes(suggestion)) setTags([...tags, suggestion]); }}>{suggestion}</button>
+                ))}
+            </div>
+          </label>
           <div className="calculation-tip">程序按成交记录计算：持有 {summary.holdingDays} 天，已实现盈亏 <b>{money(summary.realizedCents)}</b>{summary.returnPct === null ? "" : `（收益率 ${summary.returnPct >= 0 ? "+" : ""}${summary.returnPct.toFixed(1)}%）`}。</div>
           {message && <p className="form-message" role="alert">{message}</p>}
           <div className="modal-actions"><button type="button" onClick={onClose}>取消</button><button className="primary-button" type="submit" disabled={saving}>{saving ? "正在保存…" : "保存复盘"}</button></div>

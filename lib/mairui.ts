@@ -33,7 +33,7 @@ async function getMairuiToken(): Promise<string> {
   // Worker 运行时通过 cloudflare:workers 的 env 读取（与 ai-config.ts 一致）。
   try {
     const spec = "cloudflare:workers";
-    const mod = await import(spec);
+    const mod = await import(/* @vite-ignore */ spec);
     const token = (mod as { env?: Record<string, string | undefined> }).env?.MAIRUI_TOKEN;
     if (token) return token;
   } catch {
@@ -69,13 +69,25 @@ function pick(row: Record<string, unknown>, keys: string[]): number | null {
 //   旧候选键 p/price/zxj/pc-as-涨跌幅 是误读，会导致价格解析永远 null、
 //   且把现价(1320)当成 +1320% 涨跌幅，已废弃。
 function parseRealtime(row: Record<string, unknown>): MairuiRealtime {
-  const price = num(row.pc) ?? pick(row, ["p", "price", "zxj", "last", "now", "current", "trade", "zkj"]);
+  const rawPrice = num(row.pc) ?? pick(row, ["last", "now", "current", "trade"]);
   const previousClose = pick(row, ["yc", "preClose", "prevClose", "zcj", "yclose", "previousClose"]);
-  // 麦蕊实时响应无涨跌幅字段，留 null，由调用方用 现价-昨收 推算（更稳）。
+
+  // 数据合理性校验：价格必须为正；若异常则整笔丢弃，由调用方回退到历史K线。
+  const price = rawPrice !== null && rawPrice > 0 ? rawPrice : null;
+
+  // 麦蕊实时响应无涨跌幅字段，由现价-昨收推算。
   let changePercent: number | null = null;
-  if (price !== null && previousClose && previousClose !== 0) {
+  if (price !== null && previousClose && previousClose > 0) {
     changePercent = ((price - previousClose) / previousClose) * 100;
   }
+
+  // 涨跌幅二次校验：A股普通股票±10%、科创板/创业板±20%，
+  // 超出 ±30% 视为异常数据，丢弃以免出现 -142% 等荒谬值。
+  const MAX_CHANGE_PERCENT = 30;
+  if (changePercent !== null && Math.abs(changePercent) > MAX_CHANGE_PERCENT) {
+    return { price: null, previousClose: null, changePercent: null, pe: null, pb: null, name: null };
+  }
+
   const name =
     typeof row.name === "string" && row.name ? row.name
     : typeof row.mc === "string" ? row.mc

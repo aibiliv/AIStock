@@ -143,7 +143,7 @@ svg { display: block; }
   display: flex;
   flex-direction: column;
   left: 0;
-  padding: 24px 16px 18px;
+  padding: 28px 20px 22px;
   position: fixed;
   top: 0;
   width: var(--sidebar-width);
@@ -157,7 +157,7 @@ svg { display: block; }
   color: var(--text);
   display: flex;
   gap: 12px;
-  padding: 0 8px 28px;
+  padding: 0 8px 34px;
   text-align: left;
 }
 
@@ -192,7 +192,7 @@ svg { display: block; }
 
 .sidebar nav {
   display: grid;
-  gap: 4px;
+  gap: 6px;
 }
 
 .nav-item {
@@ -290,7 +290,7 @@ svg { display: block; }
   display: flex;
   height: 72px;
   justify-content: space-between;
-  padding: 0 32px;
+  padding: 0 40px;
   position: sticky;
   top: 0;
   z-index: 20;
@@ -403,7 +403,7 @@ svg { display: block; }
 .page-content {
   margin: 0 auto;
   max-width: 1400px;
-  padding: 28px 32px 52px;
+  padding: 36px 40px 64px;
 }
 
 .inner-page { padding-top: 32px; }
@@ -424,14 +424,14 @@ svg { display: block; }
   box-shadow: var(--shadow);
   min-height: 270px;
   overflow: hidden;
-  padding: 44px 42px;
+  padding: 52px 48px;
   position: relative;
 }
 
 .search-hero.compact {
   min-height: 188px;
-  padding-bottom: 30px;
-  padding-top: 30px;
+  padding-bottom: 36px;
+  padding-top: 36px;
 }
 
 .search-hero h2 {
@@ -548,8 +548,8 @@ svg { display: block; }
   justify-content: space-between;
 }
 
-.quick-title { margin: 28px 2px 12px; }
-.page-intro { margin-bottom: 24px; }
+.quick-title { margin: 32px 2px 16px; }
+.page-intro { margin-bottom: 28px; }
 
 .quick-title h3,
 .page-intro h2 {
@@ -588,8 +588,8 @@ svg { display: block; }
 
 .beginner-start,
 .behavior-coach {
-  margin-top: 14px;
-  padding: 22px;
+  margin-top: 20px;
+  padding: 24px;
 }
 
 .beginner-copy h3,
@@ -607,7 +607,7 @@ svg { display: block; }
 
 .beginner-steps {
   display: grid;
-  gap: 10px;
+  gap: 14px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-top: 18px;
 }
@@ -684,7 +684,7 @@ svg { display: block; }
 
 .behavior-grid {
   display: grid;
-  gap: 9px;
+  gap: 12px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin-top: 17px;
 }
@@ -750,11 +750,11 @@ svg { display: block; }
 
 .holding-grid {
   display: grid;
-  gap: 14px;
+  gap: 20px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.holding-card { padding: 18px; }
+.holding-card { padding: 22px 20px; }
 
 .holding-card:hover,
 .watch-card:hover {
@@ -819,7 +819,7 @@ svg { display: block; }
   border-top: 1px solid var(--line);
   display: flex;
   justify-content: space-between;
-  margin-top: 14px;
+  margin-top: 20px;
   padding-top: 11px;
 }
 
@@ -849,8 +849,8 @@ svg { display: block; }
 .holding-status.amber i { background: var(--amber); }
 
 .portfolio-overview {
-  margin-top: 14px;
-  padding: 20px;
+  margin-top: 20px;
+  padding: 24px;
 }
 
 .portfolio-overview-head {
@@ -864,7 +864,7 @@ svg { display: block; }
 
 .portfolio-metrics {
   display: grid;
-  gap: 8px;
+  gap: 12px;
   grid-template-columns: repeat(6, minmax(0, 1fr));
 }
 
@@ -924,8 +924,8 @@ svg { display: block; }
 .portfolio-method { background: transparent; margin-bottom: 0; padding-bottom: 0; }
 
 .sector-heatmap-card {
-  margin-top: 14px;
-  padding: 18px;
+  margin-top: 20px;
+  padding: 22px;
 }
 
 .sector-heatmap-head {
@@ -933,7 +933,7 @@ svg { display: block; }
   display: flex;
   gap: 24px;
   justify-content: space-between;
-  margin-bottom: 14px;
+  margin-bottom: 18px;
 }
 
 .sector-heatmap-head h3 {
@@ -988,7 +988,7 @@ svg { display: block; }
 
 .sector-heatmap-grid {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   min-height: 272px;
 }
@@ -1003,12 +1003,9 @@ svg { display: block; }
   padding: 14px;
 }
 
-.sector-tile.rank-1 { padding: 18px; }
-.sector-tile.up-sector { background: color-mix(in srgb, var(--red) 13%, var(--surface)); color: var(--red); }
-.sector-tile.down-sector { background: color-mix(in srgb, var(--green) 13%, var(--surface)); color: var(--green); }
+.sector-tile.up-sector { background: color-mix(in srgb, var(--red) 16%, var(--surface)); color: var(--red); }
+.sector-tile.down-sector { background: color-mix(in srgb, var(--green) 16%, var(--surface)); color: var(--green); }
 .sector-tile.flat-sector { background: var(--surface-soft); color: var(--text-soft); }
-.sector-tile.rank-1.up-sector { background: color-mix(in srgb, var(--red) 20%, var(--surface)); }
-.sector-tile.rank-1.down-sector { background: color-mix(in srgb, var(--green) 20%, var(--surface)); }
 
 .sector-tile-top {
   align-items: center;
@@ -1040,8 +1037,7 @@ svg { display: block; }
   letter-spacing: -.025em;
 }
 
-.sector-tile.rank-1 h4 { font-size: var(--fs-2xl); }
-.sector-tile.rank-1 strong { font-size: var(--fs-4xl); }
+
 
 .sector-tile p {
   color: var(--text-soft);
@@ -1084,8 +1080,8 @@ svg { display: block; }
 .market-indices-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 14px;
+  gap: 14px;
+  margin-top: 20px;
 }
 .index-chip {
   flex: 1 1 140px;
@@ -1119,7 +1115,7 @@ svg { display: block; }
 .index-chip.down .index-price,
 .index-chip.down .index-change { color: var(--green); }
 .market-indices-state {
-  margin-top: 14px;
+  margin-top: 20px;
   font-size: var(--fs-sm);
   color: var(--text-soft);
 }
@@ -1137,14 +1133,14 @@ svg { display: block; }
 
 .home-grid {
   display: grid;
-  gap: 14px;
+  gap: 20px;
   grid-template-columns: 1.2fr 1fr;
-  margin-top: 14px;
+  margin-top: 20px;
 }
 
 .panel-header {
   border-bottom: 1px solid var(--line);
-  padding: 16px 18px;
+  padding: 18px 22px;
 }
 
 .panel-header h3 {
@@ -1244,11 +1240,11 @@ svg { display: block; }
   color: var(--bg);
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-bottom: 14px;
-  padding: 16px 18px;
+  margin-bottom: 20px;
+  padding: 20px 22px;
 }
 
-.home-summary { margin-top: 14px; }
+.home-summary { margin-top: 20px; }
 
 .summary-strip > div {
   border-left: 1px solid color-mix(in srgb, var(--bg) 18%, transparent);
@@ -1308,7 +1304,7 @@ svg { display: block; }
   white-space: nowrap;
 }
 
-.analysis-page { margin-top: 14px; }
+.analysis-page { margin-top: 20px; }
 
 .stock-summary {
   align-items: center;
@@ -1406,7 +1402,7 @@ svg { display: block; }
 
 .evidence-grid {
   display: grid;
-  gap: 9px;
+  gap: 12px;
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
@@ -1586,11 +1582,11 @@ svg { display: block; }
 
 .analysis-grid {
   display: grid;
-  gap: 14px;
+  gap: 20px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
-.analysis-card { min-height: 245px; padding: 18px; }
+.analysis-card { min-height: 245px; padding: 22px 20px; }
 
 .card-title {
   align-items: center;
@@ -1870,12 +1866,12 @@ svg { display: block; }
 
 .research-grid {
   display: grid;
-  gap: 14px;
+  gap: 20px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 14px;
+  margin-top: 20px;
 }
 
-.research-card { min-height: 320px; padding: 18px; }
+.research-card { min-height: 320px; padding: 22px 20px; }
 .history-item { border-bottom: 1px solid var(--line); padding: 10px 2px; }
 .history-item:last-child { border-bottom: 0; }
 .history-item > div { align-items: center; display: flex; justify-content: space-between; }
@@ -1973,7 +1969,7 @@ svg { display: block; }
   color: var(--bg);
   display: flex;
   justify-content: space-between;
-  margin-top: 14px;
+  margin-top: 20px;
   padding: 20px 22px;
 }
 
@@ -1985,15 +1981,15 @@ svg { display: block; }
 
 .watch-cards {
   display: grid;
-  gap: 14px;
+  gap: 20px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .watch-card {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 16px;
+  gap: 20px;
+  padding: 20px;
   position: relative;
   transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
 }
@@ -2767,8 +2763,8 @@ svg { display: block; }
 /* 老的 .settings-detail / .setting-card 兼容（避免他处遗漏） */
 .settings-detail,
 .boundary-card {
-  margin-top: 14px;
-  padding: 20px;
+  margin-top: 20px;
+  padding: 24px;
 }
 
 .settings-detail { background: var(--surface); }
@@ -3447,7 +3443,6 @@ svg { display: block; }
     min-height: 0;
   }
   .sector-tile { min-height: 116px; }
-  .sector-tile.rank-1 { min-height: 150px; }
   .sector-heatmap-foot { align-items: flex-start; flex-direction: column; gap: 4px; }
   .holding-grid,
   .home-grid,
@@ -3895,7 +3890,7 @@ svg { display: block; }
 /* ---- 大盘指数紧凑条 — 截图中六格并排 ---- */
 .index-strip {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
   gap: 8px;
   margin-top: 12px;
 }
@@ -3980,13 +3975,13 @@ svg { display: block; }
 }
 
 /* ---- 区块间距统一 ---- */
-.page-content > * + * { margin-top: 14px; }
+.page-content > * + * { margin-top: 20px; }
 .page-content > .portfolio-overview,
 .page-content > .market-indices-card,
 .page-content > .sector-heatmap-card,
-.page-content > .panel { margin-top: 14px; }
+.page-content > .panel { margin-top: 20px; }
 .page-content > .quick-title { margin-top: 22px; }
-.page-content > .summary-strip.home-summary { margin-top: 14px; }
+.page-content > .summary-strip.home-summary { margin-top: 20px; }
 
 /* ---- 搜索标题区域紧凑模式微调 ---- */
 .search-hero.compact {

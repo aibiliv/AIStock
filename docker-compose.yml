@@ -45,6 +45,9 @@ services:
       - AI_API_KEY=${AI_API_KEY:-}
       - AI_API_BASE=${AI_API_BASE:-}
       - AI_MODEL=${AI_MODEL:-}
+      - MAIRUI_TOKEN=${MAIRUI_TOKEN:-}
+      - NOTIFY_WEBHOOK_URLS=${NOTIFY_WEBHOOK_URLS:-}
+      - CRON_SECRET=${CRON_SECRET:-}
       - APP_USERNAME=${APP_USERNAME:?请先在 .env 中设置 APP_USERNAME}
       - APP_PASSWORD=${APP_PASSWORD:?请先在 .env 中设置 APP_PASSWORD}
       - APP_AUTH_SECRET=${APP_AUTH_SECRET:?请先在 .env 中设置 APP_AUTH_SECRET}
