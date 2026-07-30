@@ -10,6 +10,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { SectionHeader, Badge, Stat } from "./components";
 import {
   ArrowsLeftRight,
   CheckCircle,
@@ -722,7 +723,7 @@ function Home({
           {!trades.length && <BeginnerStart onBuy={onBuy} />}
           <PortfolioOverview insights={portfolioInsights} onConfigure={onCapitalSettings} />
           <SectorHeatmap />
-          <section className="quick-title"><div><span className="eyebrow">今天只处理重要的事</span><h3>我的持仓</h3></div><button onClick={() => onNavigate("trades")}>查看交易记录 →</button></section>
+          <SectionHeader eyebrow="今天只处理重要的事" title="我的持仓" actions={<button onClick={() => onNavigate("trades")}>查看交易记录 →</button>} />
           {portfolio.positions.length ? (
             <div className="holding-grid">
               {portfolio.positions.map((position) => {
@@ -765,7 +766,7 @@ function Home({
 
           <div className="home-grid">
             <section className="panel reminder-panel">
-              <PanelHeader title="价格提醒" subtitle="页面打开期间每5分钟检查" />
+              <SectionHeader title="价格提醒" subtitle="页面打开期间每5分钟检查" />
               {activeAlerts.slice(0, 3).map((alert) => (
                 <div className="reminder" key={alert.id}>
                   <span className={`reminder-icon ${alert.type === "止损" ? "red" : "amber"}`}>!</span>
@@ -776,7 +777,7 @@ function Home({
               {!activeAlerts.length && <div className="empty-inline">暂无提醒。记录买入并填写最大亏损后会自动生成。</div>}
             </section>
             <section className="panel review-panel">
-              <PanelHeader title="待复盘" subtitle="卖出后只回答三个问题" />
+              <SectionHeader title="待复盘" subtitle="卖出后只回答三个问题" />
               {pendingReviews.slice(0, 3).map((cycle) => {
                 return (
                   <div className="review-item" key={cycle.endTradeId}>
@@ -850,17 +851,14 @@ function PortfolioOverview({ insights, onConfigure }: { insights: PortfolioInsig
 
   return (
     <section className="panel portfolio-overview">
-      <div className="portfolio-overview-head">
-        <div><span className="eyebrow">账户全景</span><h3>我的仓位与盈亏</h3></div>
-        {!insights.configured && <button className="primary-button" onClick={onConfigure}>设置账户初始资金</button>}
-      </div>
+      <SectionHeader eyebrow="账户全景" title="我的仓位与盈亏" actions={!insights.configured && <button className="primary-button" onClick={onConfigure}>设置账户初始资金</button>} />
       <div className="portfolio-metrics">
-        <div><span>总资产</span><strong>{insights.totalAssetsCents === null ? "待设置" : money(insights.totalAssetsCents)}</strong><small>现金 + 当前持仓市值</small></div>
-        <div><span>总仓位</span><strong>{insights.totalPositionPercent === null ? "待设置" : `${insights.totalPositionPercent.toFixed(1)}%`}</strong><small>持仓市值 ÷ 总资产</small></div>
-        <div><span>持仓市值</span><strong>{money(insights.marketValueCents)}</strong><small>{insights.completePrices ? "按当前参考价" : "部分行情仍在更新"}</small></div>
-        <div><span>可用现金</span><strong>{insights.cashCents === null ? "待设置" : money(insights.cashCents)}</strong><small>按初始资金和交易流水估算</small></div>
-        <div><span>持仓浮盈亏</span><strong className={insights.unrealizedCents >= 0 ? "up" : "down"}>{money(insights.unrealizedCents)}</strong><small>当前市值 - 持仓成本</small></div>
-        <div><span>账户总盈亏</span><strong className={(insights.totalProfitCents ?? 0) >= 0 ? "up" : "down"}>{insights.totalProfitCents === null ? "待设置" : money(insights.totalProfitCents)}</strong><small>{insights.totalProfitPercent === null ? "需要资金基准" : `${insights.totalProfitPercent >= 0 ? "+" : ""}${insights.totalProfitPercent.toFixed(2)}%`}</small></div>
+        <Stat label="总资产" value={insights.totalAssetsCents === null ? "待设置" : money(insights.totalAssetsCents)} hint="现金 + 当前持仓市值" />
+        <Stat label="总仓位" value={insights.totalPositionPercent === null ? "待设置" : `${insights.totalPositionPercent.toFixed(1)}%`} hint="持仓市值 ÷ 总资产" />
+        <Stat label="持仓市值" value={money(insights.marketValueCents)} hint={insights.completePrices ? "按当前参考价" : "部分行情仍在更新"} />
+        <Stat label="可用现金" value={insights.cashCents === null ? "待设置" : money(insights.cashCents)} hint="按初始资金和交易流水估算" />
+        <Stat label="持仓浮盈亏" value={<span className={insights.unrealizedCents >= 0 ? "up" : "down"}>{money(insights.unrealizedCents)}</span>} hint="当前市值 - 持仓成本" />
+        <Stat label="账户总盈亏" value={<span className={(insights.totalProfitCents ?? 0) >= 0 ? "up" : "down"}>{insights.totalProfitCents === null ? "待设置" : money(insights.totalProfitCents)}</span>} hint={insights.totalProfitPercent === null ? "需要资金基准" : `${insights.totalProfitPercent >= 0 ? "+" : ""}${insights.totalProfitPercent.toFixed(2)}%`} />
       </div>
       {points.length >= 2 ? (
         <div className="portfolio-chart-wrap">
@@ -914,11 +912,7 @@ function BeginnerStart({ onBuy }: { onBuy: () => void }) {
 
   return (
     <section className="panel beginner-start">
-      <div className="beginner-copy">
-        <span className="eyebrow">第一次使用，从这里开始</span>
-        <h3>完成一轮真实记录，复盘才有价值。</h3>
-        <p>不用一次学会所有指标。先按三个步骤走完一笔交易，软件会开始总结你的行为。</p>
-      </div>
+      <SectionHeader layout="stack" size="lg" eyebrow="第一次使用，从这里开始" title="完成一轮真实记录，复盘才有价值。" subtitle="不用一次学会所有指标。先按三个步骤走完一笔交易，软件会开始总结你的行为。" />
       <div className="beginner-steps" aria-label="新手三步上手">
         <div><b>1</b><span><strong>先查清楚</strong><small>输入股票，读公司、风险和缺失信息。</small></span></div>
         <div><b>2</b><span><strong>买前写计划</strong><small>记录买入理由和最多接受亏损。</small></span></div>
@@ -987,15 +981,12 @@ function BehaviorCoach({
 
   return (
     <section className="panel behavior-coach">
-      <div className="coach-head">
-        <div><span className="eyebrow">你的记录正在说什么</span><h3>行为复盘</h3></div>
-        <p>样本少时只描述事实，不把偶然输赢当成规律。</p>
-      </div>
+      <SectionHeader layout="stack" size="lg" eyebrow="你的记录正在说什么" title="行为复盘" subtitle="样本少时只描述事实，不把偶然输赢当成规律。" />
       <div className="behavior-grid">
-        <div><span>买入计划覆盖</span><strong>{plannedBuys.length}/{buyTrades.length}</strong><small>填写了最多接受亏损</small></div>
-        <div><span>最常见买入原因</span><strong>{topReason?.[0] ?? "暂无"}</strong><small>{topReason ? `出现 ${topReason[1]} 次` : "继续记录后生成"}</small></div>
-        <div><span>亏损交易共性</span><strong>{lossPattern?.[0] ?? "暂无样本"}</strong><small>{lossPattern ? `${lossPattern[1]} 次亏损周期涉及此原因` : "完成亏损交易后再判断"}</small></div>
-        <div><span>按计划执行</span><strong>{reviews.length ? `${Math.round(followedPlans / reviews.length * 100)}%` : "暂无"}</strong><small>{reviews.length ? `${followedPlans}/${reviews.length} 次复盘` : "完成清仓复盘后生成"}</small></div>
+        <Stat label="买入计划覆盖" value={`${plannedBuys.length}/${buyTrades.length}`} hint="填写了最多接受亏损" />
+        <Stat label="最常见买入原因" value={topReason?.[0] ?? "暂无"} hint={topReason ? `出现 ${topReason[1]} 次` : "继续记录后生成"} />
+        <Stat label="亏损交易共性" value={lossPattern?.[0] ?? "暂无样本"} hint={lossPattern ? `${lossPattern[1]} 次亏损周期涉及此原因` : "完成亏损交易后再判断"} />
+        <Stat label="按计划执行" value={reviews.length ? `${Math.round(followedPlans / reviews.length * 100)}%` : "暂无"} hint={reviews.length ? `${followedPlans}/${reviews.length} 次复盘` : "完成清仓复盘后生成"} />
       </div>
       <div className="weekly-advice">
         <span>本周只改这一件事</span>
@@ -1040,25 +1031,25 @@ function SectorHeatmap() {
 
   return (
     <section className="panel sector-heatmap-card" aria-labelledby="sector-heatmap-title">
-      <div className="sector-heatmap-head">
-        <div>
-          <span className="eyebrow">{data?.basis === "etf-proxy" ? "行业主题ETF代理 · 前10名" : "板块异动 · 前10名"}</span>
-          <h3 id="sector-heatmap-title">板块异动热力图</h3>
-          <p>以代表性行业ETF观察板块强弱，按涨跌幅绝对值排序。</p>
-        </div>
-        <form className="sector-date-form" onSubmit={submit}>
-          <label htmlFor="sector-date">查看日期</label>
-          <input
-            id="sector-date"
-            type="date"
-            min="2018-01-01"
-            max={localIsoDate()}
-            value={date}
-            onChange={(event) => setDate(event.target.value)}
-          />
-          <button type="submit" disabled={loading}>{loading ? "加载中…" : "查看异动"}</button>
-        </form>
-      </div>
+      <SectionHeader
+        eyebrow={data?.basis === "etf-proxy" ? "行业主题ETF代理 · 前10名" : "板块异动 · 前10名"}
+        title="板块异动热力图"
+        subtitle="以代表性行业ETF观察板块强弱，按涨跌幅绝对值排序。"
+        actions={
+          <form className="sector-date-form" onSubmit={submit}>
+            <label htmlFor="sector-date">查看日期</label>
+            <input
+              id="sector-date"
+              type="date"
+              min="2018-01-01"
+              max={localIsoDate()}
+              value={date}
+              onChange={(event) => setDate(event.target.value)}
+            />
+            <button type="submit" disabled={loading}>{loading ? "加载中…" : "查看异动"}</button>
+          </form>
+        }
+      />
 
       {loading && <div className="sector-heatmap-state" role="status">正在汇总行业板块行情…</div>}
       {!loading && message && (
@@ -1120,7 +1111,7 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
       <section className="stock-summary panel">
         <div className="stock-identity">
           <span className="stock-avatar large">{stock.name.slice(0, 1)}</span>
-          <div><span className="demo-label">{analysis.mode === "deepseek" ? "AI解释" : "自动解释"}</span><h2>{stock.name} <small>{stock.code}</small></h2><p>{stock.industry}{stock.sector ? ` · ${stock.sector}` : ""}</p></div>
+          <div><Badge tone="accent">{analysis.mode === "deepseek" ? "AI解释" : "自动解释"}</Badge><h2>{stock.name} <small>{stock.code}</small></h2><p>{stock.industry}{stock.sector ? ` · ${stock.sector}` : ""}</p></div>
         </div>
         <div className="price-block">
           <strong>{price(quote.price)}</strong>
@@ -1147,7 +1138,7 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
 
       <div className="analysis-grid">
         <section className="panel analysis-card">
-          <CardTitle number="01" title={isEtf ? "基金与指数" : "公司与行业"} source={isEtf ? "基金官方资料" : "通俗解释"} />
+          <SectionHeader number="01" title={isEtf ? "基金与指数" : "公司与行业"} subtitle={isEtf ? "基金官方资料" : "通俗解释"} bordered />
           <div className="plain-points">
             {explanation.company.map((item, index) => <p key={item}><b>{companyLabels[index] ?? "信息"}</b><span>{item}</span></p>)}
           </div>
@@ -1157,14 +1148,14 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
         </section>
 
         <section className="panel analysis-card">
-          <CardTitle number="02" title={isEtf ? "基金资料" : "财务体检"} source={isEtf ? "基金官方资料" : "公开财务接口"} />
+          <SectionHeader number="02" title={isEtf ? "基金资料" : "财务体检"} subtitle={isEtf ? "基金官方资料" : "公开财务接口"} bordered />
           {isEtf ? (
             <>
               <div className="fund-facts">
-                <div><span>基金管理人</span><strong>{stock.fund!.manager}</strong></div>
-                <div><span>标的指数</span><strong>{stock.fund!.trackingIndex}</strong></div>
-                <div><span>产品类型</span><strong>{stock.fund!.category}</strong></div>
-                <div><span>上市市场</span><strong>{stock.fund!.exchange}</strong></div>
+                <Stat label="基金管理人" value={stock.fund!.manager} />
+                <Stat label="标的指数" value={stock.fund!.trackingIndex} />
+                <Stat label="产品类型" value={stock.fund!.category} />
+                <Stat label="上市市场" value={stock.fund!.exchange} />
               </div>
               <p className="source-warning">净值、折溢价、规模和跟踪误差尚未接入，页面不会用公司财务指标代替。</p>
               <a className="text-button fund-source-link" href={stock.fund!.sourceUrl} target="_blank" rel="noreferrer">查看{stock.fund!.sourceName}官方资料 ↗</a>
@@ -1200,7 +1191,7 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
         </section>
 
         <section className="panel analysis-card">
-          <CardTitle number="03" title="价格位置" source="程序计算" />
+          <SectionHeader number="03" title="价格位置" subtitle="程序计算" bordered />
           <div className="metric-row">
             <Metric label="20日均线" value={quote.ma20} moneyValue help="近20个交易日收盘价的平均值" />
             <Metric label="近60日高点" value={quote.recentHigh} moneyValue />
@@ -1210,21 +1201,21 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
         </section>
 
         <section className="panel analysis-card">
-          <CardTitle number="04" title={isEtf ? "指数与产品特征" : "题材信息"} source={isEtf ? "基金资料已核验" : "候选信息 · 需核验"} />
+          <SectionHeader number="04" title={isEtf ? "指数与产品特征" : "题材信息"} subtitle={isEtf ? "基金资料已核验" : "候选信息 · 需核验"} bordered />
           <div className="theme-list">
-            {explanation.themes.map((theme) => <div key={theme.name}><b>{theme.name}</b><span className="confidence high">{theme.confidence}</span><p>{theme.reason}</p></div>)}
+            {explanation.themes.map((theme) => <div key={theme.name}><b>{theme.name}</b><Badge tone="amber">{theme.confidence}</Badge><p>{theme.reason}</p></div>)}
           </div>
           <p className="source-warning">{isEtf ? "指数成份不等于基金实时持仓，请结合基金定期报告和指数编制方案核验。" : "题材不等于业绩事实，请结合公司公告核验。"}</p>
         </section>
 
         <section className="panel analysis-card risks-card">
-          <CardTitle number="05" title="主要风险" source="按数据可见范围整理" />
+          <SectionHeader number="05" title="主要风险" subtitle="按数据可见范围整理" bordered />
           <ol>{explanation.risks.map((risk, index) => <li key={risk}><span>{index + 1}</span><div><p>{risk}</p></div></li>)}</ol>
           {explanation.missingInformation.length > 0 && <p className="source-warning">仍缺少：{explanation.missingInformation.join("、")}</p>}
         </section>
 
         <section className="panel analysis-card price-plan-card">
-          <CardTitle number="06" title="价格参考" source="参考情景，不是买卖建议" />
+          <SectionHeader number="06" title="价格参考" subtitle="参考情景，不是买卖建议" bordered />
           <p className="risk-unit-note"><b>先看风险，再看目标：</b>1R就是当前价到风险观察线的距离，2R是这段距离的两倍。</p>
           <div className="price-scenarios">
             <div className="risk"><span>20日风险观察线</span><strong>{price(quote.support)}</strong><p>近期低点，跌破后重新检查原判断。</p></div>
@@ -1241,8 +1232,17 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
       </div>
 
       <section className="decision-bar">
-        <div><span className="eyebrow">现在由你决定</span><h3>这只股票下一步怎么处理？</h3></div>
-        <div><button className="soft-button" onClick={onWatch}>{watched ? <><CheckCircle size={15} weight="fill" />已关注</> : <><Star size={15} />加入关注</>}</button>{canSell && <button className="soft-button" onClick={onSell}>记录卖出</button>}<button className="primary-button" onClick={onBuy}>我已买入</button></div>
+        <SectionHeader
+          eyebrow="现在由你决定"
+          title="这只股票下一步怎么处理？"
+          actions={
+            <>
+              <button className="soft-button" onClick={onWatch}>{watched ? <><CheckCircle size={15} weight="fill" />已关注</> : <><Star size={15} />加入关注</>}</button>
+              {canSell && <button className="soft-button" onClick={onSell}>记录卖出</button>}
+              <button className="primary-button" onClick={onBuy}>我已买入</button>
+            </>
+          }
+        />
       </section>
     </div>
   );
@@ -1287,10 +1287,7 @@ function EvidencePanel({ analysis, position }: { analysis: Analysis; position: P
 
   return (
     <section className="panel evidence-panel">
-      <div className="evidence-heading">
-        <div><span className="eyebrow">结论从哪里来</span><h3>关键证据与可信度</h3></div>
-        <p>数字、时间和缺口分开呈现，避免把推测当事实。</p>
-      </div>
+      <SectionHeader layout="stack" eyebrow="结论从哪里来" title="关键证据与可信度" subtitle="数字、时间和缺口分开呈现，避免把推测当事实。" />
       <div className="evidence-grid">
         {evidence.map((item) => (
           <article key={item.label}>
@@ -1398,10 +1395,7 @@ function SmartAssistant({ analysis, position, portfolioInsights }: {
 
   return (
     <section className="panel smart-assistant">
-      <div className="assistant-heading">
-        <div><span className="eyebrow">可连续追问</span><h3>智能复盘助手</h3></div>
-        <span className="assistant-context">{position ? "已结合我的持仓" : "当前未记录持仓"}</span>
-      </div>
+        <SectionHeader eyebrow="可连续追问" title="智能复盘助手" actions={<Badge tone="accent">{position ? "已结合我的持仓" : "当前未记录持仓"}</Badge>} />
       <div className="assistant-messages" aria-live="polite">
         {messages.map((message, index) => (
           <div className={`assistant-message ${message.role}`} key={`${message.role}-${index}`}>
@@ -1514,25 +1508,28 @@ function MarketChart({ analysis }: { analysis: Analysis }) {
 
   return (
     <section className="panel market-chart-card">
-      <div className="chart-heading">
-        <div><span className="eyebrow">{periodLabel} · 近{rows.length}根</span><h3>K线与成交量</h3></div>
-        <div className="chart-heading-actions">
-          <div className="chart-period-tabs" aria-label="K线周期">
-            {(["day", "week", "month"] as MarketPeriod[]).map((item) => (
-              <button
-                type="button"
-                key={item}
-                className={period === item ? "active" : ""}
-                aria-pressed={period === item}
-                onClick={() => changePeriod(item)}
-              >
-                {item === "day" ? "日K" : item === "week" ? "周K" : "月K"}
-              </button>
-            ))}
+      <SectionHeader
+        eyebrow={`${periodLabel} · 近${rows.length}根`}
+        title="K线与成交量"
+        actions={
+          <div className="chart-heading-actions">
+            <div className="chart-period-tabs" aria-label="K线周期">
+              {(["day", "week", "month"] as MarketPeriod[]).map((item) => (
+                <button
+                  type="button"
+                  key={item}
+                  className={period === item ? "active" : ""}
+                  aria-pressed={period === item}
+                  onClick={() => changePeriod(item)}
+                >
+                  {item === "day" ? "日K" : item === "week" ? "周K" : "月K"}
+                </button>
+              ))}
+            </div>
+            <div className="chart-legend"><span className="ma5">MA5</span><span className="ma20">MA20</span><span className="ma60">MA60</span></div>
           </div>
-          <div className="chart-legend"><span className="ma5">MA5</span><span className="ma20">MA20</span><span className="ma60">MA60</span></div>
-        </div>
-      </div>
+        }
+      />
       <p className="chart-interaction-hint">移动鼠标查看日期与水平线对应价格，点按或使用左右方向键切换K线。</p>
       <svg
         className="market-chart"
@@ -1650,7 +1647,7 @@ function AnalysisHistory({ symbol, currentPrice }: { symbol: string; currentPric
 
   return (
     <section className="panel research-card">
-      <CardTitle number="07" title="历史分析" source="保存当时的价格与判断" />
+      <SectionHeader number="07" title="历史分析" subtitle="保存当时的价格与判断" bordered />
       {reports.length ? reports.slice(0, 5).map((report) => {
         const change = report.priceMillis === null
           ? null
@@ -1732,7 +1729,7 @@ function AnnouncementPanel({ stock }: { stock: Analysis["stock"] }) {
 
   return (
     <section className="panel research-card announcement-card">
-      <CardTitle number="08" title="官方公告" source="官方原文优先 · AI只做摘要" />
+      <SectionHeader number="08" title="官方公告" subtitle="官方原文优先 · AI只做摘要" bordered />
       <div className="official-links">
         <a href={`https://www.cninfo.com.cn/new/fulltextSearch?keyWord=${stock.code}`} target="_blank" rel="noreferrer">巨潮资讯</a>
         <a href="https://www.sse.com.cn/disclosure/listedinfo/announcement/" target="_blank" rel="noreferrer">上交所公告</a>
@@ -1823,14 +1820,14 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onRemove, onSaved }: {
 
   return (
     <div className="page-content inner-page">
-      <section className="page-intro"><div><span className="eyebrow">先研究，再决定</span><h2>我的关注</h2><p>每只股票都保留一个明确的等待条件。</p></div><button className="primary-button" onClick={onSearch}><Plus size={16} weight="bold" />查找股票</button></section>
+      <SectionHeader as="h2" size="xl" eyebrow="先研究，再决定" title="我的关注" subtitle="每只股票都保留一个明确的等待条件。" actions={<button className="primary-button" onClick={onSearch}><Plus size={16} weight="bold" />查找股票</button>} />
       {items.length ? (
         <div className="watch-cards">
           {items.map((item) => {
             const quote = quotes[item.symbol]?.quote;
             return (
               <article className="panel watch-card" key={item.symbol}>
-                <div className="watch-card-top"><span className="stock-avatar">{item.name.slice(0, 1)}</span><span className={`watch-state ${item.status === "暂停" ? "paused" : ""}`}>{item.status}</span></div>
+                <div className="watch-card-top"><span className="stock-avatar">{item.name.slice(0, 1)}</span><Badge tone={item.status === "暂停" ? "neutral" : "red"}>{item.status}</Badge></div>
                 <h3>{item.name}</h3><p>{item.symbol} · {quotes[item.symbol]?.stock.industry ?? "行业信息更新中"}</p>
                 <div className="watch-price"><strong>{quote ? price(quote.price) : "行情待更新"}</strong>{quote && <span className={quote.changePercent >= 0 ? "up" : "down"}>{quote.changePercent.toFixed(2)}%</span>}</div>
                 {editing === item.symbol ? (
@@ -1880,7 +1877,7 @@ function Trades({ trades, reviews, onBuy, onSell, onReview }: {
 
   return (
     <div className="page-content inner-page">
-      <section className="page-intro"><div><span className="eyebrow">真实记录，才能真实复盘</span><h2>交易记录</h2><p>只有完全清仓才会生成待复盘任务；部分卖出仍属于同一持仓周期。</p></div><div className="intro-actions"><button className="soft-button" onClick={onSell} disabled={!portfolio.positions.length}>记录卖出</button><button className="primary-button" onClick={onBuy}><Plus size={16} weight="bold" />记录买入</button></div></section>
+      <SectionHeader as="h2" size="xl" eyebrow="真实记录，才能真实复盘" title="交易记录" subtitle="只有完全清仓才会生成待复盘任务；部分卖出仍属于同一持仓周期。" actions={<div className="intro-actions"><button className="soft-button" onClick={onSell} disabled={!portfolio.positions.length}>记录卖出</button><button className="primary-button" onClick={onBuy}><Plus size={16} weight="bold" />记录买入</button></div>} />
       <div className="summary-strip">
         <div><span>交易记录</span><strong>{trades.length}</strong></div>
         <div><span>当前持仓</span><strong>{portfolio.positions.length}</strong></div>
@@ -1897,16 +1894,16 @@ function Trades({ trades, reviews, onBuy, onSell, onReview }: {
               <div className="trade-row" key={trade.id}>
                 <span><b>{trade.tradeDate}</b><small>{trade.quantity}股</small></span>
                 <span><b>{trade.name}</b><small>{trade.symbol}</small></span>
-                <span><b className={`side ${trade.side === "买入" ? "buy" : "sell"}`}>{trade.side}</b><small>{tradePrice(trade)}</small></span>
+                <span><Badge square tone={trade.side === "买入" ? "red" : "green"}>{trade.side}</Badge><small>{tradePrice(trade)}</small></span>
                 <span className="trade-reason">{trade.reason}</span>
                 <span>
                   {cycle?.endTradeId === null
-                    ? <i className="holding-label">持仓中</i>
+                    ? <Badge tone="neutral">持仓中</Badge>
                     : hasReview
-                      ? <i className="holding-label complete">已复盘</i>
+                      ? <Badge tone="green">已复盘</Badge>
                       : cycle?.endTradeId === trade.id
                         ? <button className="review-button" onClick={() => onReview(cycle.endTradeId!)}>去复盘</button>
-                        : <i className="holding-label pending">待复盘</i>}
+                        : <Badge tone="amber">待复盘</Badge>}
                 </span>
               </div>
             );
@@ -1938,7 +1935,7 @@ function Settings({ status, initialCapitalCents, alerts, section, onSection, onD
 
   return (
     <div className="page-content inner-page">
-      <section className="page-intro"><div><span className="eyebrow">所有边界都说清楚</span><h2>设置</h2><p>这里展示真实连接状态，不再用演示文案冒充功能。</p></div></section>
+      <SectionHeader as="h2" size="xl" eyebrow="所有边界都说清楚" title="设置" subtitle="这里展示真实连接状态，不再用演示文案冒充功能。" />
       <div className="settings-grid">
         {cards.map((card) => (
           <article className="panel setting-card" key={card.id}>
@@ -2121,10 +2118,4 @@ function ReviewModal({ cycle, onClose, onSaved }: {
   );
 }
 
-function PanelHeader({ title, subtitle }: { title: string; subtitle: string }) {
-  return <header className="panel-header"><div><h3>{title}</h3><p>{subtitle}</p></div></header>;
-}
 
-function CardTitle({ number, title, source }: { number: string; title: string; source: string }) {
-  return <header className="card-title"><span>{number}</span><div><h3>{title}</h3><p>{source}</p></div></header>;
-}
