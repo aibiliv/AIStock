@@ -22,13 +22,17 @@ COPY package.json package-lock.json ./
 # 注意：package-lock.json 锁定了 wrangler@4.115.0 等“预发布”版本，npmmirror 未镜像这些
 # 预发布包（会 404），故这里用官方 npm registry 保证可解析；缓存挂载让重复构建只下一次。
 # 若你的网络访问 npmjs 过慢/被限，可考虑把 wrangler 等降到 npmmirror 已同步的稳定版再切回 npmmirror。
+# 依赖安装：使用 npm ci（有 lock 时更快、更确定）。
+# 关键：不要用 npm cache clean 清空 /root/.npm 缓存挂载，否则跨构建的 tar 包
+# 缓存失效，每次都要重新从 registry 下载（尤其访问 npmjs.org 的国内环境极慢）。
 RUN --mount=type=cache,target=/root/.npm \
     npm config set registry https://registry.npmjs.org && \
-    npm install --no-audit --no-fund --prefer-offline \
-           --fetch-retries=3 --fetch-retry-mintimeout=5000 --fetch-retry-maxtimeout=30000 && \
-    npm cache clean --force
+    npm ci --no-audit --no-fund --prefer-offline \
+           --fetch-retries=3 --fetch-retry-mintimeout=5000 --fetch-retry-maxtimeout=30000
 
 # 复制源码并构建（vinext build 产出 dist/）
+# 说明：依赖安装层已通过 BuildKit 缓存挂载复用 npm tar 包；--no-cache 由
+# deploy.sh 移除后，仅当 package.json/package-lock.json 变化时才重跑本步骤。
 # 注意：构建依赖 .openai/hosting.json（已在仓库中），会被一并复制
 COPY . .
 RUN npm run build
