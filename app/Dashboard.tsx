@@ -167,6 +167,15 @@ type Analysis = {
     close: number;
     volume: number;
   } | null;
+  volume: {
+    latest: number;
+    ma5: number;
+    ma20: number;
+    ratio: number | null;
+    divergence: "顶背离" | "底背离" | "无明显背离" | null;
+    upDaysWithVolume: number;
+    downDaysWithVolume: number;
+  } | null;
   source: { name: string; url: string; fetchedAt: string };
   mode: "deepseek" | "automatic";
   explanation: Explanation;
@@ -1435,6 +1444,12 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
             <Metric label="平均日波动" value={quote.volatility} suffix="%" help="近期每天涨跌幅度的平均水平" />
           </div>
           <p className="card-note">价格位于20日均线{quote.price >= quote.ma20 ? "上方" : "下方"}。价格位置只能辅助制定计划，不能单独决定买卖。</p>
+          {analysis.volume && (
+            <p className="card-note">
+              量比 {analysis.volume.ratio === null ? "—" : analysis.volume.ratio.toFixed(2)}（{analysis.volume.ratio === null ? "量能数据缺失" : analysis.volume.ratio >= 1.5 ? "明显放量" : analysis.volume.ratio < 0.6 ? "明显缩量" : "量能常态"}）；
+              量价关系：{analysis.volume.divergence ?? "未知"}。
+            </p>
+          )}
         </section>
 
         <section className="panel analysis-card">
@@ -1599,6 +1614,7 @@ function SmartAssistant({ analysis, position, portfolioInsights }: {
             summary: analysis.explanation.summary,
             risks: analysis.explanation.risks,
             missingInformation: analysis.explanation.missingInformation,
+            volume: analysis.volume,
             source: analysis.source,
             position: positionContext,
             portfolio: {

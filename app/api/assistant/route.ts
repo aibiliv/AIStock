@@ -81,6 +81,11 @@ function summarizeContext(ctx: AssistantContext): string {
   }
   const pf = ctx.portfolio;
   lines.push(`账户：总资产=${pf.totalAssets ?? "数据缺失"}，现金=${pf.cash ?? "数据缺失"}，总仓位=${pf.totalPositionPercent ?? "数据缺失"}%，账户总收益=${pf.totalProfitPercent ?? "数据缺失"}%`);
+  if (ctx.volume) {
+    lines.push(`量能：当日成交量 ${ctx.volume.latest}，近5日均量 ${ctx.volume.ma5.toFixed(0)}、近20日均量 ${ctx.volume.ma20.toFixed(0)}，量比 ${ctx.volume.ratio === null ? "缺失" : ctx.volume.ratio.toFixed(2)}，量价背离 ${ctx.volume.divergence ?? "未知"}（近20日上涨放量 ${ctx.volume.upDaysWithVolume} 天、下跌放量 ${ctx.volume.downDaysWithVolume} 天）。`);
+  } else {
+    lines.push("量能：数据缺失。");
+  }
   return lines.join("\n");
 }
 
