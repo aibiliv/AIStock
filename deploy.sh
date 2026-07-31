@@ -60,7 +60,37 @@ fi
 #     吃满内存把弱服务器带崩。
 # 需要强制重建依赖/镜像时：REBUILD=1 ./deploy.sh
 IMAGE_NAME="fupanbu-trading-journal:latest"
-if [ "${REBUILD:-0}" = "1" ] || ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
+
+# 判断是否需要重新构建镜像：
+#   - 显式 REBUILD=1
+#   - 镜像不存在
+#   - 源码 commit 与上次构建记录不一致（避免“镜像已存在就跳过 build”，
+#     导致新增的路由/页面——如 /api/preferences——未打进镜像而返回空 500）
+#   - 工作区存在未提交改动
+LAST_BUILD_MARKER="$PROJECT_DIR/.last_build_commit"
+needs_build() {
+  if [ "${REBUILD:-0}" = "1" ]; then
+    return 0
+  fi
+  if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
+    return 0
+  fi
+  if [ ! -f "$LAST_BUILD_MARKER" ]; then
+    return 0
+  fi
+  local current_commit last_commit
+  current_commit="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
+  last_commit="$(cat "$LAST_BUILD_MARKER" 2>/dev/null || echo unknown)"
+  if [ "$current_commit" != "$last_commit" ]; then
+    return 0
+  fi
+  if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+    return 0
+  fi
+  return 1
+}
+
+if needs_build; then
   echo "==> 构建并重建容器 ..."
   $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
   # 注意：不要用 --no-cache，否则每次都从零 npm install（约 3 分钟）。
@@ -68,8 +98,11 @@ if [ "${REBUILD:-0}" = "1" ] || ! docker image inspect "$IMAGE_NAME" >/dev/null 
   # node_modules 层可复用；仅当 package.json 变化时才重装依赖（package-lock.json
   # 已被 .gitignore 忽略，不参与构建，由 npm install 在容器内按本平台重新解析）。
   $COMPOSE_CMD build
+  # 记录本次成功构建对应的源码 commit，供下次增量判断
+  git rev-parse HEAD > "$LAST_BUILD_MARKER" 2>/dev/null || true
 else
-  echo "==> 镜像已存在，跳过构建，直接启动（强制重建: REBUILD=1 ./deploy.sh）"
+  echo "==> 源码未变化（commit 与上次构建一致），跳过构建，直接启动"
+  echo "    （强制重建: REBUILD=1 ./deploy.sh）"
 fi
 $COMPOSE_CMD up -d
 

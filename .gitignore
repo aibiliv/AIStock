@@ -61,3 +61,6 @@ next-env.d.ts
 *.bak.*
 *.tmp
 package-lock.json
+
+# build state marker (deploy.sh 记录上次构建的源码 commit，勿提交)
+.last_build_commit
