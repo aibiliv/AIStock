@@ -1,11 +1,9 @@
 // 麦蕊智数（mairuiapi.com）实时行情增强层。
 //
-// 设计定位：作为「增强层」而非「替代层」。只在配置了 MAIRUI_TOKEN 时，
-// 用其原生 A 股实时行情覆盖由东财历史 K 线推算出的现价/涨跌；
-// 历史 K 线仍走免费公开源，把免费档 500 次/日的额度省下来只花在实时价上。
-//
-// 任何失败（无 token / 网络错误 / 字段缺失 / 额度耗尽）都静默降级回现有数据，
-// 不抛异常，保证 analyzeStockData 整体流程不受影响。
+// 设计定位：作为「可选增强层」。只在配置了 MAIRUI_TOKEN 时，
+// 用其原生 A 股实时行情覆盖由免费源推算出的现价/涨跌；
+// 若未配置 token / 网络错误 / 字段缺失 / 额度耗尽，全部静默降级回免费多源，
+// 不抛异常，保证整体流程不受影响。
 //
 // 注意：麦蕊返回字段命名未完全公开，下方对常见中英文键名做容错提取；
 // 确切字段（实时行情路径 /hsstock/real/time/{code}/{licence}）建议拿到 token 后
@@ -40,6 +38,11 @@ async function getMairuiToken(): Promise<string> {
     // 非 Worker 运行时（node 测试 / 本地）回退到 process.env
   }
   return typeof process !== "undefined" ? process.env?.MAIRUI_TOKEN ?? "" : "";
+}
+
+/** 是否已配置麦蕊 token（未配置时整个增强层不启用，自动走免费多源）。 */
+export async function isMairuiEnabled(): Promise<boolean> {
+  return (await getMairuiToken()).length > 0 && Date.now() >= disabledUntil;
 }
 
 function num(value: unknown): number | null {
@@ -90,8 +93,8 @@ function parseRealtime(row: Record<string, unknown>): MairuiRealtime {
 
   const name =
     typeof row.name === "string" && row.name ? row.name
-    : typeof row.mc === "string" ? row.mc
-    : null;
+      : typeof row.mc === "string" ? row.mc
+        : null;
   // 麦蕊实时接口不返回 pe/pb（财务 pe/pb 请走 getMairuiFundamentals / cwzb），
   // 这里恒为 null，避免与兜底值混淆。
   return { price, previousClose, changePercent, pe: null, pb: null, name };

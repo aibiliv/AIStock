@@ -1,6 +1,6 @@
 import A_STOCK_LIST from "../db/a_stock_list";
 import { USER_FUND_PROFILES } from "../db/funds_user";
-import { getMairuiRealtime, getMairuiFundamentals } from "./mairui";
+import { getRealtime, getKlines, getProfile } from "./market-data";
 
 export type FundProfile = {
   name: string;
@@ -248,107 +248,6 @@ async function fetchJson<T>(url: string): Promise<T> {
   }
 }
 
-function eastmoneySecid(code: string) {
-  // 东方财富 secid：上交所(60/68/9 开头)=1，深交所/北交所=0
-  if (/^(5|6|9)/.test(code)) return `1.${code}`;
-  return `0.${code}`;
-}
-
-async function getChart(code: string) {
-  // 主源：东方财富公开行情（大陆原生、字段全、免费），失败再回退 Yahoo/腾讯
-  const secid = eastmoneySecid(code);
-  const emUrl = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}&klt=101&fqt=1&beg=0&end=20500101&lmt=900&fields1=f1,f2,f3&fields2=f51,f52,f53,f54,f55,f56`;
-  try {
-    const data = await fetchJson<{ data?: { klines?: string[] } }>(emUrl);
-    const rows = (data.data?.klines ?? [])
-      .map((line) => line.split(","))
-      .filter((cells) => cells.length >= 6 && Number.isFinite(Number(cells[2])))
-      .map((cells) => ({
-        date: cells[0],
-        open: Number(cells[1]),
-        close: Number(cells[2]),
-        high: Number(cells[3]),
-        low: Number(cells[4]),
-        volume: Number(cells[5] ?? 0),
-      }));
-    if (rows.length < 20) throw new Error("东方财富行情不足");
-    const history = buildHistory(rows);
-    const closes = history.map((row) => row.close);
-    return {
-      history,
-      currentPrice: closes.at(-1) ?? 0,
-      previousClose: closes.at(-2) ?? closes.at(-1) ?? 0,
-      marketTime: `${rows.at(-1)?.date}T15:00:00+08:00`,
-      sourceName: "东方财富公开行情",
-      sourceUrl: `https://quote.eastmoney.com/${secid}.html`,
-    };
-  } catch {
-    return getChartLegacy(code);
-  }
-}
-
-async function getChartLegacy(code: string) {
-  const symbol = yahooSymbol(code);
-  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=3y&interval=1d`;
-
-  try {
-    const data = await fetchJson<YahooChart>(yahooUrl);
-    const result = data.chart?.result?.[0];
-    const quote = result?.indicators?.quote?.[0];
-    const rows = (result?.timestamp ?? []).flatMap((timestamp, index) => {
-      const close = quote?.close?.[index];
-      if (!Number.isFinite(close)) return [];
-      return [{
-        date: new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date(timestamp * 1000)),
-        open: Number(quote?.open?.[index] ?? close),
-        high: Number(quote?.high?.[index] ?? close),
-        low: Number(quote?.low?.[index] ?? close),
-        close: Number(close),
-        volume: Number(quote?.volume?.[index] ?? 0),
-      }];
-    });
-    if (!result || rows.length < 20) throw new Error("Yahoo行情不足");
-    const history = buildHistory(rows);
-    const closes = history.map((row) => row.close);
-    return {
-      history,
-      currentPrice: result.meta?.regularMarketPrice ?? closes.at(-1) ?? 0,
-      previousClose: closes.at(-2) ?? result.meta?.chartPreviousClose ?? closes.at(-1) ?? 0,
-      marketTime: result.meta?.regularMarketTime
-        ? new Date(result.meta.regularMarketTime * 1000).toISOString()
-        : null,
-      sourceName: "Yahoo Finance公开行情",
-      sourceUrl: `https://finance.yahoo.com/quote/${symbol}`,
-    };
-  } catch {
-    const tencentCode = tencentSymbol(code);
-    const url = `https://web.ifzq.gtimg.cn/appstock/app/fqkline/get?param=${tencentCode},day,,,800,qfq`;
-    const data = await fetchJson<{
-      data?: Record<string, { qfqday?: string[][]; day?: string[][] }>;
-    }>(url);
-    const rows = data.data?.[tencentCode]?.qfqday ?? data.data?.[tencentCode]?.day ?? [];
-    const validRows = rows.filter((row) => row.length >= 5 && Number.isFinite(Number(row[2])));
-    if (validRows.length < 20) throw new Error("公开行情暂时不可用，请稍后重试");
-    const history = buildHistory(validRows.map((row) => ({
-      date: row[0],
-      open: Number(row[1]),
-      close: Number(row[2]),
-      high: Number(row[3]),
-      low: Number(row[4]),
-      volume: Number(row[5] ?? 0),
-    })));
-    const closes = history.map((row) => row.close);
-    return {
-      history,
-      currentPrice: closes.at(-1) ?? 0,
-      previousClose: closes.at(-2) ?? closes.at(-1) ?? 0,
-      marketTime: `${validRows.at(-1)?.[0]}T15:00:00+08:00`,
-      sourceName: "腾讯证券公开行情",
-      sourceUrl: `https://gu.qq.com/${tencentCode}`,
-    };
-  }
-}
-
 async function getFundamentals(symbol: string) {
   const now = Math.floor(Date.now() / 1000);
   const start = now - 60 * 60 * 24 * 365 * 3;
@@ -387,118 +286,6 @@ function growth(series: Array<{ value: number }> | undefined) {
   const previous = series.at(-2)?.value ?? 0;
   const current = series.at(-1)?.value ?? 0;
   return previous ? ((current - previous) / Math.abs(previous)) * 100 : null;
-}
-
-type ProfileSummary = {
-  name: string | null;
-  marketCap: number | null;
-  pe: number | null;
-  pb: number | null;
-  roe: number | null;
-  grossMargin: number | null;
-  profitMargin: number | null;
-  operatingCashflow: number | null;
-  sector: string | null;
-  industry: string | null;
-  businessSummary: string | null;
-};
-
-async function getEastmoneyQuote(code: string): Promise<Partial<ProfileSummary>> {
-  const secid = eastmoneySecid(code);
-  const fields = "f43,f44,f45,f46,f57,f58,f60,f116,f162,f167";
-  const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=${fields}&invt=2&_=${Date.now()}`;
-  try {
-    const res = await fetch(url, {
-      headers: { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" },
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) return {};
-    const data = await res.json() as { data?: Record<string, string | null> };
-    const d = data.data;
-    if (!d) return {};
-    const num = (value?: string | null) => {
-      if (value == null) return null;
-      const n = Number(value);
-      return Number.isFinite(n) ? n : null;
-    };
-    const peRaw = num(d.f162);
-    const pbRaw = num(d.f167);
-    return {
-      name: typeof d.f58 === "string" && d.f58 ? d.f58 : null,
-      marketCap: num(d.f116),
-      // 东财 push2 的市盈率/市净率字段为「百分之一」单位（真实值 ×100），需还原。
-      pe: peRaw !== null ? peRaw / 100 : null,
-      pb: pbRaw !== null ? pbRaw / 100 : null,
-    };
-  } catch {
-    return {};
-  }
-}
-
-async function getQuoteSummary(code: string): Promise<ProfileSummary> {
-  const empty: ProfileSummary = {
-    name: null, marketCap: null, pe: null, pb: null, roe: null,
-    grossMargin: null, profitMargin: null, operatingCashflow: null,
-    sector: null, industry: null, businessSummary: null,
-  };
-  const symbol = yahooSymbol(code);
-  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=price,defaultKeyStatistics,financialData,assetProfile`;
-  let yahoo: ProfileSummary = empty;
-  try {
-    const res = await fetch(url, {
-      headers: { "user-agent": "Mozilla/5.0 StockReviewAssistant/1.0" },
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (res.ok) {
-      const data = await res.json() as {
-        quoteSummary?: { result?: Array<{
-          price?: { marketCap?: { raw?: number }; trailingPE?: { raw?: number }; priceToBook?: { raw?: number }; shortName?: string; longName?: string };
-          financialData?: { returnOnEquity?: { raw?: number }; grossMargins?: { raw?: number }; profitMargins?: { raw?: number }; operatingCashflow?: { raw?: number } };
-          assetProfile?: { industry?: string; sector?: string; longBusinessSummary?: string };
-        }> | null };
-      };
-      const result = data.quoteSummary?.result?.[0];
-      if (result) {
-        const num = (value?: { raw?: number }) => (typeof value?.raw === "number" ? value.raw : null);
-        yahoo = {
-          name: result.price?.longName || result.price?.shortName || null,
-          marketCap: num(result.price?.marketCap),
-          pe: num(result.price?.trailingPE),
-          pb: num(result.price?.priceToBook),
-          roe: num(result.financialData?.returnOnEquity),
-          grossMargin: num(result.financialData?.grossMargins),
-          profitMargin: num(result.financialData?.profitMargins),
-          operatingCashflow: num(result.financialData?.operatingCashflow),
-          sector: result.assetProfile?.sector ?? null,
-          industry: result.assetProfile?.industry ?? null,
-          businessSummary: result.assetProfile?.longBusinessSummary ?? null,
-        };
-      }
-    }
-  } catch {
-    yahoo = empty;
-  }
-  // 东方财富对 A 股的名称/总市值/PE/PB 更可靠，优先采用；其余字段用 Yahoo
-  const em = await getEastmoneyQuote(code);
-
-  // 麦蕊财务/资料增强层：用其原生 A 股数据覆盖 Yahoo 独供字段
-  // （roe / profitMargin / businessSummary / industry）。无 token / 网络错 /
-  // 超额(401) 时返回 null，下方全部回退到 Yahoo，流程零影响。
-  const mairuiFund = await getMairuiFundamentals(code);
-  return {
-    name: em.name ?? yahoo.name,
-    marketCap: em.marketCap ?? yahoo.marketCap,
-    pe: em.pe ?? yahoo.pe,
-    pb: em.pb ?? yahoo.pb,
-    roe: mairuiFund?.roe ?? yahoo.roe,
-    // 麦蕊 cwzb 指标表无「毛利率率」字段，保留 Yahoo 兜底
-    grossMargin: yahoo.grossMargin,
-    profitMargin: mairuiFund?.profitMargin ?? yahoo.profitMargin,
-    operatingCashflow: yahoo.operatingCashflow,
-    sector: yahoo.sector,
-    industry: mairuiFund?.industry ?? yahoo.industry,
-    businessSummary: mairuiFund?.businessSummary ?? yahoo.businessSummary,
-  };
 }
 
 // 关键词→概念题材 模糊匹配，覆盖全A股常见行业
@@ -557,27 +344,30 @@ export async function analyzeStockData(query: string) {
   const symbol = yahooSymbol(stock.code);
   const fund = FUND_PROFILES[stock.code] ?? null;
   const isFund = Boolean(fund) || isFundCode(stock.code);
-  const chart = await getChart(stock.code);
-  const { history, currentPrice, previousClose } = chart;
+  const klines = await getKlines(stock.code);
+  const history = buildHistory(klines.rows);
+  const closes = history.map((row) => row.close);
+  const currentPrice = closes.at(-1) ?? 0;
+  const previousClose = closes.at(-2) ?? currentPrice;
+  const marketTime = `${klines.rows.at(-1)?.date}T15:00:00+08:00`;
 
-  // 麦蕊实时行情增强层（有 token 时覆盖现价/涨跌，历史 K 线仍走免费公开源以省额度）。
-  // 任何缺失/失败都静默回退到由历史 K 线推算的值。
-  const mairui = await getMairuiRealtime(stock.code);
+  // 实时行情走 MarketDataProvider（麦蕊[可选]→东方财富→腾讯→新浪 多级降级）。
+  // 任何缺失/失败都静默回退到由历史 K 线推算的现价/昨收。
+  const realtime = await getRealtime(stock.code);
   let livePrice = currentPrice;
   let livePreviousClose = previousClose;
   let liveChangePercent = previousClose ? ((currentPrice - previousClose) / previousClose) * 100 : 0;
   let realtimeName: string | null = null;
-  if (mairui) {
-    if (mairui.price !== null) livePrice = mairui.price;
-    if (mairui.previousClose !== null) livePreviousClose = mairui.previousClose;
-    if (mairui.changePercent !== null) {
-      liveChangePercent = mairui.changePercent;
+  if (realtime) {
+    if (realtime.price !== null) livePrice = realtime.price;
+    if (realtime.previousClose !== null) livePreviousClose = realtime.previousClose;
+    if (realtime.changePercent !== null) {
+      liveChangePercent = realtime.changePercent;
     } else if (livePreviousClose) {
       liveChangePercent = ((livePrice - livePreviousClose) / livePreviousClose) * 100;
     }
-    realtimeName = mairui.name;
+    realtimeName = realtime.name;
   }
-  const closes = history.map((row) => row.close);
   const highs = history.map((row) => row.high);
   const lows = history.map((row) => row.low);
   const recent20 = closes.slice(-20);
@@ -590,7 +380,7 @@ export async function analyzeStockData(query: string) {
   const riskPerShare = Math.max(livePrice - support, livePrice * 0.03);
   const [fundamentals, profile] = await Promise.all([
     getFundamentals(symbol),
-    getQuoteSummary(stock.code),
+    getProfile(stock.code),
   ]);
   const revenueGrowth = growth(fundamentals.quarterlyTotalRevenue);
   const profitGrowth = growth(fundamentals.quarterlyNetIncome);
@@ -635,14 +425,14 @@ export async function analyzeStockData(query: string) {
       volatility: average(dailyMoves.slice(-20)),
       target1: livePrice + riskPerShare,
       target2: livePrice + riskPerShare * 2,
-      marketTime: chart.marketTime,
+      marketTime: marketTime,
     },
     financials: {
       revenueGrowth,
       profitGrowth,
       debtRatio,
       marketCap: profile.marketCap,
-      // 麦蕊实时接口不返回 pe/pb（已在 mairui.ts 标注），这里直接用 profile 兜底值
+      // PE/PB 来自 MarketDataProvider（东方财富优先，Yahoo 兜底）
       pe: profile.pe,
       pb: profile.pb,
       roe: profile.roe,
@@ -658,8 +448,8 @@ export async function analyzeStockData(query: string) {
       ? history.reduce((largest, row) => row.volume > largest.volume ? row : largest)
       : null,
     source: {
-      name: mairui ? `东方财富历史K线 · 麦蕊实时行情` : chart.sourceName,
-      url: chart.sourceUrl,
+      name: realtime ? `历史K线:${klines.sourceName} · 实时:${realtime.sourceName}` : `历史K线:${klines.sourceName} · 实时:行情源不可用`,
+      url: klines.sourceUrl,
       fetchedAt: new Date().toISOString(),
     },
   };

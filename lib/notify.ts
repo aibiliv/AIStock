@@ -12,7 +12,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as schema from "../db/schema";
 import { ensureSchema, getDb } from "../db";
-import { getMairuiRealtime } from "./mairui";
+import { getRealtime } from "./market-data";
 
 type NotifyEnv = {
   NOTIFY_WEBHOOK_URLS?: string;
@@ -77,7 +77,7 @@ export async function checkAndNotifyAlerts(
     let priceMillis = priceCache.get(rule.symbol);
     if (priceMillis === undefined) {
       try {
-        const realtime = await getMairuiRealtime(rule.symbol);
+        const realtime = await getRealtime(rule.symbol);
         priceMillis = realtime?.price != null ? Math.round(realtime.price * 1000) : null;
       } catch {
         priceMillis = null;
@@ -85,7 +85,7 @@ export async function checkAndNotifyAlerts(
       priceCache.set(rule.symbol, priceMillis);
     }
     if (priceMillis === null) {
-      errors.push(`无法获取 ${rule.symbol} 现价，跳过提醒（建议配置 MAIRUI_TOKEN）`);
+      errors.push(`无法获取 ${rule.symbol} 现价，跳过提醒（行情源暂不可用，建议稍后重试或检查网络）`);
       continue;
     }
     const targetMillis = rule.targetPriceMillis ?? rule.targetPriceCents * 10;
