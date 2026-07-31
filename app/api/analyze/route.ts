@@ -4,7 +4,8 @@ import { analyzeStockData, automaticExplanation } from "../../../lib/stocks";
 import { getAiConfig } from "../../../lib/ai-config";
 import { requireApiUser } from "../../../lib/auth";
 import { DEFAULT_PREFERENCES, fetchPreferences } from "../../../lib/preferences";
-import { generateStrategy, isValidContext, type AssistantContext } from "../../../lib/assistant";
+import { isValidContext, type AssistantContext } from "../../../lib/assistant";
+import { generateStrategy } from "../../../lib/trading-strategy";
 
 type DeepSeekResponse = {
   choices?: Array<{ message?: { content?: string } }>;
