@@ -1,5 +1,5 @@
 import { getAiConfig } from "../../../lib/ai-config";
-import { buildFallbackAnswer, type AssistantContext } from "../../../lib/assistant";
+import { buildFallbackAnswer, isValidContext, type AssistantContext } from "../../../lib/assistant";
 import { requireApiUser } from "../../../lib/auth";
 import { ensureSchema, getDb } from "../../../db";
 import { DEFAULT_PREFERENCES, fetchPreferences, type TradingPreferences } from "../../../lib/preferences";
@@ -12,73 +12,6 @@ type ChatMessage = {
 type ChatResponse = {
   choices?: Array<{ message?: { content?: string } }>;
 };
-
-function validContext(value: unknown): value is AssistantContext {
-  if (!value || typeof value !== "object") return false;
-  const context = value as Partial<AssistantContext>;
-  const finiteOrNull = (item: unknown) => item === null || Number.isFinite(item);
-  const strings = (item: unknown) =>
-    Array.isArray(item) && item.every((entry) => typeof entry === "string");
-  const position = context.position;
-  return Boolean(
-    typeof context.stock?.code === "string" &&
-    typeof context.stock.name === "string" &&
-    typeof context.stock.industry === "string" &&
-    (context.stock.instrumentType === "stock" || context.stock.instrumentType === "etf") &&
-    Number.isFinite(context.quote?.price) &&
-    Number.isFinite(context.quote?.changePercent) &&
-    Number.isFinite(context.quote?.ma20) &&
-    Number.isFinite(context.quote?.support) &&
-    Number.isFinite(context.quote?.resistance) &&
-    Number.isFinite(context.quote?.volatility) &&
-    (context.quote?.marketTime === null || typeof context.quote?.marketTime === "string") &&
-    finiteOrNull(context.financials?.revenueGrowth) &&
-    finiteOrNull(context.financials?.profitGrowth) &&
-    finiteOrNull(context.financials?.debtRatio) &&
-    finiteOrNull(context.financials?.pe) &&
-    finiteOrNull(context.financials?.pb) &&
-    finiteOrNull(context.financials?.roe) &&
-    typeof context.summary === "string" &&
-    strings(context.risks) &&
-    strings(context.missingInformation) &&
-    typeof context.source?.name === "string" &&
-    typeof context.source.fetchedAt === "string" &&
-    (
-      position === null ||
-      (
-        Number.isFinite(position?.quantity) &&
-        Number.isFinite(position?.averageCost) &&
-        Number.isFinite(position?.returnPercent) &&
-        finiteOrNull(position?.stockPositionPercent)
-      )
-    ) &&
-    finiteOrNull(context.portfolio?.totalAssets) &&
-    finiteOrNull(context.portfolio?.cash) &&
-    finiteOrNull(context.portfolio?.totalPositionPercent) &&
-    finiteOrNull(context.portfolio?.totalProfitPercent) &&
-    (context.oscillators === undefined || context.oscillators === null || (
-      (context.oscillators.macd === null || (
-        context.oscillators.macd !== null &&
-        Number.isFinite(context.oscillators.macd.dif) &&
-        Number.isFinite(context.oscillators.macd.dea) &&
-        Number.isFinite(context.oscillators.macd.hist)
-      )) &&
-      (context.oscillators.rsi === null || (
-        context.oscillators.rsi !== null &&
-        finiteOrNull(context.oscillators.rsi.rsi6) &&
-        finiteOrNull(context.oscillators.rsi.rsi12) &&
-        finiteOrNull(context.oscillators.rsi.rsi24)
-      )) &&
-      (context.oscillators.kdj === null || (
-        context.oscillators.kdj !== null &&
-        finiteOrNull(context.oscillators.kdj.k) &&
-        finiteOrNull(context.oscillators.kdj.d) &&
-        finiteOrNull(context.oscillators.kdj.j)
-      ))
-    )) &&
-    JSON.stringify(value).length <= 40_000
-  );
-}
 
 function summarizeContext(ctx: AssistantContext): string {
   const s = ctx.stock;
@@ -136,7 +69,7 @@ export async function POST(request: Request) {
     messages?: unknown;
   } | null;
   const question = payload?.question?.trim() ?? "";
-  if (!question || question.length > 300 || !validContext(payload?.context)) {
+  if (!question || question.length > 300 || !isValidContext(payload?.context)) {
     return Response.json({ error: "问题或分析上下文不正确" }, { status: 400 });
   }
 

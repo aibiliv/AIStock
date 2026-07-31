@@ -1432,6 +1432,51 @@ svg { display: block; }
   border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
 }
 
+.strategy-card {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-soft) 60%, var(--surface)), var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--line));
+}
+
+.strategy-card .markdown-body { margin-top: 6px; }
+
+.strategy-generate,
+.strategy-regenerate {
+  background: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 80%, #000);
+  border-radius: 999px;
+  color: #fff;
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  margin: 8px 0;
+  padding: 9px 16px;
+}
+
+.strategy-regenerate {
+  background: transparent;
+  color: var(--accent-ink);
+  margin-left: 8px;
+  padding: 5px 12px;
+}
+
+.strategy-generate:disabled,
+.strategy-regenerate:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.strategy-loading {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  margin: 8px 0;
+}
+
+.strategy-error {
+  color: var(--danger, #c0392b);
+  font-size: var(--fs-xs);
+  margin: 8px 0;
+}
+
 .assistant-context {
   background: var(--surface);
   border: 1px solid var(--line);

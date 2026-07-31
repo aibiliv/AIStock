@@ -4,6 +4,7 @@ import { analyzeStockData, automaticExplanation } from "../../../lib/stocks";
 import { getAiConfig } from "../../../lib/ai-config";
 import { requireApiUser } from "../../../lib/auth";
 import { DEFAULT_PREFERENCES, fetchPreferences } from "../../../lib/preferences";
+import { generateStrategy, isValidContext, type AssistantContext } from "../../../lib/assistant";
 
 type DeepSeekResponse = {
   choices?: Array<{ message?: { content?: string } }>;
@@ -181,7 +182,13 @@ export async function POST(request: Request) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
-    const payload = await request.json() as { query?: string; saveHistory?: boolean; explain?: boolean };
+    const payload = await request.json() as {
+      query?: string;
+      saveHistory?: boolean;
+      explain?: boolean;
+      strategy?: boolean;
+      context?: unknown;
+    };
     const query = payload.query?.trim() ?? "";
     if (!query || query.length > 30) {
       return Response.json({ error: "请输入有效的股票代码或名称" }, { status: 400 });
@@ -192,6 +199,27 @@ export async function POST(request: Request) {
       ? { mode: "automatic" as const, explanation: automaticExplanation(facts) }
       : await getDeepSeekExplanation(facts);
     const result = { ...facts, ...analysis };
+
+    if (payload.strategy) {
+      if (!isValidContext(payload.context)) {
+        Object.assign(result, { strategyWarning: "缺少有效的分析上下文，无法生成操盘策略。" });
+      } else {
+        try {
+          let prefs = DEFAULT_PREFERENCES;
+          try {
+            await ensureSchema();
+            prefs = await fetchPreferences(getDb());
+          } catch {
+            // 偏好缺失时退回默认纪律
+          }
+          const strategy = await generateStrategy(payload.context as AssistantContext, prefs);
+          Object.assign(result, { strategy: { content: strategy.content, mode: strategy.mode } });
+        } catch {
+          Object.assign(result, { strategyWarning: "操盘策略暂时无法生成（AI 未配置或服务异常），其余分析不受影响。" });
+        }
+      }
+    }
+
     if (payload.saveHistory) {
       try {
         await ensureSchema();

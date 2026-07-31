@@ -194,6 +194,8 @@ type Analysis = {
   source: { name: string; url: string; fetchedAt: string };
   mode: "deepseek" | "automatic";
   explanation: Explanation;
+  strategy?: { content: string; mode: "deepseek" | "automatic" } | null;
+  strategyWarning?: string;
 };
 
 type Position = ReturnType<typeof calculatePortfolio>["positions"][number];
@@ -1398,6 +1400,7 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
         <div><span>一句话看懂</span><h3>{explanation.summary}</h3><p>只基于页面所列公开数据整理，不构成投资建议。</p></div>
       </section>
 
+      <StrategyCard analysis={analysis} position={position} portfolioInsights={portfolioInsights} />
       <EvidencePanel analysis={analysis} position={position} />
       <SmartAssistant key={stock.code} analysis={analysis} position={position} portfolioInsights={portfolioInsights} />
 
@@ -1575,6 +1578,113 @@ function EvidencePanel({ analysis, position }: { analysis: Analysis; position: P
   );
 }
 
+function buildAnalysisContext(
+  analysis: Analysis,
+  position: Position | null,
+  portfolioInsights: PortfolioInsights,
+) {
+  const positionContext = position ? {
+    quantity: position.quantity,
+    averageCost: position.averageCostTenThousandths / 10_000,
+    returnPercent: ((analysis.quote.price * 10_000 / position.averageCostTenThousandths) - 1) * 100,
+    stockPositionPercent: portfolioInsights.positions.find((item) => item.symbol === position.symbol)?.allocationPercent ?? null,
+  } : null;
+  return {
+    stock: {
+      code: analysis.stock.code,
+      name: analysis.stock.name,
+      industry: analysis.stock.industry,
+      instrumentType: analysis.stock.instrumentType,
+    },
+    quote: {
+      price: analysis.quote.price,
+      changePercent: analysis.quote.changePercent,
+      ma20: analysis.quote.ma20,
+      support: analysis.quote.support,
+      resistance: analysis.quote.resistance,
+      volatility: analysis.quote.volatility,
+      marketTime: analysis.quote.marketTime,
+    },
+    financials: {
+      revenueGrowth: analysis.financials.revenueGrowth,
+      profitGrowth: analysis.financials.profitGrowth,
+      debtRatio: analysis.financials.debtRatio,
+      pe: analysis.financials.pe,
+      pb: analysis.financials.pb,
+      roe: analysis.financials.roe,
+    },
+    summary: analysis.explanation.summary,
+    risks: analysis.explanation.risks,
+    missingInformation: analysis.explanation.missingInformation,
+    volume: analysis.volume,
+    oscillators: analysis.oscillators ?? null,
+    source: { name: analysis.source.name, fetchedAt: analysis.source.fetchedAt },
+    position: positionContext,
+    portfolio: {
+      totalAssets: portfolioInsights.totalAssetsCents === null ? null : portfolioInsights.totalAssetsCents / 100,
+      cash: portfolioInsights.cashCents === null ? null : portfolioInsights.cashCents / 100,
+      totalPositionPercent: portfolioInsights.totalPositionPercent,
+      totalProfitPercent: portfolioInsights.totalProfitPercent,
+    },
+  };
+}
+
+function StrategyCard({ analysis, position, portfolioInsights }: {
+  analysis: Analysis;
+  position: Position | null;
+  portfolioInsights: PortfolioInsights;
+}) {
+  const [strategy, setStrategy] = useState<{ content: string; mode: string } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function generate() {
+    if (loading) return;
+    setLoading(true);
+    setError("");
+    setStrategy(null);
+    try {
+      const context = buildAnalysisContext(analysis, position, portfolioInsights);
+      const result = await jsonRequest<Analysis>("/api/analyze", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ query: analysis.stock.code, strategy: true, explain: false, saveHistory: false, context }),
+      });
+      setStrategy(result.strategy ?? null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "操盘策略生成失败，请稍后重试");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <section className="panel strategy-card">
+      <SectionHeader
+        eyebrow="操盘手视角 · 结合我的账户"
+        title="当前交易策略"
+        actions={strategy ? <Badge tone="accent">{strategy.mode === "deepseek" ? "AI" : "算"}</Badge> : undefined}
+      />
+      {!strategy && !error && (
+        <button type="button" className="strategy-generate" onClick={() => void generate()} disabled={loading}>
+          {loading ? "正在生成…" : "结合我的持仓生成策略"}
+        </button>
+      )}
+      {loading && <p className="strategy-loading">正在结合你的持仓、账户资金与交易纪律生成策略…</p>}
+      {error && <p className="strategy-error">{error}</p>}
+      {!loading && !error && strategy && (
+        <>
+          <MarkdownMessage content={strategy.content} />
+          <button type="button" className="strategy-regenerate" onClick={() => void generate()} disabled={loading}>
+            重新生成
+          </button>
+        </>
+      )}
+      <small className="assistant-disclaimer">策略仅基于当前页面数据、个人记录与交易纪律生成，不构成投资建议，最终由你确认执行。</small>
+    </section>
+  );
+}
+
 function SmartAssistant({ analysis, position, portfolioInsights }: {
   analysis: Analysis;
   position: Position | null;
@@ -1587,12 +1697,7 @@ function SmartAssistant({ analysis, position, portfolioInsights }: {
     content: `我已经读完${analysis.stock.name}的当前分析。你可以继续追问风险、财务，${position ? "也可以让我结合你的持仓成本解释。" : "记录持仓后还能获得个性化解释。"}`,
   }]);
 
-  const positionContext = position ? {
-    quantity: position.quantity,
-    averageCost: position.averageCostTenThousandths / 10_000,
-    returnPercent: ((analysis.quote.price * 10_000 / position.averageCostTenThousandths) - 1) * 100,
-    stockPositionPercent: portfolioInsights.positions.find((item) => item.symbol === position.symbol)?.allocationPercent ?? null,
-  } : null;
+  const buildAssistantContext = buildAnalysisContext;
 
   async function ask(text: string) {
     const clean = text.trim();
@@ -1608,44 +1713,7 @@ function SmartAssistant({ analysis, position, portfolioInsights }: {
         body: JSON.stringify({
           question: clean,
           messages: history,
-          context: {
-            stock: {
-              code: analysis.stock.code,
-              name: analysis.stock.name,
-              industry: analysis.stock.industry,
-              instrumentType: analysis.stock.instrumentType,
-            },
-            quote: {
-              price: analysis.quote.price,
-              changePercent: analysis.quote.changePercent,
-              ma20: analysis.quote.ma20,
-              support: analysis.quote.support,
-              resistance: analysis.quote.resistance,
-              volatility: analysis.quote.volatility,
-              marketTime: analysis.quote.marketTime,
-            },
-            financials: {
-              revenueGrowth: analysis.financials.revenueGrowth,
-              profitGrowth: analysis.financials.profitGrowth,
-              debtRatio: analysis.financials.debtRatio,
-              pe: analysis.financials.pe,
-              pb: analysis.financials.pb,
-              roe: analysis.financials.roe,
-            },
-            summary: analysis.explanation.summary,
-            risks: analysis.explanation.risks,
-            missingInformation: analysis.explanation.missingInformation,
-            volume: analysis.volume,
-            oscillators: analysis.oscillators,
-            source: analysis.source,
-            position: positionContext,
-            portfolio: {
-              totalAssets: portfolioInsights.totalAssetsCents === null ? null : portfolioInsights.totalAssetsCents / 100,
-              cash: portfolioInsights.cashCents === null ? null : portfolioInsights.cashCents / 100,
-              totalPositionPercent: portfolioInsights.totalPositionPercent,
-              totalProfitPercent: portfolioInsights.totalProfitPercent,
-            },
-          },
+          context: buildAssistantContext(analysis, position, portfolioInsights),
         }),
       });
       setMessages((current) => [...current, { role: "assistant", content: result.answer }]);
