@@ -3417,7 +3417,7 @@ svg { display: block; }
   body { padding-bottom: 66px; }
   .sidebar { display: none; }
   .main { margin-left: 0; }
-  .topbar { height: 64px; padding: 0 14px; }
+  .topbar { height: 64px; padding: 0 16px; }
   .topbar h1,
   .privacy-pill { display: none; }
   .mobile-brand { display: block; font-size: var(--fs-lg); font-weight: 750; }
@@ -3426,9 +3426,9 @@ svg { display: block; }
   .account-button b,
   .account-button > svg { display: none; }
   .top-actions > .primary-button { padding: 0 11px; }
-  .page-content { padding: 18px 14px 88px; }
+  .page-content { padding: 22px 18px 96px; }
   .search-hero,
-  .search-hero.compact { min-height: 0; padding: 28px 20px; }
+  .search-hero.compact { min-height: 0; padding: 32px 22px; }
   .search-hero h2 { font-size: var(--fs-3xl); line-height: 1.28; }
   .stock-search { align-items: stretch; display: grid; grid-template-columns: auto 1fr; }
   .stock-search input { min-height: 42px; }
@@ -3536,7 +3536,7 @@ svg { display: block; }
   .trade-row > span:last-child { display: none; }
   .form-grid { grid-template-columns: 1fr; }
   /* Watchlist 卡片：移动端紧凑布局 */
-  .watch-card { padding: 14px; gap: 12px; }
+  .watch-card { padding: 18px; gap: 16px; }
   .watch-card-price-main strong { font-size: 26px; }
   .watch-card-primary { font-size: 13px; min-height: 40px; }
   .watch-icon-button { height: 40px; width: 40px; }
@@ -3556,7 +3556,8 @@ svg { display: block; }
   .settings-card { border-radius: 18px; }
   .settings-card__hit {
     grid-template-columns: 44px 1fr auto;
-    padding: 14px 14px;
+    padding: 18px 16px;
+    gap: 16px;
   }
   .settings-card__icon {
     border-radius: 12px;
@@ -3612,11 +3613,58 @@ svg { display: block; }
   .login-points { gap: 9px; }
   .login-main { padding: 30px 22px; }
   .login-main-head { margin-bottom: 16px; }
+
+  /* —— 移动端呼吸感优化 —— */
+  /* 区块之间的纵向节奏更舒展，避免信息相互挤压 */
+  .page-content > * + * { margin-top: 26px; }
+  .page-content > .portfolio-overview,
+  .page-content > .market-indices-card,
+  .page-content > .sector-heatmap-card,
+  .page-content > .panel { margin-top: 26px; }
+  .page-content > .quick-title { margin-top: 30px; }
+  .page-content > .summary-strip.home-summary { margin-top: 26px; }
+
+  /* 列表项行高与内边距更松弛，触控更舒适 */
+  .reminder,
+  .review-item { padding: 14px 16px; min-height: 74px; }
+  .trade-row { padding: 14px 16px; }
+  .history-item { padding: 12px 2px; }
+
+  /* 章节标题节奏与正文行高 */
+  .section-header { margin-bottom: 18px; }
+  .section-header__subtitle { line-height: 1.6; }
+  .card-title p,
+  .panel-header p,
+  .search-hero > p { line-height: 1.7; }
+  .search-hero > p { margin-bottom: 24px; }
+
+  /* 设置卡片堆叠间距与说明文字行高 */
+  .settings-stack { gap: 16px; }
+  .settings-card__text { line-height: 1.6; }
+
+  /* 触控质感：去除系统默认高亮，改用克制的下沉反馈（taste: 物理感） */
+  * { -webkit-tap-highlight-color: transparent; }
+  .settings-card__hit,
+  .watch-card,
+  .nav-btn {
+    transition: transform 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .settings-card__hit:active,
+  .watch-card:active,
+  .nav-btn:active { transform: scale(0.984); }
+
+  /* 舒适触控尺寸（44px 命中区，a11y 友好） */
+  .nav-btn { min-height: 44px; }
+  .rem-approve,
+  .rem-skip { min-height: 40px; }
+
+  /* 标题层级字距微调，移动端更精致 */
+  h1, .panel-title { letter-spacing: -0.01em; }
 }
 
 @media (max-width: 480px) {
   .top-actions > .primary-button svg { display: none; }
-  .page-content { padding-left: 12px; padding-right: 12px; }
+  .page-content { padding-left: 16px; padding-right: 16px; }
   .search-hero,
   .search-hero.compact { padding: 24px 17px; }
   .sector-heatmap-card { padding: 14px; }
@@ -3645,7 +3693,7 @@ svg { display: block; }
   .summary-actions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
   .capital-form { align-items: stretch; flex-direction: column; }
   /* Watchlist 卡片：480px 以下更紧凑 */
-  .watch-card { padding: 12px; gap: 10px; }
+  .watch-card { padding: 16px; gap: 14px; }
   .watch-card h3 { font-size: 15px; }
   .watch-card-price-main strong { font-size: 22px; }
   .watch-card-change { font-size: 12px; padding: 2px 7px; }
@@ -4003,7 +4051,7 @@ svg { display: block; }
     gap: 7px;
   }
   .index-strip__item { padding: 10px 11px; }
-  .holding-card { padding: 14px; }
+  .holding-card { padding: 18px; }
 }
 
 @media (max-width: 480px) {
