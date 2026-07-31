@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { parseBrokerCsv } from "../lib/trade-import";
+import { Button, Hint } from "./components";
 
 type ImportResult = {
   inserted: number;
@@ -58,20 +59,20 @@ export function ImportPanel({ onImported }: { onImported: () => Promise<void> })
           <span className="eyebrow">对账导入</span>
           <h3>从券商交割单导入</h3>
         </div>
-        <p className="hint">粘贴券商导出的 CSV（需包含 代码 / 方向 / 价格 / 数量 / 日期 列），程序会自动识别并写入，省去手工录入。</p>
+        <Hint>粘贴券商导出的 CSV（需包含 代码 / 方向 / 价格 / 数量 / 日期 列），程序会自动识别并写入，省去手工录入。</Hint>
       </header>
       <textarea
-        className="import-csv"
+        className="import-csv control control--area"
         value={csv}
         placeholder={"日期,代码,名称,方向,价格,数量,手续费\n2026-01-02,600000,浦发银行,买入,10.50,1000,5.00"}
         onChange={(event) => setCsv(event.target.value)}
         rows={6}
       />
       <div className="import-actions">
-        <button type="button" onClick={preview} disabled={!csv.trim()}>预览解析</button>
-        <button type="button" className="primary-button" onClick={runImport} disabled={!csv.trim() || busy}>
+        <Button variant="ghost" onClick={preview} disabled={!csv.trim()}>预览解析</Button>
+        <Button variant="primary" onClick={runImport} disabled={!csv.trim() || busy}>
           {busy ? "正在导入…" : "确认导入"}
-        </button>
+        </Button>
         {previewRows > 0 && !result && <span className="import-count">识别到 {previewRows} 条成交</span>}
       </div>
       {error && <p className="form-message" role="alert">{error}</p>}

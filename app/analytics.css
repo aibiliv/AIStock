@@ -7,9 +7,6 @@
 }
 
 .analytics-panel {
-  background: var(--card, #fff);
-  border: 1px solid var(--line, #e7ebf0);
-  border-radius: var(--radius-card, 16px);
   padding: 16px 16px 18px;
 }
 
