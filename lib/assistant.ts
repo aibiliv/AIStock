@@ -1,4 +1,5 @@
 import type { Oscillators } from "./stocks";
+import { DEFAULT_PREFERENCES, type TradingPreferences } from "./preferences";
 
 export type AssistantContext = {
   stock: {
@@ -94,7 +95,11 @@ function oscillatorTip(context: AssistantContext): string {
   return parts.length ? `动能指标：${parts.join("、")}。` : "";
 }
 
-export function buildFallbackAnswer(question: string, context: AssistantContext) {
+export function buildFallbackAnswer(
+  question: string,
+  context: AssistantContext,
+  prefs: TradingPreferences = DEFAULT_PREFERENCES,
+) {
   const { stock, quote, financials, position } = context;
   const evidenceTime = quote.marketTime ?? context.source.fetchedAt;
   const osc = oscillatorTip(context);
@@ -107,10 +112,10 @@ export function buildFallbackAnswer(question: string, context: AssistantContext)
     const stockPosition = position?.stockPositionPercent ?? 0;
     const totalAssets = context.portfolio.totalAssets;
     const riskPerShare = Math.max(quote.price - quote.support, quote.price * 0.03);
-    const maxLoss = totalAssets * 0.02;
+    const maxLoss = totalAssets * (prefs.maxLossPercent / 100);
     let shares = riskPerShare > 0 ? Math.floor(maxLoss / riskPerShare) : 0;
     const maxByCash = context.portfolio.cash == null ? Infinity : Math.floor(context.portfolio.cash / quote.price);
-    const maxByConcentration = Math.floor((totalAssets * 0.3) / quote.price);
+    const maxByConcentration = Math.floor((totalAssets * (prefs.maxConcentrationPercent / 100)) / quote.price);
     shares = Math.max(0, Math.min(shares, maxByCash, maxByConcentration));
     const cheng = totalAssets > 0 ? (shares * quote.price) / totalAssets : 0;
     const constraint = totalPosition >= 80
@@ -118,7 +123,7 @@ export function buildFallbackAnswer(question: string, context: AssistantContext)
       : stockPosition >= 20
         ? "该股占比已高，先降集中度，别再堆单票"
         : "仓位层面仍有空间，但空间不等于买点，标的得自己过关";
-    return `结论：操盘手视角——${constraint}。\n依据：当前总仓位${totalPosition.toFixed(2)}%，${stock.name}仓位${stockPosition.toFixed(2)}%，现金${context.portfolio.cash === null ? "暂无" : `¥${context.portfolio.cash.toFixed(2)}`}；当前价¥${quote.price.toFixed(3)}，风险观察线¥${quote.support.toFixed(3)}，单笔风险每股¥${riskPerShare.toFixed(3)}。\n可挂单仓位：约${cheng.toFixed(2)}成（约${shares}股），按价格到支撑线的距离控单笔亏损（默认单笔可亏=总资产2%、单股不超30%），最终由你确认执行。\n风险与缺口：仓位只限风险，不证明会涨；${context.missingInformation.slice(0, 2).join("、") || "最新公告仍需核验"}${osc ? `\n动能：${osc}` : ""}。\n下一步：先定买入逻辑、失效条件和单笔最大亏损，再决定下不下手。`;
+    return `结论：操盘手视角——${constraint}。\n依据：当前总仓位${totalPosition.toFixed(2)}%，${stock.name}仓位${stockPosition.toFixed(2)}%，现金${context.portfolio.cash === null ? "暂无" : `¥${context.portfolio.cash.toFixed(2)}`}；当前价¥${quote.price.toFixed(3)}，风险观察线¥${quote.support.toFixed(3)}，单笔风险每股¥${riskPerShare.toFixed(3)}。\n可挂单仓位：约${cheng.toFixed(2)}成（约${shares}股），按价格到支撑线的距离控单笔亏损（单笔可亏=总资产${prefs.maxLossPercent}%、单股不超${prefs.maxConcentrationPercent}%），最终由你确认执行${prefs.enforceStopLoss ? "，且买入前必须先设止损" : ""}。\n风险与缺口：仓位只限风险，不证明会涨；${context.missingInformation.slice(0, 2).join("、") || "最新公告仍需核验"}${osc ? `\n动能：${osc}` : ""}。\n下一步：先定买入逻辑、失效条件和单笔最大亏损，再决定下不下手。`;
   }
 
   if (/卖出|减仓|清仓|止盈|获利了结|离场/.test(question)) {
@@ -140,9 +145,9 @@ export function buildFallbackAnswer(question: string, context: AssistantContext)
     } else if (p.returnPercent > 0 && nearResistance) {
       action = "建议分批止盈/减仓";
       reason = `已有盈利且逼近阻力¥${quote.resistance.toFixed(3)}，落袋为安不贪`;
-    } else if (concentration >= 30) {
+    } else if (concentration >= prefs.maxConcentrationPercent) {
       action = "建议减仓降集中";
-      reason = `该股占仓${concentration.toFixed(2)}%过高，超30%警戒需压回`;
+      reason = `该股占仓${concentration.toFixed(2)}%过高，超${prefs.maxConcentrationPercent}%警戒需压回`;
     } else {
       action = "建议持有并设好止损";
       reason = `仍在支撑上方、占仓${concentration.toFixed(2)}%未超标，持有观察，跌破¥${quote.support.toFixed(3)}再动`;
@@ -161,7 +166,7 @@ export function buildFallbackAnswer(question: string, context: AssistantContext)
     let action: string;
     if (belowSupport) action = "止损/减仓——跌破支撑，逻辑失效先控风险";
     else if (p.returnPercent > 0 && nearResistance) action = "分批止盈/减仓——到阻力附近，落袋为安";
-    else if (concentration >= 30) action = "减仓降集中——单票占仓超30%，压回风险";
+    else if (concentration >= prefs.maxConcentrationPercent) action = `减仓降集中——单票占仓超${prefs.maxConcentrationPercent}%，压回风险`;
     else action = `持有并盯止损——仍在支撑上方，止损设¥${quote.support.toFixed(3)}下方`;
     return `结论：当前持仓相对成本${percent(p.returnPercent)}，${action}。\n依据：持仓${p.quantity}股，成本¥${p.averageCost.toFixed(3)}，当前¥${quote.price.toFixed(3)}，占仓${concentration.toFixed(2)}%；支撑¥${quote.support.toFixed(3)}、阻力¥${quote.resistance.toFixed(3)}。\n风险与缺口：未实现盈亏，未计费用和滑点；${context.missingInformation.slice(0, 2).join("、") || "最新公告仍需核验"}${osc ? `\n动能：${osc}` : ""}。\n下一步：按动作执行，止损设在¥${quote.support.toFixed(3)}下方，最终由你确认。`;
   }

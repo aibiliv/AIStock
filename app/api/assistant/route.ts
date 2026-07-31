@@ -1,6 +1,8 @@
 import { getAiConfig } from "../../../lib/ai-config";
 import { buildFallbackAnswer, type AssistantContext } from "../../../lib/assistant";
 import { requireApiUser } from "../../../lib/auth";
+import { ensureSchema, getDb } from "../../../db";
+import { DEFAULT_PREFERENCES, fetchPreferences, type TradingPreferences } from "../../../lib/preferences";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -153,7 +155,14 @@ export async function POST(request: Request) {
       }).slice(-8)
     : [];
 
-  const fallback = buildFallbackAnswer(question, payload.context);
+  let prefs: TradingPreferences = DEFAULT_PREFERENCES;
+  try {
+    await ensureSchema();
+    prefs = await fetchPreferences(getDb());
+  } catch {
+    // 偏好缺失时退回默认纪律，不影响对话
+  }
+  const fallback = buildFallbackAnswer(question, payload.context as AssistantContext, prefs);
   const ai = getAiConfig();
   if (!ai.configured) {
     return Response.json({ answer: fallback, mode: "automatic" });
@@ -183,8 +192,16 @@ export async function POST(request: Request) {
               "5. 持仓建议是重点：根据当前价相对成本、支撑/阻力、该股占比与账户总仓位，明确给出加仓/持有/减仓/止损/止盈中哪一种，并说清触发条件。",
               "6. 回答固定四段：结论（直接亮明动作与倾向，干脆别铺垫）/ 依据（点出具体数字及其数据时间）/ 风险与缺口 / 下一步操作。",
               "7. 不超过500字，口语化、不啰嗦、少重复免责声明，把话说到点子上。",
-              "8. 仓位建议必须展示计算：风险每股=max(当前价-支撑线,当前价×3%)；单笔可亏默认=总资产×2%（保守默认，可按风险偏好自调）；建议股数=单笔可亏÷风险每股，且≤可用现金、单股≤总资产30%；成数=建议金额÷总资产。数字只来自 context，缺失如实说明。",
+              "8. 仓位建议必须展示计算：风险每股=max(当前价-支撑线,当前价×3%)；单笔可亏=总资产×max_loss_percent%；建议股数=单笔可亏÷风险每股，且≤可用现金、单股≤总资产×max_concentration_percent%；成数=建议金额÷总资产。数字只来自 context，缺失如实说明。",
+              "9. 下方的【我的交易纪律与风险偏好】是硬约束，必须优先生效，不得再用固定的 2%/30% 规则；当 enforce_stop_loss=是 时，任何买入动作都必须先给出止损位，跌破即执行。",
               "【反幻觉示例】用户问“茅台 PE 多少、能买吗”而 pe=数据缺失 → 正确回答：“数据缺失：本次没取到 PE，我不凭记忆补数。能不能买看你的仓位和计划，先把账户资金补全、设好止损再谈。”",
+              "【我的交易纪律与风险偏好，必须优先遵守，替代任何固定百分比】",
+              `risk_profile=${prefs.riskProfile}`,
+              `max_loss_percent=${prefs.maxLossPercent}`,
+              `max_concentration_percent=${prefs.maxConcentrationPercent}`,
+              `max_position_percent=${prefs.maxPositionPercent}`,
+              `enforce_stop_loss=${prefs.enforceStopLoss ? "是（任何买入必须先设止损）" : "否（由用户自行决定）"}`,
+              `discipline_note=${prefs.disciplineNote || "（未填写）"}`,
               `context=\n${summarizeContext(payload.context as AssistantContext)}`,
             ].join("\n"),
           },

@@ -3,6 +3,7 @@ import { analysisReports } from "../../../db/schema";
 import { analyzeStockData, automaticExplanation } from "../../../lib/stocks";
 import { getAiConfig } from "../../../lib/ai-config";
 import { requireApiUser } from "../../../lib/auth";
+import { DEFAULT_PREFERENCES, fetchPreferences } from "../../../lib/preferences";
 
 type DeepSeekResponse = {
   choices?: Array<{ message?: { content?: string } }>;
@@ -101,6 +102,14 @@ async function getDeepSeekExplanation(facts: Awaited<ReturnType<typeof analyzeSt
     return { mode: "automatic" as const, explanation: fallback };
   }
 
+  let prefs = DEFAULT_PREFERENCES;
+  try {
+    await ensureSchema();
+    prefs = await fetchPreferences(getDb());
+  } catch {
+    // 偏好缺失时退回默认纪律
+  }
+
   let response: Response;
   try {
     response = await fetch(`${ai.apiBase}/chat/completions`, {
@@ -127,9 +136,17 @@ async function getDeepSeekExplanation(facts: Awaited<ReturnType<typeof analyzeSt
               "【confidence 取值规范】已核验=来自ETF资料或公告级字段；较强=由行情/财务等结构化数据直接得出；中=板块分类推断；待核验=关键词模糊匹配的概念题材，必须注明“需以公告为准”。",
               "【themes 要求】至少输出“行业本身 + 1-2 个概念板块”（如人工智能、新能源、高股息），不要把行业名重复当作概念。",
               "【示例】行业=半导体 时，themes 应类似：[{name:\"半导体\",confidence:\"较强\",reason:\"主营所属行业为半导体\"},{name:\"国产替代\",confidence:\"待核验\",reason:\"与半导体相关的常见概念，需以公告为准\"}]。",
-              "summary 用一句有观点的大白话：属于什么行业、价格相对20日均线的位置与强弱、波动大小，并点明当前技术姿态（如“站上均线偏强”或“跌破均线偏弱”）；不下达买卖指令，但可提示与用户计划的关系。",
+              "summary 用一句有观点的大白话：属于什么行业、价格相对20日均线的位置与强弱、波动大小，并点明当前技术姿态（如“站上均线偏强”或“跌破均线偏弱”）；不下达买卖指令，但可结合下方【用户风险偏好与交易纪律】提示与用户风险承受度或交易计划的关系（如近20日波动是否明显超出其单笔可亏阈值、该股若建仓是否会触及单股集中度上限）。",
               "5. 量价关系：必须结合 volume.ratio（量比）与 volume.divergence（量价背离）判断强弱。放量突破才可信，缩量上涨或高位放巨量滞涨需提示风险；当 divergence 为“顶背离”时，summary 与 themes 不得给出偏多结论；volume 字段缺失时对应输出写“量能数据缺失”。",
               "6. 摆动指标：facts 中的 oscillators（MACD/RSI/KDJ）仅作技术姿态参考。RSI>70 视为超买、<30 视为超卖，仅提示风险而非方向结论；MACD 金叉/死叉、KDJ 金叉/死叉、顶/底背离只作为“动能强弱”的依据；指标在强趋势中可能钝化失效，必须提示这一局限。超买区不盲目看多、超卖区不盲目看空，禁止据此给出确定性买卖措辞；字段缺失则对应输出写“摆动指标数据缺失”。",
+              "【用户风险偏好与交易纪律（仅供参考，不改变上述不得荐股、不得下达买卖指令的硬约束）】",
+              `risk_profile=${prefs.riskProfile}`,
+              `max_loss_percent=${prefs.maxLossPercent}`,
+              `max_concentration_percent=${prefs.maxConcentrationPercent}`,
+              `max_position_percent=${prefs.maxPositionPercent}`,
+              `enforce_stop_loss=${prefs.enforceStopLoss ? "是" : "否"}`,
+              `discipline_note=${prefs.disciplineNote || "（未填写）"}`,
+              "解读时可结合上述风险偏好做个性化表述（例如当前波动是否明显大于其单笔可亏阈值、该股是否可能触及单股集中度上限），但只做提示、不给买卖建议，且不得编造任何数字。",
             ].join("\n"),
           },
           {

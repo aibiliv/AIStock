@@ -1,0 +1,55 @@
+import { NextRequest, NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
+import { getDb, ensureSchema } from "../../../db";
+import { requireApiUser } from "../../../lib/auth";
+import { tradingPreferences } from "../../../db/schema";
+import { normalizePreferences, type TradingPreferences } from "../../../lib/preferences";
+
+export async function GET() {
+  const unauthorized = requireApiUser();
+  if (unauthorized) return unauthorized;
+  try {
+    await ensureSchema();
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(tradingPreferences)
+      .where(eq(tradingPreferences.id, 1))
+      .limit(1);
+    return NextResponse.json(normalizePreferences(rows[0]));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "读取风险偏好失败";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  const unauthorized = requireApiUser();
+  if (unauthorized) return unauthorized;
+  try {
+    const body = (await request.json().catch(() => null)) as Partial<TradingPreferences> | null;
+    const next = normalizePreferences(body ?? {});
+    await ensureSchema();
+    const db = getDb();
+    const updatedAt = new Date().toISOString();
+    await db
+      .insert(tradingPreferences)
+      .values({ id: 1, ...next, updatedAt })
+      .onConflictDoUpdate({
+        target: tradingPreferences.id,
+        set: {
+          riskProfile: next.riskProfile,
+          maxLossPercent: next.maxLossPercent,
+          maxConcentrationPercent: next.maxConcentrationPercent,
+          maxPositionPercent: next.maxPositionPercent,
+          enforceStopLoss: next.enforceStopLoss,
+          disciplineNote: next.disciplineNote,
+          updatedAt,
+        },
+      });
+    return NextResponse.json(next);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "保存风险偏好失败";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}

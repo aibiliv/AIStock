@@ -101,11 +101,7 @@ export function calculatePortfolio(trades: Trade[]): PortfolioSummary {
     };
     const priceTenThousandths =
       trade.priceTenThousandths ?? (trade.priceMillis ?? trade.priceCents * 10) * 10;
-    current.legacyPrecision ||=
-      trade.priceTenThousandths === null &&
-      trade.priceTenThousandths === undefined &&
-      trade.priceMillis === null &&
-      trade.priceMillis === undefined;
+    current.legacyPrecision ||= trade.priceMillis === null && trade.priceTenThousandths === null;
 
     if (trade.side === "买入") {
       current.quantity += trade.quantity;
