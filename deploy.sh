@@ -57,14 +57,15 @@ echo "==> 构建并重建容器 ..."
 $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
 # 注意：不要用 --no-cache，否则每次都从零 npm install（约 3 分钟）。
 # Dockerfile 已分层（先装依赖再拷源码）+ BuildKit 缓存挂载，源码改动时
-# node_modules 层可复用；仅当 package-lock.json 变化时才重装依赖。
+# node_modules 层可复用；仅当 package.json 变化时才重装依赖（package-lock.json
+# 已被 .gitignore 忽略，不参与构建，由 npm install 在容器内按本平台重新解析）。
 $COMPOSE_CMD build
 $COMPOSE_CMD up -d
 
 # 等待容器健康
 echo "==> 等待服务就绪 ..."
 for i in $(seq 1 30); do
-  if curl -s -o /dev/null -w "%{http_code}" http://localhost:9003/ 2>/dev/null | grep -q "200\|302"; then
+  if curl -s -o /dev/null -w "%{http_code}" http://localhost:9003/ 2>/dev/null | grep -qE "2[0-9][0-9]|3[0-9][0-9]"; then
     echo "✅ 服务已就绪"
     break
   fi

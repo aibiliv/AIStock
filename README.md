@@ -78,8 +78,8 @@ git pull origin main
 `deploy.sh` 使用 `docker compose build`（**不带 `--no-cache`**）+ BuildKit 缓存挂载，复用依赖安装层，避免每次重新 `npm install`：
 
 - **只改源码的部署**：`node_modules` 层直接命中缓存，`npm install` 约 0 秒，仅重跑 `npm run build`。
-- **改了 `package.json` / `package-lock.json`**：依赖层失效并重装，但借助 `/root/.npm` 缓存挂载（`--prefer-offline`）只补下载变动的包，而非全量。
-- 依赖安装用 `npm ci`（比 `npm install` 更快、更确定，且强制 lock 与 package.json 同步）。
+- **改了 `package.json`**：依赖层失效并重装，但借助 `/root/.npm` 缓存挂载（`--prefer-offline`）只补下载变动的包，而非全量。
+- 依赖安装用 `npm install`（在容器内按 Ubuntu 平台重新解析，不依赖 lock 文件）。`package-lock.json` 已在 `.gitignore` 中忽略（Windows 开发 / Ubuntu 部署，平台相关二进制 `esbuild`/`workerd`/`@webassemblyjs` 解析不同，不跨平台同步），故构建不强制 lock 与 `package.json` 一致，避免跨平台 `npm ci` 报 Missing/Invalid。
 
 注意事项：
 
