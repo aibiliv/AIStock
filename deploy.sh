@@ -104,6 +104,25 @@ else
   echo "==> 源码未变化（commit 与上次构建一致），跳过构建，直接启动"
   echo "    （强制重建: REBUILD=1 ./deploy.sh）"
 fi
+
+# ---------- 部署前备份数据卷 ----------
+# 防止 miniflare 本地 D1 持久化目录（由 database_id+database_name 的哈希决定）
+# 在未来某次配置变更后“指向新空库”，导致旧数据看起来丢失。备份可随时恢复。
+BACKUP_DIR="$PROJECT_DIR/backups"
+mkdir -p "$BACKUP_DIR"
+if [ -d "$PROJECT_DIR/data" ] && [ -n "$(ls -A "$PROJECT_DIR/data" 2>/dev/null)" ]; then
+  TS="$(date +%Y%m%d-%H%M%S)"
+  if tar -czf "$BACKUP_DIR/data-$TS.tar.gz" -C "$PROJECT_DIR" data 2>/dev/null; then
+    echo "==> 已备份数据卷到 backups/data-$TS.tar.gz"
+    # 仅保留最近 10 个备份，避免磁盘占满
+    ls -1t "$BACKUP_DIR"/data-*.tar.gz 2>/dev/null | tail -n +11 | xargs -r rm -f
+  else
+    echo "⚠️ 数据备份失败，但仍继续部署"
+  fi
+else
+  echo "==> 未检测到 data/ 数据，跳过备份"
+fi
+
 $COMPOSE_CMD up -d
 
 # 等待容器健康

@@ -6,7 +6,7 @@ import { tradingPreferences } from "../../../db/schema";
 import { normalizePreferences, type TradingPreferences } from "../../../lib/preferences";
 
 export async function GET() {
-  const unauthorized = requireApiUser();
+  const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
     await ensureSchema();
@@ -24,7 +24,7 @@ export async function GET() {
 }
 
 export async function PUT(request: NextRequest) {
-  const unauthorized = requireApiUser();
+  const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
     const body = (await request.json().catch(() => null)) as Partial<TradingPreferences> | null;
