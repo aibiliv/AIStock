@@ -29,6 +29,7 @@ export const tradeRecords = sqliteTable("trade_records", {
   reason: text("reason").notNull(),
   maxLossCents: integer("max_loss_cents"),
   feeCents: integer("fee_cents").notNull().default(0),
+  otherReason: text("other_reason"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 

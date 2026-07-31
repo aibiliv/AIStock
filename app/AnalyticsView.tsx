@@ -230,6 +230,7 @@ export function AnalyticsView({
             )) || <p className="chart-empty">暂无亏损标签</p>}
           </div>
         </div>
+        <p className="edge-source">盈亏数据来自每笔复盘对应的真实成交（系统自动计入，非手填），仅统计已打标签的复盘。</p>
       </section>
     </div>
   );
