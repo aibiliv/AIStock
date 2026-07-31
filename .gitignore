@@ -21,6 +21,7 @@
 /.wrangler/
 /outputs/
 /work/
+/backups/
 .vercel
 
 # vite / typescript caches

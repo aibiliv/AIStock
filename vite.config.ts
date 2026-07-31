@@ -3,6 +3,9 @@ import { defineConfig, loadEnv } from "vite";
 import hostingConfig from "./.openai/hosting.json";
 import { sites } from "./build/sites-vite-plugin";
 
+// 警告：此 database_id 决定了 miniflare 本地 D1 持久化目录的哈希。
+// 一旦修改，本地数据库文件哈希会变化，运行时将指向新的空库，旧数据“看起来丢失”。
+// 切勿随意更改；如需迁移数据请先备份 data/ 并手动复制对应的 sqlite 文件。
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
 
