@@ -417,10 +417,11 @@ async function yahooProfile(code: string): Promise<StockProfile> {
  * 东方财富对 A 股的名称/总市值/PE/PB 更可靠优先；
  * roe/profitMargin/businessSummary/industry 优先用麦蕊（仅配置 token 时），否则 Yahoo 兜底。 */
 export async function getProfile(code: string): Promise<StockProfile> {
+  const mairuiEnabled = await isMairuiEnabled();
   const [em, yh, mairui] = await Promise.all([
     eastmoneyProfile(code),
     yahooProfile(code),
-    isMairuiEnabled() ? getMairuiFundamentals(code) : Promise.resolve(null),
+    mairuiEnabled ? getMairuiFundamentals(code) : Promise.resolve(null),
   ]);
   return {
     name: em.name ?? yh.name,
