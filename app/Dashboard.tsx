@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   FormEvent,
@@ -58,6 +58,7 @@ import {
 } from "../lib/domain";
 import type { SectorHeatmap as SectorHeatmapData } from "../lib/sectors";
 import { calculatePortfolioInsights, type PortfolioInsights } from "../lib/portfolio-insights";
+import { calculateTradeStatistics } from "../lib/trade-statistics";
 import { baseCloseSince, resolveStock, type Oscillators } from "../lib/stocks";
 import {
   DEFAULT_PREFERENCES,
@@ -222,11 +223,11 @@ type User = {
 
 const navItems: Array<{ id: View; label: string; icon: LucideIcon }> = [
   { id: "home", label: "首页", icon: HomeIcon },
-  { id: "analysis", label: "选股", icon: Search },
-  { id: "watchlist", label: "关注", icon: Star },
+  { id: "analysis", label: "智能选股", icon: Search },
+  { id: "watchlist", label: "我的关注", icon: Star },
   { id: "trades", label: "交易记录", icon: ArrowLeftRight },
-  { id: "analytics", label: "复盘", icon: TrendingUp },
-  { id: "settings", label: "设置", icon: SettingsIcon },
+  { id: "analytics", label: "复盘总结", icon: TrendingUp },
+  { id: "settings", label: "系统设置", icon: SettingsIcon },
 ];
 
 const buyReasons = ["看好公司业绩", "看好行业题材", "价格回调", "突破买入", "朋友或网络推荐", "担心错过", "冲动买入", "其他"];
@@ -324,6 +325,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const [tradeMode, setTradeMode] = useState<TradeMode | null>(null);
   const [reviewCycleEndTradeId, setReviewCycleEndTradeId] = useState<number | null>(null);
   const [settingsSection, setSettingsSection] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [analyzing, setAnalyzing] = useState(false);
   const [toast, setToast] = useState("");
@@ -331,7 +333,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const notified = useRef(new Set<number>());
   const pendingQuotes = useRef(new Set<string>());
 
-  function navigate(nextView: View) {
+  function navigate(nextView: View, symbolOverride?: string) {
     setView(nextView);
     if (nextView === "home") {
       router.replace(pathname);
@@ -339,7 +341,8 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     }
     const params = new URLSearchParams();
     params.set("view", nextView);
-    if (nextView === "analysis" && query.trim()) params.set("symbol", query.trim());
+    const symbol = symbolOverride?.trim() || query.trim();
+    if (nextView === "analysis" && symbol) params.set("symbol", symbol);
     router.replace(`${pathname}?${params.toString()}`);
   }
 
@@ -514,8 +517,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
 
   async function analyzeAndOpen(symbol: string) {
     setQuery(symbol);
-    await fetchAnalysis(symbol);
-    navigate("analysis");
+    navigate("analysis", symbol);
   }
 
   async function addWatch(stock = analysis?.stock) {
@@ -549,6 +551,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       quantity: Number(data.get("quantity")),
       tradeDate: String(data.get("tradeDate")),
       reason: String(data.get("reason")),
+      otherReason: String(data.get("otherReason") || ""),
       maxLoss: Number(data.get("maxLoss") || 0),
       fee: Number(data.get("fee") || 0),
     };
@@ -682,14 +685,17 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
 
       <main className="main">
         <header className="topbar">
-          <div><span className="mobile-brand">我的复盘助手</span><h1>{navItems.find((item) => item.id === view)?.label}</h1></div>
+          <div className="topbar-brand">
+            <span className="mobile-brand">我的复盘助手</span>
+            <h1>{navItems.find((item) => item.id === view)?.label}</h1>
+            <span className="privacy-pill"><ShieldCheck size={14} />私有个人空间</span>
+          </div>
           <div className="top-actions">
-            <span className="privacy-pill"><ShieldCheck size={15} />私有个人空间</span>
-            <a className="account-button" href={signOutUrl} title={`当前账号：${user.email}`}>
-              <span>{user.displayName.slice(0, 1).toUpperCase()}</span>
+            <button className="account-button" onClick={() => setConfirming("logout")} title={`当前账号：${user.email}`}>
+              <span className="avatar">{user.displayName.slice(0, 1).toUpperCase()}</span>
               <b>{user.displayName}</b>
               <LogOut size={15} aria-label="退出" />
-            </a>
+            </button>
             <Button variant="primary" iconLeft={<Plus size={16} />} onClick={() => setTradeMode("buy")}>记录买入</Button>
           </div>
         </header>
@@ -754,6 +760,8 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
               <Trades
                 trades={trades}
                 reviews={reviews}
+                capitalFlows={capitalFlows}
+                initialCapitalCents={initialCapitalCents}
                 onBuy={() => setTradeMode("buy")}
                 onSell={() => setTradeMode("sell")}
                 onReview={setReviewCycleEndTradeId}
@@ -810,6 +818,15 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         />
       )}
       {toast && <div className="toast" role="status" aria-live="polite"><CheckCircle2 size={19} />{toast}</div>}
+      {confirming === "logout" && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setConfirming(null); }}>
+          <section className="modal watch-confirm" role="alertdialog" aria-modal="true" aria-labelledby="logout-confirm-title">
+            <header><div><span className="eyebrow">确认操作</span><h2 id="logout-confirm-title">退出登录？</h2></div><IconButton label="关闭" onClick={() => setConfirming(null)}>×</IconButton></header>
+            <p>退出后需要重新登录才能使用。确定要退出吗？</p>
+            <div className="modal-actions"><Button variant="ghost" type="button" onClick={() => setConfirming(null)}>取消</Button><Button variant="danger" type="button" onClick={() => { window.location.href = signOutUrl; }}>确认退出</Button></div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
@@ -932,14 +949,15 @@ function StockAnalysisPanel({
   onSell: () => void;
   onWatch: () => void;
 }) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
   useEffect(() => {
     const symbol = initialSymbol || query;
-    if (symbol.trim() && !analysis && !analyzing) {
+    if (symbol.trim()) {
       setQuery(symbol);
-      void onAnalyze();
+      inputRef.current?.focus();
     }
-    // 仅在挂载时根据已带入的查询词自动分析一次，避免从关注页跳转过来却停在空状态；
-    // initialSymbol 来自 URL，可覆盖整页刷新/重挂导致的内存状态丢失
+    // 仅把股票代码带入输入框，不自动发起分析；用户查看关注后跳转到此，
+    // 手动点击「开始分析」即可，避免无谓等待与重复请求。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -963,13 +981,12 @@ function StockAnalysisPanel({
         </div>
       )}
       <section className={analysis ? "search-hero compact" : "search-hero"}>
-        <span className="ai-badge">AI 智能分析</span>
         {!analysis && <span className="eyebrow">公开数据 + AI解释 · 你来做决定</span>}
         <h2>{analysis ? "继续查" : "输入代码，先把它看懂。"}</h2>
         {!analysis && <p>输入股票代码或名称，AI自动整理行情、财务与题材，你负责最后的判断。</p>}
         <form className="stock-search" onSubmit={onAnalyze}>
           <span className="search-icon"><Search size={21} /></span>
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="例如 600519、贵州茅台" aria-label="股票代码或名称" />
+          <input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="例如 600519、贵州茅台" aria-label="股票代码或名称" />
           <Button variant="primary" type="submit" disabled={analyzing}>{analyzing ? "正在获取数据…" : "开始分析"}</Button>
         </form>
         <div className="search-meta"><span>无需股票数据账号</span><i /><span>结果标明数据时间</span><i /><span>不提供买卖建议</span></div>
@@ -1025,9 +1042,9 @@ function Home({
       <div className="home-cols">
             <div className="home-main">
               <PortfolioOverview insights={portfolioInsights} onConfigure={onCapitalSettings} />
-              <SectionHeader eyebrow="今天只处理重要的事" title="我的持仓" actions={<Button variant="link" size="sm" iconRight={<ChevronRight size={14} />} onClick={() => onNavigate("trades")}>查看交易记录</Button>} />
+              <SectionHeader title="我的持仓" actions={<Button variant="link" size="sm" iconRight={<ChevronRight size={14} />} onClick={() => onNavigate("trades")}>查看交易记录</Button>} />
               {portfolio.positions.length ? (
-                <div className="holding-grid">
+                <div className={`holding-grid${portfolio.positions.length <= 2 ? " holding-grid-few" : ""}`}>
                   {portfolio.positions.map((position) => {
                     const quote = quotes[position.symbol]?.quote.price;
                     const insight = portfolioInsights.positions.find((item) => item.symbol === position.symbol);
@@ -1377,7 +1394,7 @@ function SectorHeatmap() {
     setMessage("");
     try {
       const heatmap = await jsonRequest<SectorHeatmapData>(
-        `/api/sector-heatmap?date=${encodeURIComponent(selectedDate)}&limit=10`,
+        `/api/sector-heatmap?date=${encodeURIComponent(selectedDate)}&limit=9`,
       );
       setData(heatmap);
     } catch (loadError) {
@@ -1401,20 +1418,23 @@ function SectorHeatmap() {
   return (
     <section className="panel sector-heatmap-card" aria-labelledby="sector-heatmap-title">
       <SectionHeader
-        eyebrow={data?.basis === "etf-proxy" ? "行业主题ETF代理 · 前10名" : "板块异动 · 前10名"}
+        eyebrow={data?.basis === "etf-proxy" ? "行业主题ETF代理 · 前9名" : "板块异动 · 前9名"}
         title="板块异动热力图"
         subtitle="以代表性行业ETF观察板块强弱，按涨跌幅绝对值排序。"
         actions={
           <form className="sector-date-form" onSubmit={submit}>
             <label htmlFor="sector-date">查看日期</label>
-            <input
-              id="sector-date"
-              type="date"
-              min="2018-01-01"
-              max={localIsoDate()}
-              value={date}
-              onChange={(event) => setDate(event.target.value)}
-            />
+            <div className="sector-date-input-wrap">
+              <input
+                id="sector-date"
+                type="date"
+                min="2018-01-01"
+                max={localIsoDate()}
+                value={date}
+                onChange={(event) => setDate(event.target.value)}
+              />
+              <CalendarDays size={14} className="sector-date-icon" />
+            </div>
             <button type="submit" disabled={loading}>{loading ? "加载中…" : "查看异动"}</button>
           </form>
         }
@@ -1435,14 +1455,12 @@ function SectorHeatmap() {
               return (
                 <article className={`sector-tile ${direction} rank-${index + 1}`} key={sector.code}>
                   <div className="sector-tile-top">
-                    <span>#{index + 1}</span>
-                    <small>{sector.changePercent >= 0 ? "上涨异动" : "下跌异动"}</small>
+                    <span className="sector-rank">#{index + 1}</span>
+                    <small className="sector-arrow">{sector.changePercent >= 0 ? <ArrowUp size={12} /> : <ArrowDown size={12} />}</small>
                   </div>
-                  <div>
-                    <h4>{sector.name}</h4>
-                    <strong>{sector.changePercent >= 0 ? "+" : ""}{sector.changePercent.toFixed(2)}%</strong>
-                  </div>
-                  <p>成交额 {compactAmount(sector.amount)}</p>
+                  <h4 className="sector-name">{sector.name}</h4>
+                  <strong className="sector-change">{sector.changePercent >= 0 ? "+" : ""}{sector.changePercent.toFixed(2)}%</strong>
+                  <p className="sector-amount">成交额 {compactAmount(sector.amount)}</p>
                 </article>
               );
             })}
@@ -2593,9 +2611,11 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved }: {
   );
 }
 
-function Trades({ trades, reviews, onBuy, onSell, onReview }: {
+function Trades({ trades, reviews, capitalFlows, initialCapitalCents, onBuy, onSell, onReview }: {
   trades: Trade[];
   reviews: Review[];
+  capitalFlows: CapitalFlow[];
+  initialCapitalCents: number | null;
   onBuy: () => void;
   onSell: () => void;
   onReview: (cycleEndTradeId: number) => void;
@@ -2617,7 +2637,21 @@ function Trades({ trades, reviews, onBuy, onSell, onReview }: {
   const losingCycles = completedCycles.length - winningCycles;
   const winRate = completedCycles.length ? Math.round(winningCycles / completedCycles.length * 100) : null;
 
-  // 已完成的交易周期显示在上方，便于先看结果再补复盘
+  // 绩效统计：复用 lib/trade-statistics，在交易记录页直接给出复盘分析
+  const stats = useMemo(() => calculateTradeStatistics(
+    trades,
+    capitalFlows,
+    reviews.map((review) => ({
+      cycleEndTradeId: review.cycleEndTradeId,
+      symbol: review.symbol,
+      resultCents: review.resultCents,
+      tags: review.tags,
+      followedPlan: review.followedPlan,
+    })),
+    initialCapitalCents,
+  ), [trades, capitalFlows, reviews, initialCapitalCents]);
+
+  // 已完成的交易周期显示在上方，便于先看结果再补复盘；其余按交易日期倒序
   const sortedTrades = [...trades].sort((a, b) => {
     const cycleA = cycleByTradeId.get(a.id);
     const cycleB = cycleByTradeId.get(b.id);
@@ -2652,16 +2686,80 @@ function Trades({ trades, reviews, onBuy, onSell, onReview }: {
           </strong>
         </div>
       </div>
+      {stats.totalTrades > 0 && (
+        <section className="panel trade-analytics">
+          <div className="panel-head">
+            <h3>数据分析</h3>
+            <small>基于 {stats.totalTrades} 轮的已完成交易周期</small>
+          </div>
+          <div className="analytics-grid">
+            <Stat
+              label="胜率"
+              value={`${stats.winRate}%`}
+              hint={`${stats.winningTrades} 胜 / ${stats.losingTrades} 负`}
+            />
+            <Stat
+              label="盈亏比"
+              value={Number.isFinite(stats.profitFactor) ? stats.profitFactor.toFixed(2) : "—"}
+              hint="盈利 / 亏损"
+            />
+            <Stat
+              label="单周期期望"
+              value={money(stats.expectancyCents)}
+              hint="平均每轮"
+              className={stats.expectancyCents >= 0 ? "up" : "down"}
+            />
+            <Stat
+              label="最大回撤"
+              value={money(stats.maxDrawdownCents)}
+              hint="资金曲线峰值回落"
+            />
+            <Stat
+              label="平均持仓"
+              value={`${stats.avgHoldingDays} 天`}
+              hint="建仓到平仓"
+            />
+            <Stat
+              label="最长连胜 / 连亏"
+              value={`${stats.longestWinStreak} / ${stats.longestLossStreak}`}
+              hint={`当前 ${stats.currentLossStreak > 0 ? `连亏 ${stats.currentLossStreak}` : `连胜 ${stats.currentWinStreak}`}`}
+            />
+          </div>
+          {stats.byMonth.length > 0 && (() => {
+            const maxAbs = Math.max(
+              1,
+              ...stats.byMonth.map((item) => Math.abs(item.realizedCents)),
+            );
+            return (
+              <div className="month-bars">
+                <span className="month-bars-label">按月盈亏</span>
+                <div className="month-bars-track">
+                  {stats.byMonth.map((item) => (
+                    <div className="month-bar" key={item.month} title={`${item.month}：${money(item.realizedCents)}`}>
+                      <div
+                        className={`month-bar-fill ${item.realizedCents >= 0 ? "up" : "down"}`}
+                        style={{ height: `${Math.round(Math.abs(item.realizedCents) / maxAbs * 100)}%` }}
+                      />
+                      <small>{item.month.slice(2)}</small>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+        </section>
+      )}
       {trades.length ? (
         <section className="panel trade-list">
-          <div className="trade-head"><span>日期</span><span>股票</span><span>操作</span><span>原因</span><span>状态</span></div>
-          {sortedTrades.map((trade) => {
+          <div className="trade-head"><span>#</span><span>日期</span><span>股票</span><span>操作</span><span>原因</span><span>状态</span></div>
+          {sortedTrades.map((trade, idx) => {
             const cycle = cycleByTradeId.get(trade.id);
             const hasReview = cycle?.endTradeId ? reviewed.has(cycle.endTradeId) : false;
             const isCycleClosingSell = trade.side === "卖出" && cycle?.endTradeId === trade.id;
             const cyclePnl = isCycleClosingSell ? cycle.realizedCents : null;
             return (
               <div className="trade-row" key={trade.id}>
+                <span className="trade-index">{idx + 1}</span>
                 <span><b>{trade.tradeDate}</b><small>{trade.quantity}股</small></span>
                 <span><b>{trade.name}</b><small>{trade.symbol}</small></span>
                 <span>
@@ -3078,6 +3176,7 @@ function TradeModal({ mode, stock, positions, onClose, onSubmit }: {
   const firstInput = useRef<HTMLInputElement>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
+  const [selectedReason, setSelectedReason] = useState("");
   const defaultPosition = mode === "sell" ? positions[0] : null;
   const symbol = stock?.code ?? stock?.symbol ?? defaultPosition?.symbol ?? "";
   const name = stock?.name ?? defaultPosition?.name ?? "";
@@ -3119,7 +3218,30 @@ function TradeModal({ mode, stock, positions, onClose, onSubmit }: {
               </Field>
             )}
           </div>
-          <fieldset><legend>为什么{mode === "buy" ? "买" : "卖"}？</legend><div className="reason-options">{(mode === "buy" ? buyReasons : sellReasons).map((reason) => <label key={reason}><input className="visually-hidden" type="radio" name="reason" value={reason} required /><span>{reason}</span></label>)}</div></fieldset>
+          <fieldset>
+            <legend>为什么{mode === "buy" ? "买" : "卖"}？</legend>
+            <div className="reason-options">
+              {(mode === "buy" ? buyReasons : sellReasons).map((reason) => (
+                <label key={reason}>
+                  <input
+                    className="visually-hidden"
+                    type="radio"
+                    name="reason"
+                    value={reason}
+                    required
+                    checked={selectedReason === reason}
+                    onChange={(event) => setSelectedReason(event.currentTarget.value)}
+                  />
+                  <span>{reason}</span>
+                </label>
+              ))}
+            </div>
+            {selectedReason === "其他" && (
+              <Field label="补充说明（可选）" className="other-reason-field">
+                <Input name="otherReason" placeholder="请简要说明具体原因…" maxLength={200} />
+              </Field>
+            )}
+          </fieldset>
           {mode === "buy" && <div className="calculation-tip"><b>1R是什么？</b>它是你愿意承担的这笔亏损。系统会据此计算风险观察线和1R、2R参考目标；它们不是收益预测，仍由你确认和执行。</div>}
           <div className="modal-actions"><Button variant="ghost" onClick={onClose}>取消</Button><Button variant="primary" type="submit" disabled={saving}>{saving ? "正在保存…" : "确认保存"}</Button></div>
         </form>
@@ -3206,7 +3328,7 @@ function ReviewModal({ cycle, onClose, onSaved }: {
             <div><span>持有天数</span><strong>{summary.holdingDays} 天</strong></div>
             <div><span>买入均价</span><strong>¥{summary.buyAvgPrice.toFixed(2)}</strong></div>
             <div><span>卖出均价</span><strong>¥{summary.sellAvgPrice.toFixed(2)}</strong></div>
-            <div><span>已实现盈亏</span><strong className={summary.realizedCents >= 0 ? "up" : "down"}>{money(summary.realizedCents)}</strong></div>
+            <div><span>已实现盈亏<small className="auto-note">（自动计入，无需填写）</small></span><strong className={summary.realizedCents >= 0 ? "up" : "down"}>{money(summary.realizedCents)}</strong></div>
             <div><span>收益率</span><strong className={(summary.returnPct ?? 0) >= 0 ? "up" : "down"}>{summary.returnPct === null ? "—" : `${summary.returnPct >= 0 ? "+" : ""}${summary.returnPct.toFixed(1)}%`}</strong></div>
           </div>
           {summary.hasPlan && (

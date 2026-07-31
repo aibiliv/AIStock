@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     const priceCents = Math.round(priceTenThousandths / 100);
     const quantity = Number(payload.quantity);
     const tradeDate = payload.tradeDate;
-    const reason = String(payload.reason ?? "").trim();
+    const otherReason = String(payload.otherReason ?? "").trim();
     const maxLossCents = rawMaxLoss === null ? null : toCents(rawMaxLoss);
     const feeCents = toCents(rawFee);
 
@@ -129,6 +129,7 @@ export async function POST(request: Request) {
       reason,
       maxLossCents,
       feeCents,
+      otherReason: otherReason || null,
     };
     let trade;
     if (side === "买入" && riskPerShareTenThousandths !== null) {

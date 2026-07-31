@@ -154,6 +154,7 @@ export async function ensureSchema() {
     await addColumnIfMissing("watch_details", "condition_metric", "condition_metric TEXT");
     await addColumnIfMissing("watch_details", "condition_direction", "condition_direction TEXT");
     await addColumnIfMissing("watch_details", "condition_value", "condition_value REAL");
+    await addColumnIfMissing("trade_records", "other_reason", "other_reason TEXT");
     await addColumnIfMissing("analysis_reports", "price_millis", "price_millis INTEGER");
     await addColumnIfMissing("reviews", "tags", "tags TEXT NOT NULL DEFAULT '[]'");
     await addColumnIfMissing("reviews", "deviation_reason", "deviation_reason TEXT NOT NULL DEFAULT ''");
