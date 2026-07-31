@@ -53,13 +53,24 @@ if grep -q "dev-only-secret-key-please-change-me-in-production" .env 2>/dev/null
 fi
 
 # ---------- 部署 ----------
-echo "==> 构建并重建容器 ..."
-$COMPOSE_CMD down --remove-orphans 2>/dev/null || true
-# 注意：不要用 --no-cache，否则每次都从零 npm install（约 3 分钟）。
-# Dockerfile 已分层（先装依赖再拷源码）+ BuildKit 缓存挂载，源码改动时
-# node_modules 层可复用；仅当 package.json 变化时才重装依赖（package-lock.json
-# 已被 .gitignore 忽略，不参与构建，由 npm install 在容器内按本平台重新解析）。
-$COMPOSE_CMD build
+# 镜像已存在则跳过耗时的 docker compose build：
+#   - npm install 层已缓存（BuildKit + /root/.npm 挂载），仅源码改动时
+#     构建阶段只重跑 npm run build（数十秒~一两分钟），不会再现 800s。
+#   - 这样后续 ./deploy.sh 只做 docker compose up -d（秒级），且不会因重装
+#     吃满内存把弱服务器带崩。
+# 需要强制重建依赖/镜像时：REBUILD=1 ./deploy.sh
+IMAGE_NAME="fupanbu-trading-journal:latest"
+if [ "${REBUILD:-0}" = "1" ] || ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
+  echo "==> 构建并重建容器 ..."
+  $COMPOSE_CMD down --remove-orphans 2>/dev/null || true
+  # 注意：不要用 --no-cache，否则每次都从零 npm install（约 3 分钟）。
+  # Dockerfile 已分层（先装依赖再拷源码）+ BuildKit 缓存挂载，源码改动时
+  # node_modules 层可复用；仅当 package.json 变化时才重装依赖（package-lock.json
+  # 已被 .gitignore 忽略，不参与构建，由 npm install 在容器内按本平台重新解析）。
+  $COMPOSE_CMD build
+else
+  echo "==> 镜像已存在，跳过构建，直接启动（强制重建: REBUILD=1 ./deploy.sh）"
+fi
 $COMPOSE_CMD up -d
 
 # 等待容器健康
