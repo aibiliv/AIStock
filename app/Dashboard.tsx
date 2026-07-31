@@ -910,6 +910,7 @@ function StockAnalysisPanel({
   portfolioInsights,
   watched,
   recentAnalyses,
+  initialSymbol,
   onPickRecent,
   onAnalyze,
   onBuy,
