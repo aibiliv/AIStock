@@ -56,6 +56,13 @@ import {
 import type { SectorHeatmap as SectorHeatmapData } from "../lib/sectors";
 import { calculatePortfolioInsights, type PortfolioInsights } from "../lib/portfolio-insights";
 import { baseCloseSince, resolveStock, type Oscillators } from "../lib/stocks";
+import {
+  DEFAULT_PREFERENCES,
+  RISK_PRESETS,
+  RISK_PROFILE_LABELS,
+  type RiskProfile,
+  type TradingPreferences,
+} from "../lib/preferences";
 
 type View = "home" | "watchlist" | "trades" | "settings" | "analytics";
 type TradeMode = "buy" | "sell";
@@ -294,6 +301,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const [status, setStatus] = useState<Status | null>(null);
   const [initialCapitalCents, setInitialCapitalCents] = useState<number | null>(null);
   const [capitalFlows, setCapitalFlows] = useState<CapitalFlow[]>([]);
+  const [preferences, setPreferences] = useState<TradingPreferences | null>(null);
   const [tradeMode, setTradeMode] = useState<TradeMode | null>(null);
   const [reviewCycleEndTradeId, setReviewCycleEndTradeId] = useState<number | null>(null);
   const [settingsSection, setSettingsSection] = useState<string | null>(null);
@@ -340,13 +348,14 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
 
   const loadData = useCallback(async () => {
     try {
-      const [tradeData, watchData, alertData, reviewData, statusData, accountData] = await Promise.all([
+      const [tradeData, watchData, alertData, reviewData, statusData, accountData, preferencesData] = await Promise.all([
         jsonRequest<{ trades: Trade[] }>("/api/trades"),
         jsonRequest<{ items: WatchItem[] }>("/api/watchlist"),
         jsonRequest<{ alerts: AlertRule[] }>("/api/alerts"),
         jsonRequest<{ reviews: Review[] }>("/api/reviews"),
         jsonRequest<Status>("/api/status"),
         jsonRequest<{ initialCapitalCents: number | null; capitalFlows: CapitalFlow[] }>("/api/account"),
+        jsonRequest<TradingPreferences>("/api/preferences"),
       ]);
       setTrades(tradeData.trades);
       setWatchlist(watchData.items);
@@ -355,6 +364,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       setStatus(statusData);
       setInitialCapitalCents(accountData.initialCapitalCents);
       setCapitalFlows(accountData.capitalFlows);
+      setPreferences(preferencesData);
       setError("");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "个人数据暂时无法读取");
@@ -590,6 +600,16 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     await reloadAccount();
   }
 
+  async function savePreferences(next: TradingPreferences) {
+    const result = await jsonRequest<TradingPreferences>("/api/preferences", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(next),
+    });
+    setPreferences(result);
+    flash("风险偏好与交易纪律已保存");
+  }
+
   const analyzedPosition = portfolio.positions.find((position) => position.symbol === analysis?.stock.code);
   const currentTradeStock = tradeMode === "sell"
     ? analyzedPosition ?? portfolio.positions[0] ?? null
@@ -711,6 +731,8 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 onSaveCapital={saveInitialCapital}
                 onAddFlow={handleAddFlow}
                 onDeleteFlow={handleDeleteFlow}
+                preferences={preferences}
+                onSavePreferences={savePreferences}
               />
             )}
           </>
@@ -2492,11 +2514,12 @@ function Trades({ trades, reviews, onBuy, onSell, onReview }: {
   );
 }
 
-function Settings({ status, initialCapitalCents, capitalFlows, alerts, section, onSection, onDisable, onAcknowledge, onNotifications, onSaveCapital, onAddFlow, onDeleteFlow }: {
+function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferences, section, onSection, onDisable, onAcknowledge, onNotifications, onSaveCapital, onAddFlow, onDeleteFlow, onSavePreferences }: {
   status: Status | null;
   initialCapitalCents: number | null;
   capitalFlows: CapitalFlow[];
   alerts: AlertRule[];
+  preferences: TradingPreferences | null;
   section: string | null;
   onSection: (section: string | null) => void;
   onDisable: (id: number) => void;
@@ -2505,6 +2528,7 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, section, 
   onSaveCapital: (initialCapital: number) => Promise<void>;
   onAddFlow: (amountCents: number, flowDate: string, note: string) => Promise<void>;
   onDeleteFlow: (flowId: number) => Promise<void>;
+  onSavePreferences: (next: TradingPreferences) => Promise<void>;
 }) {
   const notificationState = typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported";
   const enabledAlertCount = alerts.filter((item) => item.enabled).length;
@@ -2546,6 +2570,15 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, section, 
       text: `${status?.reminderMode ?? "页面打开期间检查"}。重要止损仍需在券商App重复设置。`,
       state: `${enabledAlertCount}条启用`,
       tone: enabledAlertCount === 0 ? "amber" : "green",
+    },
+    {
+      id: "risk",
+      Icon: ShieldCheck,
+      title: "风险与纪律",
+      caption: "个性化交易约束",
+      text: "风险偏好档位与交易纪律会作为硬约束发给大模型，用于买卖决策和仓位建议。",
+      state: preferences ? `${preferences.riskProfile}型` : "平衡默认",
+      tone: "blue",
     },
     {
       id: "privacy",
@@ -2698,6 +2731,9 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, section, 
                     <p>备份包含交易、关注、提醒与复盘，不包含任何API密钥。</p>
                     <a className="primary-button download-link" href="/api/export">下载JSON备份</a>
                   </div>
+                )}
+                {card.id === "risk" && (
+                  <PreferencesSettings preferences={preferences} onSave={onSavePreferences} />
                 )}
               </div>
             </article>
@@ -3037,6 +3073,99 @@ function ReviewModal({ cycle, onClose, onSaved }: {
           <div className="modal-actions"><button type="button" onClick={onClose}>取消</button><button className="primary-button" type="submit" disabled={saving}>{saving ? "正在保存…" : "保存复盘"}</button></div>
         </form>
       </section>
+    </div>
+  );
+}
+
+function PreferencesSettings({ preferences, onSave }: { preferences: TradingPreferences | null; onSave: (next: TradingPreferences) => Promise<void> }) {
+  const initial = preferences ?? DEFAULT_PREFERENCES;
+  const [riskProfile, setRiskProfile] = useState<RiskProfile>(initial.riskProfile);
+  const [maxLossPercent, setMaxLossPercent] = useState(String(initial.maxLossPercent));
+  const [maxConcentrationPercent, setMaxConcentrationPercent] = useState(String(initial.maxConcentrationPercent));
+  const [maxPositionPercent, setMaxPositionPercent] = useState(String(initial.maxPositionPercent));
+  const [enforceStopLoss, setEnforceStopLoss] = useState(initial.enforceStopLoss);
+  const [disciplineNote, setDisciplineNote] = useState(initial.disciplineNote);
+  const [saving, setSaving] = useState(false);
+
+  function applyProfile(profile: RiskProfile) {
+    const preset = RISK_PRESETS[profile];
+    setRiskProfile(profile);
+    setMaxLossPercent(String(preset.maxLossPercent));
+    setMaxConcentrationPercent(String(preset.maxConcentrationPercent));
+    setMaxPositionPercent(String(preset.maxPositionPercent));
+    setEnforceStopLoss(preset.enforceStopLoss);
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      await onSave({
+        riskProfile,
+        maxLossPercent: Number(maxLossPercent) || 0,
+        maxConcentrationPercent: Number(maxConcentrationPercent) || 0,
+        maxPositionPercent: Number(maxPositionPercent) || 0,
+        enforceStopLoss,
+        disciplineNote,
+      });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="settings-card__panel">
+      <SectionHeader title="风险偏好与交易纪律" subtitle="以下内容会作为硬约束发送给大模型，用于买卖决策与仓位建议。" />
+      <div className="form-group">
+        <label>风险偏好档位</label>
+        <div className="segmented">
+          {RISK_PROFILE_LABELS.map((profile) => (
+            <button
+              key={profile}
+              type="button"
+              className={`seg${riskProfile === profile ? " active" : ""}`}
+              onClick={() => applyProfile(profile)}
+            >
+              {profile}
+            </button>
+          ))}
+        </div>
+        <p className="hint">选择档位会自动填入推荐阈值，下方数值可再手动微调。</p>
+      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label>单笔最大可亏（占总资产 %）</label>
+          <input className="text-input" type="number" min="0.1" step="0.1" value={maxLossPercent} onChange={(e) => setMaxLossPercent(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label>单股最大仓位（%）</label>
+          <input className="text-input" type="number" min="1" step="1" value={maxConcentrationPercent} onChange={(e) => setMaxConcentrationPercent(e.target.value)} />
+        </div>
+        <div className="form-group">
+          <label>账户最大总仓位（%）</label>
+          <input className="text-input" type="number" min="1" step="1" value={maxPositionPercent} onChange={(e) => setMaxPositionPercent(e.target.value)} />
+        </div>
+      </div>
+      <div className="form-group checkbox">
+        <label>
+          <input type="checkbox" checked={enforceStopLoss} onChange={(e) => setEnforceStopLoss(e.target.checked)} />
+          买入必须设置止损（跌破即执行）
+        </label>
+      </div>
+      <div className="form-group">
+        <label>我的交易纪律原则</label>
+        <textarea
+          className="text-input"
+          rows={3}
+          placeholder="例如：不追高、只在买点买入、亏损超5%无条件减仓……"
+          value={disciplineNote}
+          onChange={(e) => setDisciplineNote(e.target.value)}
+        />
+      </div>
+      <div className="form-actions">
+        <button className="primary-button" disabled={saving} onClick={() => void save()}>
+          {saving ? "保存中…" : "保存"}
+        </button>
+      </div>
     </div>
   );
 }

@@ -119,3 +119,14 @@ export const capitalFlows = sqliteTable("capital_flows", {
   note: text("note"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const tradingPreferences = sqliteTable("trading_preferences", {
+  id: integer("id").primaryKey(),
+  riskProfile: text("risk_profile", { enum: ["保守", "平衡", "激进"] }).notNull().default("平衡"),
+  maxLossPercent: real("max_loss_percent").notNull().default(2),
+  maxConcentrationPercent: real("max_concentration_percent").notNull().default(30),
+  maxPositionPercent: real("max_position_percent").notNull().default(70),
+  enforceStopLoss: integer("enforce_stop_loss", { mode: "boolean" }).notNull().default(true),
+  disciplineNote: text("discipline_note").notNull().default(""),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});

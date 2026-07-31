@@ -2872,6 +2872,47 @@ svg { display: block; }
 }
 .capital-form button { height: 42px; }
 
+/* 风险偏好与交易纪律表单 */
+.form-group { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.form-group > label { color: var(--text-soft); font-size: var(--fs-2xs); font-weight: 700; letter-spacing: .02em; }
+.text-input {
+  background: var(--surface-soft);
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  padding: 10px 12px;
+  width: 100%;
+}
+.text-input:focus { border-color: var(--accent); outline: none; }
+.form-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.form-actions { margin-top: 18px; }
+.hint { color: var(--muted); font-size: var(--fs-xs); line-height: 1.55; margin: 8px 0 0; }
+.form-group.checkbox { flex-direction: row; align-items: center; }
+.form-group.checkbox label { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: var(--fs-sm); font-weight: 500; }
+
+.segmented {
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 4px;
+}
+.seg {
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: var(--fs-sm);
+  font-weight: 700;
+  padding: 11px 8px;
+  transition: background .2s, color .2s;
+}
+.seg:hover { color: var(--text); }
+.seg.active { background: var(--accent); color: #fff; }
+
 /* 出入金流水 */
 .flow-form {
   flex-wrap: wrap;

@@ -131,6 +131,16 @@ export async function ensureSchema() {
         note TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
       )`),
+      db.prepare(`CREATE TABLE IF NOT EXISTS trading_preferences (
+        id INTEGER PRIMARY KEY NOT NULL,
+        risk_profile TEXT NOT NULL DEFAULT '平衡',
+        max_loss_percent REAL NOT NULL DEFAULT 2,
+        max_concentration_percent REAL NOT NULL DEFAULT 30,
+        max_position_percent REAL NOT NULL DEFAULT 70,
+        enforce_stop_loss INTEGER NOT NULL DEFAULT 1,
+        discipline_note TEXT NOT NULL DEFAULT '',
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`),
       db.prepare("CREATE INDEX IF NOT EXISTS trade_records_symbol_idx ON trade_records(symbol)"),
       db.prepare("CREATE INDEX IF NOT EXISTS alert_rules_symbol_idx ON alert_rules(symbol)"),
       db.prepare("CREATE INDEX IF NOT EXISTS reviews_symbol_idx ON reviews(symbol)"),
