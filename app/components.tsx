@@ -5,7 +5,7 @@
  * （区块标题、状态标签、统计块）收敛到单一实现，避免“风格各异”。
  * 所有视觉令牌均来自 globals.css 的 :root 变量，不在组件内硬编码颜色。
  */
-import type { ReactNode } from "react";
+import { forwardRef, type InputHTMLAttributes, type TextareaHTMLAttributes, type SelectHTMLAttributes, type ReactNode } from "react";
 
 /* ------------------------------------------------------------------ */
 /* SectionHeader                                                        */
@@ -18,6 +18,7 @@ type SectionHeaderProps = {
   eyebrow?: string;
   title: string;
   subtitle?: string;
+  desc?: ReactNode;
   number?: string;
   actions?: ReactNode;
   layout?: "split" | "stack";
@@ -30,6 +31,7 @@ export function SectionHeader({
   eyebrow,
   title,
   subtitle,
+  desc,
   number,
   actions,
   layout = "split",
@@ -55,6 +57,7 @@ export function SectionHeader({
           {eyebrow && <span className="eyebrow">{eyebrow}</span>}
           <Title className="section-header__title">{title}</Title>
           {subtitle && <p className="section-header__subtitle">{subtitle}</p>}
+          {desc && <p className="section-header__desc">{desc}</p>}
         </div>
       </div>
       {actions && <div className="section-header__actions">{actions}</div>}
@@ -117,4 +120,381 @@ export function Stat({ label, value, hint, className = "" }: StatProps) {
       {hint && <span className="stat__hint">{hint}</span>}
     </div>
   );
+}
+
+/* ============================================================
+   通用 UI 组件库（可复用 · 风格统一）
+   所有视觉表现由 globals.css 中的语义类驱动，便于全局保持一致。
+   ============================================================ */
+
+type ButtonVariant = "primary" | "ghost" | "subtle" | "danger" | "outline" | "link";
+type ButtonSize = "sm" | "md";
+
+interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: ButtonVariant;
+  size?: ButtonSize;
+  block?: boolean;
+  iconLeft?: React.ReactNode;
+  iconRight?: React.ReactNode;
+}
+
+export function Button({
+  variant = "primary",
+  size = "md",
+  block = false,
+  iconLeft,
+  iconRight,
+  className = "",
+  children,
+  ...rest
+}: ButtonProps) {
+  const cls = [
+    "btn",
+    `btn--${variant}`,
+    size === "sm" ? "btn--sm" : "",
+    block ? "btn--block" : "",
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <button className={cls} {...rest}>
+      {iconLeft && <span className="btn__icon">{iconLeft}</span>}
+      {children}
+      {iconRight && <span className="btn__icon">{iconRight}</span>}
+    </button>
+  );
+}
+
+interface IconButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  label: string;
+  variant?: "ghost" | "subtle" | "danger";
+}
+
+export function IconButton({
+  label,
+  variant = "ghost",
+  className = "",
+  children,
+  ...rest
+}: IconButtonProps) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      className={`icon-btn icon-btn--${variant} ${className}`.trim()}
+      {...rest}
+    >
+      {children}
+    </button>
+  );
+}
+
+interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  padded?: boolean;
+  inset?: boolean;
+}
+
+export function Card({
+  padded = true,
+  inset = false,
+  className = "",
+  children,
+  ...rest
+}: CardProps) {
+  const cls = [
+    "card",
+    padded ? "card--padded" : "",
+    inset ? "card--inset" : "",
+    className,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <div className={cls} {...rest}>
+      {children}
+    </div>
+  );
+}
+
+export function CardHeader({
+  title,
+  desc,
+  actions,
+  className = "",
+}: {
+  title: React.ReactNode;
+  desc?: React.ReactNode;
+  actions?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`card__header ${className}`.trim()}>
+      <div className="card__heading">
+        <div className="card__title">{title}</div>
+        {desc && <div className="card__desc">{desc}</div>}
+      </div>
+      {actions && <div className="card__actions">{actions}</div>}
+    </div>
+  );
+}
+
+interface FieldProps {
+  label?: React.ReactNode;
+  htmlFor?: string;
+  help?: React.ReactNode;
+  required?: boolean;
+  children: React.ReactNode;
+  className?: string;
+}
+
+export function Field({
+  label,
+  htmlFor,
+  help,
+  required,
+  children,
+  className = "",
+}: FieldProps) {
+  return (
+    <label className={`field ${className}`.trim()} htmlFor={htmlFor}>
+      {label && (
+        <span className="field__label">
+          {label}
+          {required && <span className="field__req">*</span>}
+        </span>
+      )}
+      {children}
+      {help && <span className="field__help">{help}</span>}
+    </label>
+  );
+}
+
+export const Input = forwardRef<
+  HTMLInputElement,
+  InputHTMLAttributes<HTMLInputElement>
+>(function Input({ className = "", ...rest }, ref) {
+  return <input ref={ref} className={`control ${className}`.trim()} {...rest} />;
+});
+
+export const Textarea = forwardRef<
+  HTMLTextAreaElement,
+  TextareaHTMLAttributes<HTMLTextAreaElement>
+>(function Textarea({ className = "", ...rest }, ref) {
+  return (
+    <textarea ref={ref} className={`control control--area ${className}`.trim()} {...rest} />
+  );
+});
+
+export const Select = forwardRef<
+  HTMLSelectElement,
+  SelectHTMLAttributes<HTMLSelectElement>
+>(function Select({ className = "", children, ...rest }, ref) {
+  return (
+    <select ref={ref} className={`control control--select ${className}`.trim()} {...rest}>
+      {children}
+    </select>
+  );
+});
+
+interface SegmentedProps<T extends string> {
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: React.ReactNode }[];
+  size?: "sm" | "md";
+  block?: boolean;
+}
+
+export function Segmented<T extends string>({
+  value,
+  onChange,
+  options,
+  size = "md",
+  block = false,
+}: SegmentedProps<T>) {
+  return (
+    <div
+      className={`segmented ${size === "sm" ? "segmented--sm" : ""} ${
+        block ? "segmented--block" : ""
+      }`.trim()}
+      role="tablist"
+    >
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          role="tab"
+          aria-selected={o.value === value}
+          className={`segmented__item ${o.value === value ? "is-active" : ""}`.trim()}
+          onClick={() => onChange(o.value)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+interface EmptyStateProps {
+  icon?: React.ReactNode;
+  title: React.ReactNode;
+  hint?: React.ReactNode;
+  action?: React.ReactNode;
+}
+
+export function EmptyState({ icon, title, hint, action }: EmptyStateProps) {
+  return (
+    <div className="empty-state">
+      {icon && <div className="empty-state__icon">{icon}</div>}
+      <div className="empty-state__title">{title}</div>
+      {hint && <div className="empty-state__hint">{hint}</div>}
+      {action && <div className="empty-state__action">{action}</div>}
+    </div>
+  );
+}
+
+export function Spinner({ size = 18 }: { size?: number }) {
+  return (
+    <span
+      className="spinner"
+      style={{ width: size, height: size }}
+      role="status"
+      aria-label="加载中"
+    />
+  );
+}
+
+export function Progress({
+  value,
+  max = 100,
+  tone = "accent",
+}: {
+  value: number;
+  max?: number;
+  tone?: "accent" | "up" | "down" | "warn";
+}) {
+  const pct = Math.max(0, Math.min(100, (value / max) * 100));
+  return (
+    <div className="progress" role="progressbar" aria-valuenow={value} aria-valuemax={max}>
+      <span
+        className={`progress__bar progress__bar--${tone}`.trim()}
+        style={{ width: `${pct}%` }}
+      />
+    </div>
+  );
+}
+
+export function Tag({
+  children,
+  tone = "neutral",
+  onRemove,
+}: {
+  children: React.ReactNode;
+  tone?: "neutral" | "accent" | "up" | "down" | "warn" | "danger";
+  onRemove?: () => void;
+}) {
+  return (
+    <span className={`tag tag--${tone}`.trim()}>
+      {children}
+      {onRemove && (
+        <button type="button" className="tag__x" aria-label="移除" onClick={onRemove}>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      )}
+    </span>
+  );
+}
+
+export function Divider({ className = "" }: { className?: string }) {
+  return <div className={`divider ${className}`.trim()} />;
+}
+
+interface ModalProps {
+  title?: React.ReactNode;
+  onClose?: () => void;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+  size?: "sm" | "md" | "lg";
+  closeLabel?: string;
+}
+
+export function Modal({
+  title,
+  onClose,
+  children,
+  footer,
+  size = "md",
+  closeLabel = "关闭",
+}: ModalProps) {
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className={`modal modal--${size}`.trim()}
+        role="dialog"
+        aria-modal="true"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {title !== undefined && (
+          <header>
+            <h2>{title}</h2>
+            {onClose && (
+              <button type="button" aria-label={closeLabel} onClick={onClose}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+              </button>
+            )}
+          </header>
+        )}
+        <div className="modal__body">{children}</div>
+        {footer && <footer className="modal__footer">{footer}</footer>}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Banner（Callout / 提示条）                                            */
+/* 统一了原先散落的 .error-banner / .hint / .price-disclaimer /          */
+/* .condition-hint 等提示类写法。tone 控制语义色，可选关闭与操作。       */
+/* ------------------------------------------------------------------ */
+type BannerTone = "info" | "warn" | "danger" | "success";
+
+export function Banner({
+  tone = "info",
+  title,
+  children,
+  icon,
+  action,
+  onDismiss,
+}: {
+  tone?: BannerTone;
+  title?: ReactNode;
+  children?: ReactNode;
+  icon?: ReactNode;
+  action?: ReactNode;
+  onDismiss?: () => void;
+}) {
+  return (
+    <div className={`banner banner--${tone}`} role={tone === "danger" ? "alert" : "status"}>
+      {icon && <span className="banner__icon" aria-hidden="true">{icon}</span>}
+      <div className="banner__body">
+        {title && <p className="banner__title">{title}</p>}
+        {children && <div className="banner__content">{children}</div>}
+      </div>
+      {action && <div className="banner__action">{action}</div>}
+      {onDismiss && (
+        <button type="button" className="banner__close" aria-label="关闭" onClick={onDismiss}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Hint（说明文字）                                                     */
+/* 统一了 .hint / .condition-hint / .price-disclaimer 等小号说明。      */
+/* ------------------------------------------------------------------ */
+export function Hint({ children, tone = "muted" }: { children: ReactNode; tone?: "muted" | "warn" | "danger" }) {
+  return <p className={`hint hint--${tone}`}>{children}</p>;
 }

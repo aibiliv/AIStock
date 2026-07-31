@@ -10,7 +10,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { SectionHeader, Badge, Stat } from "./components";
+import { SectionHeader, Badge, Stat, Button, IconButton, Field, Input, Select, Textarea, Banner, Hint } from "./components";
 import { AnalyticsView } from "./AnalyticsView";
 import { ImportPanel } from "./ImportPanel";
 import { MarkdownMessage } from "./MarkdownMessage";
@@ -40,6 +40,8 @@ import {
   Trash,
   Wallet,
   WarningCircle,
+  X,
+  CaretUp,
   type Icon,
 } from "@phosphor-icons/react";
 import {
@@ -657,11 +659,11 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
               <b>{user.displayName}</b>
               <SignOut size={15} aria-label="退出" />
             </a>
-            <button className="primary-button" onClick={() => setTradeMode("buy")}><Plus size={16} weight="bold" />记录买入</button>
+            <Button variant="primary" iconLeft={<Plus size={16} weight="bold" />} onClick={() => setTradeMode("buy")}>记录买入</Button>
           </div>
         </header>
 
-        {error && <div className="error-banner" role="alert">{error}<button onClick={() => setError("")}>关闭</button></div>}
+        {error && <Banner tone="danger" onDismiss={() => setError("")}>{error}</Banner>}
         {loading ? <div className="loading-state">正在读取你的个人记录…</div> : (
           <>
             {view === "home" && (
@@ -904,7 +906,7 @@ function Home({
         <form className="stock-search" onSubmit={onAnalyze}>
           <span className="search-icon"><MagnifyingGlass size={21} /></span>
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="例如 600519、贵州茅台" aria-label="股票代码或名称" />
-          <button type="submit" disabled={analyzing}>{analyzing ? "正在获取数据…" : "开始分析"}</button>
+          <Button variant="primary" type="submit" disabled={analyzing}>{analyzing ? "正在获取数据…" : "开始分析"}</Button>
         </form>
         <div className="search-meta"><span>无需股票数据账号</span><i /><span>结果标明数据时间</span><i /><span>不提供买卖建议</span></div>
       </section>
@@ -926,7 +928,7 @@ function Home({
           <PortfolioOverview insights={portfolioInsights} onConfigure={onCapitalSettings} />
           <MarketIndices />
           <SectorHeatmap />
-          <SectionHeader eyebrow="今天只处理重要的事" title="我的持仓" actions={<button onClick={() => onNavigate("trades")}>查看交易记录 →</button>} />
+          <SectionHeader eyebrow="今天只处理重要的事" title="我的持仓" actions={<Button variant="link" size="sm" iconRight={<CaretRight size={14} weight="bold" />} onClick={() => onNavigate("trades")}>查看交易记录</Button>} />
           {portfolio.positions.length ? (
             <div className="holding-grid">
               {portfolio.positions.map((position) => {
@@ -986,8 +988,8 @@ function Home({
                         {triggered && <span className="triggered-badge">已触发</span>}
                       </div>
                       <div className="reminder-actions">
-                        <button onClick={onAlertPlan}>查看计划</button>
-                        <button onClick={() => onAcknowledge(alert.id)}>我知道了</button>
+                        <Button variant="ghost" size="sm" onClick={onAlertPlan}>查看计划</Button>
+                        <Button variant="ghost" size="sm" onClick={() => onAcknowledge(alert.id)}>我知道了</Button>
                       </div>
                     </div>
                   );
@@ -1001,7 +1003,7 @@ function Home({
                   <div className="review-item" key={cycle.endTradeId}>
                     <span className="stock-avatar pale">{cycle.name.slice(0, 1)}</span>
                     <div><b>{cycle.name}</b><p>{cycle.startDate} 至 {cycle.endDate} · 持有 {getCycleSummary(cycle).holdingDays} 天 · {money(cycle.realizedCents)}</p></div>
-                    <button onClick={() => onReview(cycle.endTradeId!)}>开始复盘 →</button>
+                    <Button variant="ghost" size="sm" iconRight={<CaretRight size={14} weight="bold" />} onClick={() => onReview(cycle.endTradeId!)}>开始复盘</Button>
                   </div>
                 );
               })}
@@ -1069,7 +1071,7 @@ function PortfolioOverview({ insights, onConfigure }: { insights: PortfolioInsig
 
   return (
     <section className="panel portfolio-overview">
-      <SectionHeader eyebrow="账户全景" title="我的仓位与盈亏" actions={!insights.configured && <button className="primary-button" onClick={onConfigure}>设置账户初始资金</button>} />
+      <SectionHeader eyebrow="账户全景" title="我的仓位与盈亏" actions={!insights.configured && <Button variant="primary" onClick={onConfigure}>设置账户初始资金</Button>} />
       <div className="portfolio-metrics">
         <Stat label="总资产" value={insights.totalAssetsCents === null ? "待设置" : money(insights.totalAssetsCents)} hint="现金 + 当前持仓市值" />
         <Stat label="总仓位" value={insights.totalPositionPercent === null ? "待设置" : `${insights.totalPositionPercent.toFixed(1)}%`} hint="持仓市值 ÷ 总资产" />
@@ -1137,10 +1139,10 @@ function BeginnerStart({ onBuy }: { onBuy: () => void }) {
         <div><b>3</b><span><strong>清仓后复盘</strong><small>只回答为什么买、为什么卖、是否按计划。</small></span></div>
       </div>
       <div className="beginner-actions">
-        <button className="primary-button" onClick={onBuy}><Plus size={16} weight="bold" />记录第一笔买入</button>
-        <button className="text-button" onClick={() => setShowExample((value) => !value)}>
+        <Button variant="primary" iconLeft={<Plus size={16} weight="bold" />} onClick={onBuy}>记录第一笔买入</Button>
+        <Button variant="link" onClick={() => setShowExample((value) => !value)}>
           {showExample ? "收起示例 ↑" : "先看一份完整示例 →"}
-        </button>
+        </Button>
       </div>
       {showExample && (
         <div className="review-example">
@@ -1208,7 +1210,7 @@ function BehaviorCoach({
       <div className="weekly-advice">
         <span>下一笔只改这一件事</span>
         <p>{summary.advice}</p>
-        {!!pendingReviews.length && <button onClick={() => onReview(pendingReviews[0].endTradeId!)}>现在去复盘 →</button>}
+        {!!pendingReviews.length && <Button variant="ghost" size="sm" iconRight={<CaretRight size={14} weight="bold" />} onClick={() => onReview(pendingReviews[0].endTradeId!)}>现在去复盘</Button>}
       </div>
     </section>
   );
@@ -1388,10 +1390,10 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
           <small>行情时间 {quoteDate}</small>
         </div>
         <div className="summary-actions">
-          <button className={watched ? "soft-button active" : "soft-button"} onClick={onWatch}>
-            {watched ? <><CheckCircle size={15} weight="fill" />已关注</> : <><Star size={15} />加入关注</>}
-          </button>
-          <button className="primary-button" onClick={onBuy}>记录买入</button>
+          <Button variant={watched ? "primary" : "ghost"} iconLeft={watched ? <CheckCircle size={15} weight="fill" /> : <Star size={15} />} onClick={onWatch}>
+            {watched ? "已关注" : "加入关注"}
+          </Button>
+          <Button variant="primary" onClick={onBuy}>记录买入</Button>
         </div>
       </section>
 
@@ -1428,7 +1430,7 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
                 <Stat label="上市市场" value={stock.fund!.exchange} />
               </div>
               <p className="source-warning">净值、折溢价、规模和跟踪误差尚未接入，页面不会用公司财务指标代替。</p>
-              <a className="text-button fund-source-link" href={stock.fund!.sourceUrl} target="_blank" rel="noreferrer">查看{stock.fund!.sourceName}官方资料 ↗</a>
+              <Button variant="link" onClick={() => window.open(stock.fund!.sourceUrl, "_blank", "noreferrer")}>查看{stock.fund!.sourceName}官方资料 ↗</Button>
             </>
           ) : (
             <>
@@ -1447,7 +1449,7 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
                 <Metric label="毛利率" value={financials.grossMargin} percentValue />
                 <Metric label="净利率" value={financials.profitMargin} percentValue />
               </div>
-              <button className="text-button" onClick={() => setShowRaw((value) => !value)}>{showRaw ? "收起原始数字 ↑" : "展开查看原始数字 →"}</button>
+              <Button variant="link" onClick={() => setShowRaw((value) => !value)} iconRight={showRaw ? <CaretUp size={14} weight="bold" /> : <CaretRight size={14} weight="bold" />}>{showRaw ? "收起原始数字" : "展开查看原始数字"}</Button>
               {showRaw && (
                 <div className="raw-data">
                   {Object.entries(financials.series).map(([key, rows]) => (
@@ -1498,7 +1500,7 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
             <div><span>第一目标参考</span><strong>{price(quote.target1)}</strong><p>以当前价到风险线的距离计算1R。</p></div>
             <div><span>第二目标参考</span><strong>{price(quote.target2)}</strong><p>以相同风险距离计算2R。</p></div>
           </div>
-          <div className="price-disclaimer">数据来源：<a href={analysis.source.url} target="_blank" rel="noreferrer">{analysis.source.name}</a> · 获取于 {new Date(analysis.source.fetchedAt).toLocaleString("zh-CN")}</div>
+          <Hint>数据来源：<a href={analysis.source.url} target="_blank" rel="noreferrer">{analysis.source.name}</a> · 获取于 {new Date(analysis.source.fetchedAt).toLocaleString("zh-CN")}</Hint>
         </section>
       </div>
 
@@ -1513,9 +1515,9 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
           title="这只股票下一步怎么处理？"
           actions={
             <>
-              <button className="soft-button" onClick={onWatch}>{watched ? <><CheckCircle size={15} weight="fill" />已关注</> : <><Star size={15} />加入关注</>}</button>
-              {canSell && <button className="soft-button" onClick={onSell}>记录卖出</button>}
-              <button className="primary-button" onClick={onBuy}>我已买入</button>
+              <Button variant={watched ? "primary" : "ghost"} iconLeft={watched ? <CheckCircle size={15} weight="fill" /> : <Star size={15} />} onClick={onWatch}>{watched ? "已关注" : "加入关注"}</Button>
+              {canSell && <Button variant="ghost" onClick={onSell}>记录卖出</Button>}
+              <Button variant="primary" onClick={onBuy}>我已买入</Button>
             </>
           }
         />
@@ -1666,18 +1668,18 @@ function StrategyCard({ analysis, position, portfolioInsights }: {
         actions={strategy ? <Badge tone="accent">{strategy.mode === "deepseek" ? "AI" : "算"}</Badge> : undefined}
       />
       {!strategy && !error && (
-        <button type="button" className="strategy-generate" onClick={() => void generate()} disabled={loading}>
+        <Button variant="primary" block disabled={loading} onClick={() => void generate()}>
           {loading ? "正在生成…" : "结合我的持仓生成策略"}
-        </button>
+        </Button>
       )}
       {loading && <p className="strategy-loading">正在结合你的持仓、账户资金与交易纪律生成策略…</p>}
       {error && <p className="strategy-error">{error}</p>}
       {!loading && !error && strategy && (
         <>
           <MarkdownMessage content={strategy.content} />
-          <button type="button" className="strategy-regenerate" onClick={() => void generate()} disabled={loading}>
+          <Button variant="ghost" block disabled={loading} onClick={() => void generate()}>
             重新生成
-          </button>
+          </Button>
         </>
       )}
       <small className="assistant-disclaimer">策略仅基于当前页面数据、个人记录与交易纪律生成，不构成投资建议，最终由你确认执行。</small>
@@ -1763,7 +1765,7 @@ function SmartAssistant({ analysis, position, portfolioInsights }: {
           placeholder={`继续问${analysis.stock.name}，例如"这个结论依据是什么？"`}
           aria-label="向智能复盘助手提问"
         />
-        <button type="submit" disabled={asking || !question.trim()}>{asking ? "思考中…" : "发送"}</button>
+        <Button variant="primary" type="submit" disabled={asking || !question.trim()}>{asking ? "思考中…" : "发送"}</Button>
       </form>
       <small className="assistant-disclaimer">回答仅基于当前页面数据与个人记录，不构成投资建议。</small>
     </section>
@@ -2124,10 +2126,16 @@ function AnnouncementPanel({ stock }: { stock: Analysis["stock"] }) {
         <a href="https://www.szse.cn/disclosure/listed/notice/index.html" target="_blank" rel="noreferrer">深交所公告</a>
       </div>
       <form className="announcement-form" onSubmit={summarize}>
-        <label>公告标题<input name="title" required maxLength={120} placeholder="例如：2026年半年度报告" /></label>
-        <label>官方PDF链接（可选）<input name="sourceUrl" type="url" placeholder="仅支持巨潮、上交所、深交所HTTPS链接" /></label>
-        <label>或上传PDF（8MB以内）<input name="file" type="file" accept="application/pdf" /></label>
-        <button className="primary-button" disabled={uploading}>{uploading ? "正在提取并总结…" : "生成公告摘要"}</button>
+        <Field label="公告标题">
+          <Input name="title" required maxLength={120} placeholder="例如：2026年半年度报告" />
+        </Field>
+        <Field label="官方PDF链接（可选）">
+          <Input name="sourceUrl" type="url" placeholder="仅支持巨潮、上交所、深交所HTTPS链接" />
+        </Field>
+        <Field label="或上传PDF（8MB以内）">
+          <Input name="file" type="file" accept="application/pdf" />
+        </Field>
+        <Button variant="primary" disabled={uploading}>{uploading ? "正在提取并总结…" : "生成公告摘要"}</Button>
       </form>
       {message && <p className="form-message" role="status">{message}</p>}
       <div className="announcement-list">
@@ -2137,7 +2145,7 @@ function AnnouncementPanel({ stock }: { stock: Analysis["stock"] }) {
             <p>{note.summary}</p>
             {note.risks.length > 0 && <small>需要核验：{note.risks.join("；")}</small>}
             <div className="announcement-actions">
-              {note.sourceUrl && <a href={note.sourceUrl} target="_blank" rel="noreferrer">查看原文 →</a>}
+              {note.sourceUrl && <a className="link-arrow" href={note.sourceUrl} target="_blank" rel="noreferrer">查看原文<CaretRight size={14} weight="bold" /></a>}
               <button type="button" onClick={() => void removeNote(note.id)}>删除摘要</button>
             </div>
           </article>
@@ -2323,7 +2331,7 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved }: {
         eyebrow="先研究，再决定"
         title="我的关注"
         subtitle="每只股票都保留一个明确的等待条件。"
-        actions={<button className="primary-button" onClick={onSearch}><Plus size={16} weight="bold" />查找股票</button>}
+        actions={<Button variant="primary" iconLeft={<Plus size={16} weight="bold" />} onClick={onSearch}>查找股票</Button>}
       />
       {items.length ? (
         <div className="watch-cards">
@@ -2412,25 +2420,37 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved }: {
 
                 {editing === item.symbol ? (
                   <form className="watch-edit-form" onSubmit={(event) => void saveCondition(event, item.symbol)}>
-                    <label>观察状态<select name="status" defaultValue={item.status}><option>研究中</option><option>等待条件</option><option>已买入</option><option>暂停</option></select></label>
+                    <Field label="观察状态">
+                      <Select name="status" defaultValue={item.status}>
+                        <option>研究中</option>
+                        <option>等待条件</option>
+                        <option>已买入</option>
+                        <option>暂停</option>
+                      </Select>
+                    </Field>
                     <fieldset className="condition-fieldset">
                       <legend>自动触发提醒（可选）</legend>
                       <div className="condition-row">
-                        <select name="conditionMetric" defaultValue={item.conditionMetric ?? ""}>
+                        <Select name="conditionMetric" defaultValue={item.conditionMetric ?? ""}>
                           <option value="">不设置</option>
                           <option value="price">现价达到</option>
                           <option value="change">今日涨跌幅达到</option>
-                        </select>
-                        <select name="conditionDirection" defaultValue={item.conditionDirection ?? "above"}>
+                        </Select>
+                        <Select name="conditionDirection" defaultValue={item.conditionDirection ?? "above"}>
                           <option value="above">≥ 高于/达到</option>
                           <option value="below">≤ 低于/跌破</option>
-                        </select>
-                        <input type="number" step="0.01" name="conditionValue" defaultValue={item.conditionValue ?? ""} placeholder="阈值" aria-label="触发阈值" />
+                        </Select>
+                        <Input type="number" step={0.01} name="conditionValue" defaultValue={item.conditionValue ?? ""} placeholder="阈值" aria-label="触发阈值" />
                       </div>
-                      <p className="condition-hint">设置后，行情满足时会自动在卡片上标注「条件已满足」。</p>
+                      <Hint>设置后，行情满足时会自动在卡片上标注「条件已满足」。</Hint>
                     </fieldset>
-                    <label>行动条件（备注）<textarea name="conditionText" defaultValue={item.conditionText} required maxLength={300} placeholder="写下你会因为什么而买入、什么情况下认错离场" /></label>
-                    <div><button type="button" onClick={() => setEditing(null)}>取消</button><button className="primary-button">保存</button></div>
+                    <Field label="行动条件（备注）">
+                      <Textarea name="conditionText" defaultValue={item.conditionText} required maxLength={300} placeholder="写下你会因为什么而买入、什么情况下认错离场" />
+                    </Field>
+                    <div className="form-actions">
+                      <Button variant="ghost" type="button" onClick={() => setEditing(null)}>取消</Button>
+                      <Button variant="primary" type="submit">保存</Button>
+                    </div>
                   </form>
                 ) : (
                   <>
@@ -2442,16 +2462,9 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved }: {
                       <span><CalendarBlank size={13} weight="regular" />最近检查 {reviewedDate ?? "尚未检查"}</span>
                     </div>
                     <div className="watch-card-actions">
-                      <button className="primary-button watch-card-primary" onClick={() => onAnalyze(item.symbol)}>
-                        查看分析
-                        <ArrowUp size={14} weight="bold" style={{ transform: "rotate(45deg)" }} />
-                      </button>
-                      <button className="watch-icon-button" onClick={() => setEditing(item.symbol)} aria-label="编辑条件" title="编辑条件">
-                        <PencilSimple size={16} weight="regular" />
-                      </button>
-                      <button className="watch-icon-button watch-icon-button--danger" onClick={() => setConfirming(item.symbol)} aria-label="移出关注" title="移出关注">
-                        <Trash size={16} weight="regular" />
-                      </button>
+                      <Button variant="primary" iconRight={<ArrowUp size={14} weight="bold" style={{ transform: "rotate(45deg)" }} />} onClick={() => onAnalyze(item.symbol)}>查看分析</Button>
+                      <IconButton label="编辑条件" title="编辑条件" onClick={() => setEditing(item.symbol)}><PencilSimple size={16} weight="regular" /></IconButton>
+                      <IconButton label="移出关注" title="移出关注" variant="danger" onClick={() => setConfirming(item.symbol)}><Trash size={16} weight="regular" /></IconButton>
                     </div>
                   </>
                 )}
@@ -2463,7 +2476,7 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved }: {
       {confirming && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setConfirming(null); }}>
           <section className="modal watch-confirm" role="alertdialog" aria-modal="true" aria-labelledby="watch-confirm-title">
-            <header><div><span className="eyebrow">确认操作</span><h2 id="watch-confirm-title">移出关注？</h2></div><button onClick={() => setConfirming(null)} aria-label="关闭">×</button></header>
+            <header><div><span className="eyebrow">确认操作</span><h2 id="watch-confirm-title">移出关注？</h2></div><IconButton label="关闭" onClick={() => setConfirming(null)}>×</IconButton></header>
             <form
               onSubmit={(event) => {
                 event.preventDefault();
@@ -2471,7 +2484,7 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved }: {
               }}
             >
               <p>{items.find((item) => item.symbol === confirming)?.name || confirming} 将从关注列表中移除，已写的条件也会一并删除。此操作不会影响你的交易记录。</p>
-              <div className="modal-actions"><button type="button" onClick={() => setConfirming(null)}>取消</button><button type="submit" className="primary-button" style={{ background: "var(--red)" }}>确认移出</button></div>
+              <div className="modal-actions"><Button variant="ghost" type="button" onClick={() => setConfirming(null)}>取消</Button><Button variant="danger" type="submit">确认移出</Button></div>
             </form>
           </section>
         </div>
@@ -2522,7 +2535,7 @@ function Trades({ trades, reviews, onBuy, onSell, onReview }: {
 
   return (
     <div className="page-content inner-page">
-      <SectionHeader as="h2" size="xl" eyebrow="真实记录，才能真实复盘" title="交易记录" subtitle="只有完全清仓才会生成待复盘任务；部分卖出仍属于同一持仓周期。" actions={<div className="intro-actions"><button className="soft-button" onClick={onSell} disabled={!portfolio.positions.length}>记录卖出</button><button className="primary-button" onClick={onBuy}><Plus size={16} weight="bold" />记录买入</button></div>} />
+      <SectionHeader as="h2" size="xl" eyebrow="真实记录，才能真实复盘" title="交易记录" subtitle="只有完全清仓才会生成待复盘任务；部分卖出仍属于同一持仓周期。" actions={<div className="intro-actions"><Button variant="ghost" onClick={onSell} disabled={!portfolio.positions.length}>记录卖出</Button><Button variant="primary" iconLeft={<Plus size={16} weight="bold" />} onClick={onBuy}>记录买入</Button></div>} />
       <div className="summary-strip trade-summary">
         <div className="stat-primary">
           <span>已实现盈亏</span>
@@ -2570,7 +2583,7 @@ function Trades({ trades, reviews, onBuy, onSell, onReview }: {
                     : hasReview
                       ? <Badge tone="green">已复盘</Badge>
                       : cycle?.endTradeId === trade.id
-                        ? <button className="review-button" onClick={() => onReview(cycle.endTradeId!)}>去复盘</button>
+                        ? <Button variant="ghost" size="sm" onClick={() => onReview(cycle.endTradeId!)}>去复盘</Button>
                         : <Badge tone="amber">待复盘</Badge>}
                 </span>
               </div>
@@ -2765,7 +2778,7 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
                         <h3>提醒管理</h3>
                         <p>浏览器权限：{notificationState}</p>
                       </div>
-                      <button className="primary-button" onClick={onNotifications}>申请浏览器通知</button>
+                      <Button variant="primary" onClick={onNotifications}>申请浏览器通知</Button>
                     </div>
                     {alerts.length ? (
                       <ul className="settings-card__alerts">
@@ -2779,10 +2792,10 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
                                 {triggered && <span className="triggered-badge small">已触发</span>}
                               </div>
                               {triggered && (
-                                <button className="danger-link" onClick={() => onAcknowledge(alert.id)}>我知道了</button>
+                                <Button variant="danger" size="sm" onClick={() => onAcknowledge(alert.id)}>我知道了</Button>
                               )}
                               {alert.enabled && !triggered && (
-                                <button className="danger-link" onClick={() => onDisable(alert.id)}>停用</button>
+                                <Button variant="ghost" size="sm" onClick={() => onDisable(alert.id)}>停用</Button>
                               )}
                             </li>
                           );
@@ -2797,7 +2810,7 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
                   <div className="settings-card__panel">
                     <h3>导出个人数据</h3>
                     <p>备份包含交易、关注、提醒与复盘，不包含任何API密钥。</p>
-                    <a className="primary-button download-link" href="/api/export">下载JSON备份</a>
+                    <a className="btn btn--primary" href="/api/export">下载JSON备份</a>
                   </div>
                 )}
                 {card.id === "risk" && (
@@ -2892,8 +2905,10 @@ function CapitalSettings({ initialCapitalCents, capitalFlows, onSave, onAddFlow,
         <h3>账户初始资金</h3>
         <p>填写开始使用本软件时账户内用于股票交易的总资金。现金按交易流水和出入金记录自动推算。</p>
         <form className="capital-form" onSubmit={submit}>
-          <label>初始资金（元）<input name="initialCapital" type="number" min="100" max="1000000000" step="0.01" defaultValue={initialCapitalCents === null ? "" : initialCapitalCents / 100} placeholder="例如 100000" required /></label>
-          <button className="primary-button" type="submit" disabled={saving}>{saving ? "保存中…" : "保存资金基准"}</button>
+          <Field label="初始资金（元）">
+            <Input name="initialCapital" type="number" min={100} max={1000000000} step={0.01} defaultValue={initialCapitalCents === null ? "" : initialCapitalCents / 100} placeholder="例如 100000" required />
+          </Field>
+          <Button variant="primary" type="submit" disabled={saving}>{saving ? "保存中…" : "保存资金基准"}</Button>
         </form>
         {message && <p className="form-message" role="status">{message}</p>}
       </section>
@@ -2903,26 +2918,22 @@ function CapitalSettings({ initialCapitalCents, capitalFlows, onSave, onAddFlow,
         <p>发生场外转入或转出时，在此记录。现金余额 = 初始资金 + 累计转入 - 累计转出 - 买入成交额 + 卖出成交额 - 手续费。</p>
 
         <form className="capital-form flow-form" onSubmit={submitFlow}>
-          <label>
-            <span>方向</span>
-            <select name="flowDirection" defaultValue="in">
+          <Field label="方向">
+            <Select name="flowDirection" defaultValue="in">
               <option value="in">转入</option>
               <option value="out">转出</option>
-            </select>
-          </label>
-          <label>
-            <span>金额（元）</span>
-            <input name="flowAmount" type="number" min="0.01" max="1000000000" step="0.01" placeholder="例如 5000" required />
-          </label>
-          <label>
-            <span>日期</span>
-            <input name="flowDate" type="date" defaultValue={localIsoDate(new Date())} required />
-          </label>
-          <label className="flow-note-label">
-            <span>备注</span>
-            <input name="flowNote" type="text" maxLength={60} placeholder="选填" className="flow-note-input" />
-          </label>
-          <button className="primary-button" type="submit" disabled={flowSaving}>{flowSaving ? "保存中…" : "记录流水"}</button>
+            </Select>
+          </Field>
+          <Field label="金额（元）">
+            <Input name="flowAmount" type="number" min={0.01} max={1000000000} step={0.01} placeholder="例如 5000" required />
+          </Field>
+          <Field label="日期">
+            <Input name="flowDate" type="date" defaultValue={localIsoDate(new Date())} required />
+          </Field>
+          <Field label="备注">
+            <Input name="flowNote" type="text" maxLength={60} placeholder="选填" />
+          </Field>
+          <Button variant="primary" type="submit" disabled={flowSaving}>{flowSaving ? "保存中…" : "记录流水"}</Button>
         </form>
         {flowMsg && <p className="form-message" role="status">{flowMsg}</p>}
 
@@ -2944,7 +2955,7 @@ function CapitalSettings({ initialCapitalCents, capitalFlows, onSave, onAddFlow,
                 <span className="flow-amount">{flow.amountCents > 0 ? "+" : ""}{money(flow.amountCents)}</span>
                 <span className="flow-date">{flow.flowDate}</span>
                 {flow.note && <span className="flow-note">{flow.note}</span>}
-                <button className="danger-link" onClick={() => onDeleteFlow(flow.id)} title="删除">删除</button>
+                <Button variant="danger" size="sm" onClick={() => onDeleteFlow(flow.id)} title="删除">删除</Button>
               </li>
             ))}
           </ul>
@@ -2985,30 +2996,29 @@ function TradeModal({ mode, stock, positions, onClose, onSubmit }: {
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="modal" role="dialog" aria-modal="true" aria-labelledby="trade-modal-title">
-        <header><div><span className="eyebrow">{mode === "buy" ? "写下当时的决定" : "记录真实的退出"}</span><h2 id="trade-modal-title">记录{mode === "buy" ? "买入" : "卖出"}</h2></div><button onClick={onClose} aria-label="关闭">×</button></header>
+        <header><div><span className="eyebrow">{mode === "buy" ? "写下当时的决定" : "记录真实的退出"}</span><h2 id="trade-modal-title">记录{mode === "buy" ? "买入" : "卖出"}</h2></div><IconButton label="关闭" onClick={onClose}><X size={18} weight="bold" /></IconButton></header>
         <form onSubmit={submit}>
           <div className="form-grid">
-            <label>股票代码<input ref={firstInput} name="symbol" defaultValue={symbol} pattern="\d{6}" required onBlur={(event) => {
+            <Field label="股票代码"><Input ref={firstInput} name="symbol" defaultValue={symbol} pattern="\d{6}" required onBlur={(event) => {
               const resolved = resolveStock(event.currentTarget.value);
               if (resolved && resolved.name !== resolved.code && nameInputRef.current) {
                 nameInputRef.current.value = resolved.name;
               }
-            }} /></label>
-            <label>股票名称<input ref={nameInputRef} name="name" defaultValue={name} required maxLength={30} /></label>
-            <label>{mode === "buy" ? "买入" : "卖出"}价格<input name="price" type="number" min="0" step="any" required /></label>
-            <label>数量（股）<input name="quantity" type="number" min="1" step="1" required /></label>
-            <label>交易日期<input name="tradeDate" type="date" defaultValue={localIsoDate()} max={localIsoDate()} required /></label>
-            <label>总费用（可选）<input name="fee" type="number" min="0" step="0.01" defaultValue="0" /></label>
+            }} /></Field>
+            <Field label="股票名称"><Input ref={nameInputRef} name="name" defaultValue={name} required maxLength={30} /></Field>
+            <Field label={mode === "buy" ? "买入价格" : "卖出价格"}><Input name="price" type="number" min="0" step="any" required /></Field>
+            <Field label="数量（股）"><Input name="quantity" type="number" min="1" step="1" required /></Field>
+            <Field label="交易日期"><Input name="tradeDate" type="date" defaultValue={localIsoDate()} max={localIsoDate()} required /></Field>
+            <Field label="总费用（可选）"><Input name="fee" type="number" min="0" step="0.01" defaultValue="0" /></Field>
             {mode === "buy" && (
-              <label>最多接受亏损（元）
-                <input name="maxLoss" type="number" min="0" step="0.01" placeholder="例如 500" />
-                <small className="field-help">如果判断错了，这笔交易最多愿意亏多少钱？请填你能实际执行的金额。</small>
-              </label>
+              <Field label="最多接受亏损（元）" help="如果判断错了，这笔交易最多愿意亏多少钱？请填你能实际执行的金额。">
+                <Input name="maxLoss" type="number" min="0" step="0.01" placeholder="例如 500" />
+              </Field>
             )}
           </div>
           <fieldset><legend>为什么{mode === "buy" ? "买" : "卖"}？</legend><div className="reason-options">{(mode === "buy" ? buyReasons : sellReasons).map((reason) => <label key={reason}><input className="visually-hidden" type="radio" name="reason" value={reason} required /><span>{reason}</span></label>)}</div></fieldset>
           {mode === "buy" && <div className="calculation-tip"><b>1R是什么？</b>它是你愿意承担的这笔亏损。系统会据此计算风险观察线和1R、2R参考目标；它们不是收益预测，仍由你确认和执行。</div>}
-          <div className="modal-actions"><button type="button" onClick={onClose}>取消</button><button className="primary-button" type="submit" disabled={saving}>{saving ? "正在保存…" : "确认保存"}</button></div>
+          <div className="modal-actions"><Button variant="ghost" onClick={onClose}>取消</Button><Button variant="primary" type="submit" disabled={saving}>{saving ? "正在保存…" : "确认保存"}</Button></div>
         </form>
       </section>
     </div>
@@ -3087,7 +3097,7 @@ function ReviewModal({ cycle, onClose, onSaved }: {
   return (
     <div className="modal-backdrop" role="presentation">
       <section className="modal review-modal" role="dialog" aria-modal="true" aria-labelledby="review-title">
-        <header><div><span className="eyebrow">只改进一件事</span><h2 id="review-title">复盘 {name}</h2></div><button onClick={onClose} aria-label="关闭">×</button></header>
+        <header><div><span className="eyebrow">只改进一件事</span><h2 id="review-title">复盘 {name}</h2></div><IconButton label="关闭" onClick={onClose}><X size={18} weight="bold" /></IconButton></header>
         <form onSubmit={save}>
           <div className="cycle-facts">
             <div><span>持有天数</span><strong>{summary.holdingDays} 天</strong></div>
@@ -3103,20 +3113,20 @@ function ReviewModal({ cycle, onClose, onSaved }: {
                 : `买入时计划最多亏损 ${money(summary.planLossCents)}，本次亏损 ${money(-summary.realizedCents)}，已超出计划——止损没守住。`}
             </div>
           )}
-          <label>为什么买？<textarea ref={firstInput} name="buyReason" defaultValue={buyReason} required maxLength={300} /></label>
-          <label>为什么卖？<textarea name="sellReason" defaultValue={sellReason} required maxLength={300} /></label>
+          <Field label="为什么买？"><Textarea ref={firstInput} name="buyReason" defaultValue={buyReason} required maxLength={300} /></Field>
+          <Field label="为什么卖？"><Textarea name="sellReason" defaultValue={sellReason} required maxLength={300} /></Field>
           <fieldset><legend>有没有按计划执行？<small>{summary.hasPlan ? "程序已按计划止损自动预判，可修正" : "买入时未填计划亏损，请凭记忆判断"}</small></legend><div className="reason-options"><label><input className="visually-hidden" type="radio" name="followedPlan" value="yes" required checked={followedPlan === "yes"} onChange={() => setFollowedPlan("yes")} /><span>有，按计划</span></label><label><input className="visually-hidden" type="radio" name="followedPlan" value="no" required checked={followedPlan === "no"} onChange={() => setFollowedPlan("no")} /><span>没有</span></label></div></fieldset>
           {followedPlan === "no" && (
-            <label>这次偏离计划在哪？<small>写清和计划的差异，便于「分析」视图统计纪律缺口（最多 300 字）</small>
-              <textarea name="deviationReason" value={deviationReason} maxLength={300} onChange={(event) => setDeviationReason(event.target.value)} placeholder="例如：触发止损后没执行，又扛了两天才割；临时追高，超出了原定买点。" />
-            </label>
+            <Field label="这次偏离计划在哪？" help="写清和计划的差异，便于「分析」视图统计纪律缺口（最多 300 字）">
+              <Textarea name="deviationReason" value={deviationReason} maxLength={300} onChange={(event) => setDeviationReason(event.target.value)} placeholder="例如：触发止损后没执行，又扛了两天才割；临时追高，超出了原定买点。" />
+            </Field>
           )}
-          <label>下一次只改进哪一件事？<textarea name="lesson" required maxLength={500} placeholder={summary.hasPlan && !summary.withinPlan ? "例如：触发止损后当天执行，不再向下移动止损线。" : "例如：买入前先把卖出条件写清楚，避免临时起意。"} /></label>
-          <label>给这次复盘打标签<small>用于「分析」视图按标签统计盈亏（最多 10 个）</small>
+          <Field label="下一次只改进哪一件事？"><Textarea name="lesson" required maxLength={500} placeholder={summary.hasPlan && !summary.withinPlan ? "例如：触发止损后当天执行，不再向下移动止损线。" : "例如：买入前先把卖出条件写清楚，避免临时起意。"} /></Field>
+          <Field label="给这次复盘打标签" help="用于「分析」视图按标签统计盈亏（最多 10 个）">
             <div className="tag-editor">
               <div className="tag-chips">
                 {tags.map((tag) => (
-                  <span key={tag} className="tag-chip">{tag}<button type="button" onClick={() => removeTag(tag)} aria-label={`移除${tag}`}>×</button></span>
+                  <span key={tag} className="tag-chip">{tag}<IconButton label={`移除${tag}`} variant="ghost" onClick={() => removeTag(tag)}><X size={12} weight="bold" /></IconButton></span>
                 ))}
               </div>
               <input
@@ -3131,14 +3141,14 @@ function ReviewModal({ cycle, onClose, onSaved }: {
               {["按计划", "没按计划", "追高", "恐慌卖", "突破", "均线回踩", "题材", "止损纪律", "情绪化"]
                 .filter((suggestion) => !tags.includes(suggestion))
                 .slice(0, 8)
-                .map((suggestion) => (
-                  <button type="button" key={suggestion} className="tag-suggestion" onClick={() => { if (tags.length < 10 && !tags.includes(suggestion)) setTags([...tags, suggestion]); }}>{suggestion}</button>
-                ))}
+              .map((suggestion) => (
+                <button type="button" key={suggestion} className="tag-suggestion" onClick={() => { if (tags.length < 10 && !tags.includes(suggestion)) setTags([...tags, suggestion]); }}>{suggestion}</button>
+              ))}
             </div>
-          </label>
+          </Field>
           <div className="calculation-tip">程序按成交记录计算：持有 {summary.holdingDays} 天，已实现盈亏 <b>{money(summary.realizedCents)}</b>{summary.returnPct === null ? "" : `（收益率 ${summary.returnPct >= 0 ? "+" : ""}${summary.returnPct.toFixed(1)}%）`}。</div>
           {message && <p className="form-message" role="alert">{message}</p>}
-          <div className="modal-actions"><button type="button" onClick={onClose}>取消</button><button className="primary-button" type="submit" disabled={saving}>{saving ? "正在保存…" : "保存复盘"}</button></div>
+          <div className="modal-actions"><Button variant="ghost" onClick={onClose}>取消</Button><Button variant="primary" type="submit" disabled={saving}>{saving ? "正在保存…" : "保存复盘"}</Button></div>
         </form>
       </section>
     </div>
@@ -3197,7 +3207,7 @@ function PreferencesSettings({ preferences, onSave }: { preferences: TradingPref
             </button>
           ))}
         </div>
-        <p className="hint">选择档位会自动填入推荐阈值，下方数值可再手动微调。</p>
+        <Hint>选择档位会自动填入推荐阈值，下方数值可再手动微调。</Hint>
       </div>
       <div className="form-row">
         <div className="form-group">
@@ -3230,9 +3240,9 @@ function PreferencesSettings({ preferences, onSave }: { preferences: TradingPref
         />
       </div>
       <div className="form-actions">
-        <button className="primary-button" disabled={saving} onClick={() => void save()}>
+        <Button variant="primary" disabled={saving} onClick={() => void save()}>
           {saving ? "保存中…" : "保存"}
-        </button>
+        </Button>
       </div>
     </div>
   );

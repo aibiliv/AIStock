@@ -41,13 +41,13 @@ export default async function LoginPage({
           <form className="login-form" action="/api/auth/login" method="post">
             <label>
               <span>账号</span>
-              <input name="username" autoComplete="username" required autoFocus />
+              <input name="username" className="control" autoComplete="username" required autoFocus />
             </label>
             <label>
               <span>密码</span>
-              <input name="password" type="password" autoComplete="current-password" required />
+              <input name="password" type="password" className="control" autoComplete="current-password" required />
             </label>
-            <button className="primary-button" disabled={!configured}>登录</button>
+            <button className="btn btn--primary" disabled={!configured}>登录</button>
           </form>
         </div>
       </section>

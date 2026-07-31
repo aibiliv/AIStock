@@ -2,7 +2,7 @@
 
 import "./analytics.css";
 import { useMemo, useRef, useState } from "react";
-import { Badge, SectionHeader, Stat } from "./components";
+import { Badge, SectionHeader, Stat, Button, Card, CardHeader } from "./components";
 import { BarList, DonutChart } from "./charts";
 import { EquityCurveChart } from "./equity-chart";
 import { calculateTradeStatistics } from "../lib/trade-statistics";
@@ -120,12 +120,12 @@ export function AnalyticsView({
         subtitle="从记账升级到分析：胜率、盈亏比、回撤、按计划执行度，帮你找到自己的优势与弱点。"
         actions={
           <div className="export-toolbar">
-            <button type="button" className="btn btn--ghost" onClick={exportImage} disabled={exporting}>
+            <Button variant="ghost" onClick={exportImage} disabled={exporting}>
               {exporting ? "导出中…" : "导出图片"}
-            </button>
-            <button type="button" className="btn btn--ghost" onClick={exportPdf} disabled={exporting}>
+            </Button>
+            <Button variant="ghost" onClick={exportPdf} disabled={exporting}>
               {exporting ? "导出中…" : "导出 PDF"}
-            </button>
+            </Button>
           </div>
         }
       />
@@ -145,20 +145,22 @@ export function AnalyticsView({
         />
       </div>
 
-      <section className="analytics-panel">
-        <SectionHeader eyebrow="资金曲线" title="权益走势与回撤" subtitle="基于本金、资金流水与已实现盈亏重建，无需实时行情。" />
+      <Card className="analytics-panel">
+        <CardHeader
+          title="权益走势与回撤"
+          desc="基于本金、资金流水与已实现盈亏重建，无需实时行情。"
+        />
         {stats.equityCurve.length > 1 ? (
           <EquityCurveChart title="资金权益曲线" points={stats.equityCurve} />
         ) : (
           <p className="chart-empty">暂无足够数据绘制曲线（需要先有清仓交易或资金流水）。</p>
         )}
-      </section>
+      </Card>
 
-      <section className="analytics-panel">
-        <SectionHeader
-          eyebrow="纪律"
+      <Card className="analytics-panel">
+        <CardHeader
           title="计划 vs 执行偏差"
-          subtitle="按计划 vs 没按计划的盈亏和胜率对比，定位纪律缺口；复盘里填写「偏离原因」会越积越准。"
+          desc="按计划 vs 没按计划的盈亏和胜率对比，定位纪律缺口；复盘里填写「偏离原因」会越积越准。"
         />
         {reviews.length ? (
           <>
@@ -177,34 +179,34 @@ export function AnalyticsView({
         ) : (
           <p className="chart-empty">还没有复盘记录，完成交易复盘后会统计计划执行度。</p>
         )}
-      </section>
+      </Card>
 
       <div className="analytics-cols">
-        <section className="analytics-panel">
-          <SectionHeader eyebrow="行为标签" title="按标签看盈亏" subtitle="来自复盘时打的标签，定位最赚钱/最亏钱的打法或错误。" />
+        <Card className="analytics-panel">
+          <CardHeader title="按标签看盈亏" desc="来自复盘时打的标签，定位最赚钱/最亏钱的打法或错误。" />
           {stats.byTag.length ? (
             <BarList items={stats.byTag.map((item) => ({ label: item.tag, value: item.realizedCents, sub: `${Math.round(item.winRate * 100)}%胜` }))} />
           ) : (
             <p className="chart-empty">还没有给复盘打标签。在「交易记录」完成一笔复盘时添加标签，这里就会按标签统计。</p>
           )}
-        </section>
+        </Card>
 
-        <section className="analytics-panel">
-          <SectionHeader eyebrow="当前持仓" title="仓位占比" subtitle="按市值分布的持仓结构。" />
+        <Card className="analytics-panel">
+          <CardHeader title="仓位占比" desc="按市值分布的持仓结构。" />
           <DonutChart segments={allocationSegments} />
-        </section>
+        </Card>
       </div>
 
       <div className="analytics-cols">
-        <section className="analytics-panel">
-          <SectionHeader eyebrow="个股" title="按标的盈亏排行" />
+        <Card className="analytics-panel">
+          <CardHeader title="按标的盈亏排行" />
           <BarList items={stats.bySymbol.map((item) => ({ label: item.name || item.symbol, value: item.realizedCents, sub: `${item.trades}笔` }))} />
-        </section>
+        </Card>
 
-        <section className="analytics-panel">
-          <SectionHeader eyebrow="时间" title="按月盈亏" />
+        <Card className="analytics-panel">
+          <CardHeader title="按月盈亏" />
           <BarList items={stats.byMonth.map((item) => ({ label: item.month, value: item.realizedCents, sub: `${Math.round(item.winRate * 100)}%胜` }))} />
-        </section>
+        </Card>
       </div>
 
       <section className="analytics-panel">
