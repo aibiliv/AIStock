@@ -10,6 +10,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { SectionHeader, Badge, Stat, Button, IconButton, Field, Input, Select, Textarea, Banner, Hint } from "./components";
 import { AnalyticsView } from "./AnalyticsView";
 import { ImportPanel } from "./ImportPanel";
@@ -296,8 +297,21 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
 
 export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string }) {
   const [view, setView] = useState<View>("home");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const VALID_VIEWS: View[] = ["home", "analysis", "watchlist", "trades", "settings", "analytics"];
+  useEffect(() => {
+    const target = searchParams.get("view");
+    if (target && VALID_VIEWS.includes(target as View)) {
+      setView(target as View);
+    }
+    // 仅在挂载时从 URL 恢复视图，无需把依赖加入
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [query, setQuery] = useState("");
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [recentAnalyses, setRecentAnalyses] = useState<Analysis[]>([]);
   const [quotes, setQuotes] = useState<Record<string, Analysis>>({});
   const [trades, setTrades] = useState<Trade[]>([]);
   const [watchlist, setWatchlist] = useState<WatchItem[]>([]);
@@ -319,7 +333,11 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
 
   function navigate(nextView: View) {
     setView(nextView);
-    if (nextView === "home") setAnalysis(null);
+    if (nextView !== "home") {
+      router.replace(`${pathname}?view=${nextView}`);
+    } else {
+      router.replace(pathname);
+    }
   }
 
   const portfolio = useMemo(() => calculatePortfolio(trades), [trades]);
@@ -399,7 +417,10 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       if (showResult) {
         setAnalysis(result);
         setQuery(result.stock.code);
-        setView("home");
+        setRecentAnalyses((current) => [
+          result,
+          ...current.filter((item) => item.stock.code !== result.stock.code),
+        ].slice(0, 6));
         if (result.historyWarning) flash(result.historyWarning);
       }
       return result;
@@ -490,7 +511,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
 
   async function analyzeAndOpen(symbol: string) {
     setQuery(symbol);
-    setView("analysis");
+    navigate("analysis");
     await fetchAnalysis(symbol);
   }
 
@@ -685,9 +706,9 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 onBuy={() => setTradeMode("buy")}
                 onNavigate={navigate}
                 onReview={setReviewCycleEndTradeId}
-                onAlertPlan={() => { setSettingsSection("alerts"); setView("settings"); }}
+                onAlertPlan={() => { setSettingsSection("alerts"); navigate("settings"); }}
                 onAcknowledge={(id) => void updateAlert(id)}
-                onCapitalSettings={() => { setSettingsSection("account"); setView("settings"); }}
+                onCapitalSettings={() => { setSettingsSection("account"); navigate("settings"); }}
               />
             )}
             {view === "analysis" && (
@@ -699,6 +720,8 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 portfolio={portfolio}
                 portfolioInsights={portfolioInsights}
                 watched={analysis ? watchlist.some((item) => item.symbol === analysis.stock.code) : false}
+                recentAnalyses={recentAnalyses}
+                onPickRecent={(item) => setAnalysis(item)}
                 onAnalyze={analyzeStock}
                 onBuy={() => setTradeMode("buy")}
                 onSell={() => setTradeMode("sell")}
@@ -882,6 +905,8 @@ function StockAnalysisPanel({
   portfolio,
   portfolioInsights,
   watched,
+  recentAnalyses,
+  onPickRecent,
   onAnalyze,
   onBuy,
   onSell,
@@ -894,13 +919,32 @@ function StockAnalysisPanel({
   portfolio: ReturnType<typeof calculatePortfolio>;
   portfolioInsights: PortfolioInsights;
   watched: boolean;
+  recentAnalyses: Analysis[];
+  onPickRecent: (item: Analysis) => void;
   onAnalyze: (event?: FormEvent) => Promise<void>;
   onBuy: () => void;
   onSell: () => void;
   onWatch: () => void;
 }) {
   return (
-    <div className="page-content">
+    <div className="page-content inner-page">
+      {recentAnalyses.length > 0 && (
+        <div className="recent-bar">
+          <span className="recent-bar__label">最近查询</span>
+          <div className="recent-bar__chips">
+            {recentAnalyses.map((item) => (
+              <button
+                key={item.stock.code}
+                type="button"
+                className={analysis && analysis.stock.code === item.stock.code ? "recent-chip is-active" : "recent-chip"}
+                onClick={() => onPickRecent(item)}
+              >
+                {item.stock.name} <span className="recent-chip__code">{item.stock.code}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <section className={analysis ? "search-hero compact" : "search-hero"}>
         <span className="ai-badge">AI 智能分析</span>
         {!analysis && <span className="eyebrow">公开数据 + AI解释 · 你来做决定</span>}
@@ -959,7 +1003,7 @@ function Home({
   const reviewSummary = summarizeReviews(reviews, completedCycles, pendingReviews);
 
   return (
-    <div className="page-content">
+    <div className="page-content inner-page">
       {!trades.length && <BeginnerStart onBuy={onBuy} />}
       <div className="home-cols">
             <div className="home-main">
