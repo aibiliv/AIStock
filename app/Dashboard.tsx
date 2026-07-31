@@ -333,11 +333,14 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
 
   function navigate(nextView: View) {
     setView(nextView);
-    if (nextView !== "home") {
-      router.replace(`${pathname}?view=${nextView}`);
-    } else {
+    if (nextView === "home") {
       router.replace(pathname);
+      return;
     }
+    const params = new URLSearchParams();
+    params.set("view", nextView);
+    if (nextView === "analysis" && query.trim()) params.set("symbol", query.trim());
+    router.replace(`${pathname}?${params.toString()}`);
   }
 
   const portfolio = useMemo(() => calculatePortfolio(trades), [trades]);
@@ -511,8 +514,8 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
 
   async function analyzeAndOpen(symbol: string) {
     setQuery(symbol);
-    navigate("analysis");
     await fetchAnalysis(symbol);
+    navigate("analysis");
   }
 
   async function addWatch(stock = analysis?.stock) {
@@ -721,6 +724,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 portfolioInsights={portfolioInsights}
                 watched={analysis ? watchlist.some((item) => item.symbol === analysis.stock.code) : false}
                 recentAnalyses={recentAnalyses}
+                initialSymbol={searchParams.get("symbol") ?? ""}
                 onPickRecent={(item) => setAnalysis(item)}
                 onAnalyze={analyzeStock}
                 onBuy={() => setTradeMode("buy")}
@@ -920,12 +924,24 @@ function StockAnalysisPanel({
   portfolioInsights: PortfolioInsights;
   watched: boolean;
   recentAnalyses: Analysis[];
+  initialSymbol: string;
   onPickRecent: (item: Analysis) => void;
   onAnalyze: (event?: FormEvent) => Promise<void>;
   onBuy: () => void;
   onSell: () => void;
   onWatch: () => void;
 }) {
+  useEffect(() => {
+    const symbol = initialSymbol || query;
+    if (symbol.trim() && !analysis && !analyzing) {
+      setQuery(symbol);
+      void onAnalyze();
+    }
+    // 仅在挂载时根据已带入的查询词自动分析一次，避免从关注页跳转过来却停在空状态；
+    // initialSymbol 来自 URL，可覆盖整页刷新/重挂导致的内存状态丢失
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="page-content inner-page">
       {recentAnalyses.length > 0 && (
