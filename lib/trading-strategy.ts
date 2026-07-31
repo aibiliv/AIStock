@@ -1,6 +1,7 @@
 import { getAiConfig } from "./ai-config";
 import { DEFAULT_PREFERENCES, type TradingPreferences } from "./preferences";
-import type { AssistantContext, Oscillators } from "./assistant";
+import type { AssistantContext } from "./assistant";
+import type { Oscillators } from "./stocks";
 
 type DeepSeekResponse = {
   choices?: Array<{ message?: { content?: string } }>;
@@ -22,15 +23,15 @@ function oscillatorTip(ctx: AssistantContext): string {
     else if (hist < -0.02) parts.push("MACD绿柱放大（动能偏弱）");
     else parts.push("MACD柱体走平（动能中性）");
   }
-  if (osc.kdj?.k !== undefined && osc.kdj.d !== undefined) {
+  if (osc.kdj?.k != null && osc.kdj.d != null) {
     if (osc.kdj.k > 80) parts.push("KDJ处于超买区");
     else if (osc.kdj.k < 20) parts.push("KDJ处于超卖区");
     else parts.push(`KDJ中性(K=${osc.kdj.k.toFixed(0)})`);
   }
-  if (osc.rsi?.rsi !== undefined) {
-    if (osc.rsi.rsi > 70) parts.push("RSI超买");
-    else if (osc.rsi.rsi < 30) parts.push("RSI超卖");
-    else parts.push(`RSI中性(${osc.rsi.rsi.toFixed(0)})`);
+  if (osc.rsi?.rsi12 != null) {
+    if (osc.rsi.rsi12 > 70) parts.push("RSI超买");
+    else if (osc.rsi.rsi12 < 30) parts.push("RSI超卖");
+    else parts.push(`RSI中性(${osc.rsi.rsi12.toFixed(0)})`);
   }
   return parts.join("；");
 }
