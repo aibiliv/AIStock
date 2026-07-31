@@ -1,23 +1,39 @@
-# 依赖与构建缓存（由镜像内重新安装/构建）
+# 构建上下文排除项（docker 只看 .dockerignore，不看 .gitignore）
+# 作用：① 避免把宿主机 node_modules / .env 烤进镜像 ② 缩小构建上下文、加速传输
+
+# 依赖与构建产物（容器内会重新安装/生成，勿带入宿主机的）
 node_modules
-dist
-outputs
 .wrangler
 .next
 .vinext
 out
+dist
+outputs
+work
 coverage
 
-# 版本控制
-.git
-.gitignore
-
-# 本地数据卷（运行时由容器挂载，不要复制进镜像）
-data
-
-# 日志与本地环境
-*.log
-npm-debug.log*
-.dev-*.log
+# 密钥与本地配置（绝不可进入镜像层）
 .env
 .env.*
+.env.local
+
+# 运行时数据与日志
+data
+*.log
+*.sqlite
+*.sqlite-*
+*.db
+*.cookie.txt
+.auth-cookie.txt
+
+# 版本控制 / IDE / Agent 数据
+.git
+.gitignore
+.codebuddy
+.DS_Store
+
+# 开发期文件（不影响运行）
+docker-compose.yml
+deploy.sh
+README.md
+tests
