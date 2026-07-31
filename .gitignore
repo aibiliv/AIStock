@@ -47,3 +47,16 @@ next-env.d.ts
 
 # local IDE / agent project data
 .codebuddy/
+
+# local runtime data (Cloudflare Workers / D1 / Miniflare 本地 SQLite 数据库与缓存)
+# deploy.sh 中说明数据目录为 $PROJECT_DIR/data (D1 SQLite)，属本地运行产物，切勿提交
+/data/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+
+# backup files
+*.bak
+*.bak.*
+*.tmp
