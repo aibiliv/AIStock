@@ -1,4 +1,5 @@
 import { isIsoDate } from "./domain";
+import { shanghaiIso } from "./time";
 
 export type SectorMove = {
   code: string;
@@ -151,7 +152,7 @@ export async function getSectorHeatmap(date: string, limit = 10): Promise<Sector
     source: {
       name: "腾讯证券行业主题ETF行情",
       url: SOURCE_URL,
-      fetchedAt: new Date().toISOString(),
+      fetchedAt: shanghaiIso(),
     },
   };
 }

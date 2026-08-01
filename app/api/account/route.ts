@@ -2,6 +2,7 @@ import { desc, eq, sql } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { accountSettings, capitalFlows } from "../../../db/schema";
 import { requireApiUser } from "../../../lib/auth";
+import { shanghaiIso } from "../../../lib/time";
 
 export async function GET() {
   const unauthorized = await requireApiUser();
@@ -87,9 +88,11 @@ export async function PUT(request: Request) {
       await db.insert(accountSettings).values({
         id: 1,
         initialCapitalCents,
+        createdAt: shanghaiIso(),
+        updatedAt: shanghaiIso(),
       }).onConflictDoUpdate({
         target: accountSettings.id,
-        set: { initialCapitalCents, updatedAt: sql`CURRENT_TIMESTAMP` },
+        set: { initialCapitalCents, updatedAt: shanghaiIso() },
       });
       return Response.json({ initialCapitalCents });
     } catch {

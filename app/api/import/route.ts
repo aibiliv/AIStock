@@ -1,8 +1,9 @@
 import { ensureSchema, getDb } from "../../../db";
-import { tradeRecords } from "../../../db/schema";
+import { alertRules, tradeRecords } from "../../../db/schema";
 import { findInvalidSell } from "../../../lib/domain";
-import { parseBrokerCsv, prepareTradeInput } from "../../../lib/trade-import";
+import { buildMaxLossAlerts, extractMaxLossPercent, type MaxLossAlert, parseBrokerCsv, prepareTradeInput } from "../../../lib/trade-import";
 import { requireApiUser } from "../../../lib/auth";
+import { shanghaiIso } from "../../../lib/time";
 
 type ImportError = { line: number; symbol: string; reason: string };
 
@@ -30,7 +31,9 @@ export async function POST(request: Request) {
     const toInsert: Array<typeof tradeRecords.$inferInsert> = [];
 
     const ordered = [...rows].sort((a, b) => (a.tradeDate < b.tradeDate ? -1 : a.tradeDate > b.tradeDate ? 1 : 0));
+    const alertInserts: Array<typeof alertRules.$inferInsert> = [];
     for (const row of ordered) {
+      const maxLoss = extractMaxLossPercent(row.reason);
       const prepared = prepareTradeInput({
         symbol: row.symbol,
         name: row.name,
@@ -40,6 +43,7 @@ export async function POST(request: Request) {
         tradeDate: row.tradeDate,
         fee: row.fee,
         reason: row.reason,
+        maxLoss: maxLoss === null ? undefined : maxLoss,
       });
       if (prepared.error || !prepared.values) {
         errors.push({ line: row.line, symbol: row.symbol, reason: prepared.error ?? "校验失败" });
@@ -59,7 +63,7 @@ export async function POST(request: Request) {
         maxLossCents: prepared.values.maxLossCents,
         feeCents: prepared.values.feeCents,
         otherReason: null,
-        createdAt: new Date().toISOString(),
+        createdAt: shanghaiIso(),
       };
       if (candidate.side === "卖出") {
         const invalid = findInvalidSell([...running, candidate]);
@@ -72,6 +76,22 @@ export async function POST(request: Request) {
           continue;
         }
       }
+      if (candidate.side === "买入" && candidate.maxLossCents) {
+        const riskPerShareTenThousandths = Math.round((candidate.maxLossCents * 100) / candidate.quantity);
+        const alerts = buildMaxLossAlerts({
+          symbol: candidate.symbol,
+          name: candidate.name,
+          currentPriceMillis: candidate.priceMillis,
+          maxLossMillis: riskPerShareTenThousandths,
+        }).map((alert: MaxLossAlert) => ({
+          symbol: alert.symbol,
+          name: alert.name,
+          type: alert.note.includes("止损") ? "止损" : "止盈",
+          targetPriceCents: Math.round(alert.targetTenThousandths / 100),
+          targetPriceMillis: Math.round(alert.targetTenThousandths / 10),
+        }));
+        alertInserts.push(...alerts);
+      }
       toInsert.push(candidate);
       running.push(candidate);
       nextId += 1;
@@ -79,6 +99,9 @@ export async function POST(request: Request) {
 
     if (toInsert.length) {
       await db.insert(tradeRecords).values(toInsert);
+    }
+    if (alertInserts.length) {
+      await db.insert(alertRules).values(alertInserts);
     }
 
     return Response.json({

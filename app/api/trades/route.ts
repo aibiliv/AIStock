@@ -1,9 +1,11 @@
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { alertRules, tradeRecords } from "../../../db/schema";
 import { findInvalidSell, isIsoDate, isStockCode, isTradeSide, toCents, toTenThousandths } from "../../../lib/domain";
+import { buildMaxLossAlerts } from "../../../lib/trade-import";
 import { canonicalStockName } from "../../../lib/stocks";
 import { requireApiUser } from "../../../lib/auth";
+import { shanghaiDate } from "../../../lib/time";
 
 export async function GET() {
   const unauthorized = await requireApiUser();
@@ -67,7 +69,7 @@ export async function POST(request: Request) {
     if (!isIsoDate(tradeDate)) {
       return Response.json({ error: "交易日期不正确" }, { status: 400 });
     }
-    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date());
+    const today = shanghaiDate();
     if (tradeDate > today) {
       return Response.json({ error: "交易日期不能晚于今天" }, { status: 400 });
     }
@@ -131,23 +133,25 @@ export async function POST(request: Request) {
       maxLossCents,
       feeCents,
       otherReason: otherReason || null,
+      createdAt: shanghaiIso(),
     };
     let trade;
     if (side === "买入" && riskPerShareTenThousandths !== null) {
-      const targets = [
-        { type: "止损" as const, price: priceTenThousandths - riskPerShareTenThousandths },
-        { type: "止盈一" as const, price: priceTenThousandths + riskPerShareTenThousandths },
-        { type: "止盈二" as const, price: priceTenThousandths + riskPerShareTenThousandths * 2 },
-      ];
+      const targets = buildMaxLossAlerts({
+        symbol,
+        name,
+        currentPriceMillis: priceMillis,
+        maxLossMillis: riskPerShareTenThousandths,
+      }).map((alert) => ({
+        symbol: alert.symbol,
+        name: alert.name,
+        type: alert.note.includes("止损") ? "止损" : "止盈",
+        targetPriceCents: Math.round(alert.targetTenThousandths / 100),
+        targetPriceMillis: Math.round(alert.targetTenThousandths / 10),
+      }));
       const [tradeRows] = await db.batch([
         db.insert(tradeRecords).values(tradeValues).returning(),
-        db.insert(alertRules).values(targets.map((target) => ({
-          symbol,
-          name,
-          type: target.type,
-          targetPriceCents: Math.round(target.price / 100),
-          targetPriceMillis: Math.round(target.price / 10),
-        }))),
+        db.insert(alertRules).values(targets),
       ]);
       trade = tradeRows[0];
     } else {
@@ -156,5 +160,86 @@ export async function POST(request: Request) {
     return Response.json({ trade }, { status: 201 });
   } catch {
     return Response.json({ error: "交易记录保存失败，请稍后重试" }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
+  try {
+    const payload = await request.json() as Record<string, unknown>;
+    const id = Number(payload.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return Response.json({ error: "交易记录 ID 不正确" }, { status: 400 });
+    }
+    await ensureSchema();
+    const db = getDb();
+    const [existing] = await db.select().from(tradeRecords).where(eq(tradeRecords.id, id));
+    if (!existing) {
+      return Response.json({ error: "交易记录不存在" }, { status: 404 });
+    }
+    const updates: Partial<typeof tradeRecords.$inferInsert> = {};
+    if (payload.price !== undefined) {
+      const rawPrice = Number(payload.price);
+      if (!Number.isFinite(rawPrice) || rawPrice <= 0) {
+        return Response.json({ error: "价格不正确" }, { status: 400 });
+      }
+      const priceTenThousandths = toTenThousandths(rawPrice);
+      updates.priceTenThousandths = priceTenThousandths;
+      updates.priceMillis = Math.round(priceTenThousandths / 10);
+      updates.priceCents = Math.round(priceTenThousandths / 100);
+    }
+    if (payload.quantity !== undefined) {
+      const quantity = Number(payload.quantity);
+      if (!Number.isInteger(quantity) || quantity <= 0) {
+        return Response.json({ error: "数量不正确" }, { status: 400 });
+      }
+      updates.quantity = quantity;
+    }
+    if (payload.fee !== undefined) {
+      const fee = Number(payload.fee);
+      if (!Number.isFinite(fee) || fee < 0) {
+        return Response.json({ error: "费用不正确" }, { status: 400 });
+      }
+      updates.feeCents = toCents(fee);
+    }
+    if (payload.reason !== undefined) updates.reason = String(payload.reason ?? "").trim();
+    if (payload.otherReason !== undefined) updates.otherReason = String(payload.otherReason ?? "").trim() || null;
+    if (payload.tradeDate !== undefined) {
+      const tradeDate = String(payload.tradeDate);
+      if (!isIsoDate(tradeDate)) {
+        return Response.json({ error: "交易日期格式不正确" }, { status: 400 });
+      }
+      updates.tradeDate = tradeDate;
+    }
+    if (Object.keys(updates).length === 0) {
+      return Response.json({ error: "没有可更新的内容" }, { status: 400 });
+    }
+    const [trade] = await db.update(tradeRecords).set(updates).where(eq(tradeRecords.id, id)).returning();
+    return Response.json({ trade });
+  } catch {
+    return Response.json({ error: "交易记录更新失败" }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  const unauthorized = await requireApiUser();
+  if (unauthorized) return unauthorized;
+  try {
+    const url = new URL(request.url);
+    const id = Number(url.searchParams.get("id"));
+    if (!Number.isInteger(id) || id <= 0) {
+      return Response.json({ error: "交易记录 ID 不正确" }, { status: 400 });
+    }
+    await ensureSchema();
+    const db = getDb();
+    const [existing] = await db.select().from(tradeRecords).where(eq(tradeRecords.id, id));
+    if (!existing) {
+      return Response.json({ error: "交易记录不存在" }, { status: 404 });
+    }
+    await db.delete(tradeRecords).where(eq(tradeRecords.id, id));
+    return Response.json({ ok: true });
+  } catch {
+    return Response.json({ error: "交易记录删除失败" }, { status: 500 });
   }
 }

@@ -10,6 +10,7 @@ import {
   watchItems,
 } from "../../../db/schema";
 import { requireApiUser } from "../../../lib/auth";
+import { shanghaiDate, shanghaiIso } from "../../../lib/time";
 
 export async function GET() {
   const unauthorized = await requireApiUser();
@@ -28,7 +29,7 @@ export async function GET() {
       db.select().from(accountSettings),
     ]);
     const body = JSON.stringify({
-      exportedAt: new Date().toISOString(),
+      exportedAt: shanghaiIso(),
       trades,
       watchlist,
       watchDetails: watchDetailRows,
@@ -41,7 +42,7 @@ export async function GET() {
     return new Response(body, {
       headers: {
         "content-type": "application/json; charset=utf-8",
-        "content-disposition": `attachment; filename="stock-assistant-backup-${new Date().toISOString().slice(0, 10)}.json"`,
+        "content-disposition": `attachment; filename="stock-assistant-backup-${shanghaiDate()}.json"`,
       },
     });
   } catch {

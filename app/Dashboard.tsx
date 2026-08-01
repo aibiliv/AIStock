@@ -73,6 +73,7 @@ import {
   type TradingPreferences,
 } from "../lib/preferences";
 import type { AssistantContext } from "../lib/assistant";
+import { formatDateShanghai, formatDateTimeShanghai } from "../lib/time";
 
 type View = "home" | "watchlist" | "trades" | "settings" | "analytics" | "analysis" | "scan" | "writeback";
 type TradeMode = "buy" | "sell";
@@ -614,6 +615,16 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     }
   }
 
+  async function deleteTrade(id: number) {
+    try {
+      await jsonRequest(`/api/trades?id=${id}`, { method: "DELETE" });
+      await loadData();
+      flash("交易记录已删除");
+    } catch (deleteError) {
+      flash(deleteError instanceof Error ? deleteError.message : "交易记录删除失败");
+    }
+  }
+
   async function requestNotifications() {
     if (!("Notification" in window)) {
       flash("当前浏览器不支持系统通知");
@@ -791,6 +802,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 onBuy={() => setTradeMode("buy")}
                 onSell={() => setTradeMode("sell")}
                 onReview={setReviewCycleEndTradeId}
+                onDeleteTrade={(id) => void deleteTrade(id)}
               />
             )}
             {view === "settings" && (
@@ -1413,7 +1425,7 @@ function MarketIndices() {
             })}
           </div>
           <div className="market-indices-foot">
-            <span>数据时间 {new Date(payload.source.fetchedAt).toLocaleString("zh-CN")}</span>
+            <span>数据时间 {formatDateTimeShanghai(payload.source.fetchedAt)}</span>
             <a href={payload.source.url} target="_blank" rel="noreferrer">数据来源：{payload.source.name} ↗</a>
           </div>
         </>
@@ -1531,7 +1543,7 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
   const companyLabels = isEtf
     ? ["基金产品", "跟踪指数", "基金管理人", "交易属性"]
     : ["是什么", "数据代码", "还要核验", "板块"];
-  const quoteDate = quote.marketTime ? new Date(quote.marketTime).toLocaleString("zh-CN") : "数据源未提供";
+  const quoteDate = quote.marketTime ? formatDateTimeShanghai(quote.marketTime) : "数据源未提供";
 
   return (
     <div className="analysis-page">
@@ -1655,7 +1667,7 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
             <div><span>第一目标参考</span><strong>{price(quote.target1)}</strong><p>以当前价到风险线的距离计算1R。</p></div>
             <div><span>第二目标参考</span><strong>{price(quote.target2)}</strong><p>以相同风险距离计算2R。</p></div>
           </div>
-          <Hint>数据来源：<a href={analysis.source.url} target="_blank" rel="noreferrer">{analysis.source.name}</a> · 获取于 {new Date(analysis.source.fetchedAt).toLocaleString("zh-CN")}</Hint>
+          <Hint>数据来源：<a href={analysis.source.url} target="_blank" rel="noreferrer">{analysis.source.name}</a> · 获取于 {formatDateTimeShanghai(analysis.source.fetchedAt)}</Hint>
         </section>
       </div>
 
@@ -1687,7 +1699,7 @@ function EvidencePanel({ analysis, position }: { analysis: Analysis; position: P
     {
       label: "行情位置",
       value: `${price(quote.price)} · 20日均线${price(quote.ma20)}`,
-      detail: `当前价位于20日均线${quote.price >= quote.ma20 ? "上方" : "下方"}，行情时间${quote.marketTime ? new Date(quote.marketTime).toLocaleString("zh-CN") : "未提供"}。`,
+      detail: `当前价位于20日均线${quote.price >= quote.ma20 ? "上方" : "下方"}，行情时间${quote.marketTime ? formatDateTimeShanghai(quote.marketTime) : "未提供"}。`,
       confidence: "高",
       source: source.name,
     },
@@ -2439,7 +2451,7 @@ function AnalysisHistory({ symbol, currentPrice }: { symbol: string; currentPric
           : ((currentPrice * 1000 / report.priceMillis) - 1) * 100;
         return (
           <article className="history-item" key={report.id}>
-            <div><b>{new Date(report.createdAt).toLocaleString("zh-CN")}</b><span>{report.mode === "deepseek" ? "AI" : "自动解释"} · {report.priceMillis === null
+            <div><b>{formatDateTimeShanghai(report.createdAt)}</b><span>{report.mode === "deepseek" ? "AI" : "自动解释"} · {report.priceMillis === null
               ? <>旧记录约{money(report.priceCents)} · <i className="legacy-precision">精度不足，不计算涨跌</i></>
               : <>当时{millisPrice(report.priceMillis)} · 至今<span className={(change ?? 0) >= 0 ? "up" : "down"}>{(change ?? 0) >= 0 ? "+" : ""}{(change ?? 0).toFixed(2)}%</span></>
             }</span></div>
@@ -2744,7 +2756,7 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved }: {
             const industryLabel = stockMeta?.industry || "行业信息待补充";
             const isEtf = stockMeta?.instrumentType === "etf";
             const reviewedDate = item.lastReviewedAt
-              ? new Date(item.lastReviewedAt).toLocaleDateString("zh-CN", { year: "numeric", month: "numeric", day: "numeric" })
+              ? formatDateShanghai(item.lastReviewedAt)
               : null;
             const watchedDays = Math.max(0, Math.round((today.getTime() - new Date(item.createdAt).getTime()) / 86_400_000));
             return (
@@ -2889,7 +2901,7 @@ function Watchlist({ items, quotes, onSearch, onAnalyze, onSaved }: {
   );
 }
 
-function Trades({ trades, reviews, capitalFlows, initialCapitalCents, onBuy, onSell, onReview }: {
+function Trades({ trades, reviews, capitalFlows, initialCapitalCents, onBuy, onSell, onReview, onDeleteTrade }: {
   trades: Trade[];
   reviews: Review[];
   capitalFlows: CapitalFlow[];
@@ -2897,6 +2909,7 @@ function Trades({ trades, reviews, capitalFlows, initialCapitalCents, onBuy, onS
   onBuy: () => void;
   onSell: () => void;
   onReview: (cycleEndTradeId: number) => void;
+  onDeleteTrade: (id: number) => void;
 }) {
   const portfolio = calculatePortfolio(trades);
   const cycles = buildTradeCycles(trades);
@@ -3029,7 +3042,7 @@ function Trades({ trades, reviews, capitalFlows, initialCapitalCents, onBuy, onS
       )}
       {trades.length ? (
         <section className="panel trade-list">
-          <div className="trade-head"><span>#</span><span>日期</span><span>股票</span><span>操作</span><span>原因</span><span>状态</span></div>
+          <div className="trade-head"><span>#</span><span>日期</span><span>股票</span><span>操作</span><span>原因</span><span>状态</span><span></span></div>
           {sortedTrades.map((trade, idx) => {
             const cycle = cycleByTradeId.get(trade.id);
             const hasReview = cycle?.endTradeId ? reviewed.has(cycle.endTradeId) : false;
@@ -3060,6 +3073,20 @@ function Trades({ trades, reviews, capitalFlows, initialCapitalCents, onBuy, onS
                       : cycle?.endTradeId === trade.id
                         ? <Button variant="ghost" size="sm" onClick={() => onReview(cycle.endTradeId!)}>去复盘</Button>
                         : <Badge tone="amber">待复盘</Badge>}
+                </span>
+                <span className="trade-actions">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`删除交易 ${trade.name} ${trade.tradeDate}`}
+                    onClick={() => {
+                      if (window.confirm(`确认删除该笔交易？\n${trade.name} ${trade.tradeDate} ${trade.side} ${trade.quantity}股`)) {
+                        onDeleteTrade(trade.id);
+                      }
+                    }}
+                  >
+                    删除
+                  </Button>
                 </span>
               </div>
             );

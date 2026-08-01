@@ -8,6 +8,7 @@
  * 对标：TraderVue / 投资账本 的"券商流水导入对账"。
  */
 import { isIsoDate, isStockCode, isTradeSide, toCents, toTenThousandths } from "./domain";
+import { shanghaiDate } from "./time";
 import { canonicalStockName } from "./stocks";
 
 export type PreparedTrade = {
@@ -58,7 +59,7 @@ export function prepareTradeInput(payload: Record<string, unknown>): { values?: 
     return { error: "价格和数量必须是有效的正数，且交易金额不能超出安全范围" };
   }
   if (!isIsoDate(tradeDate)) return { error: "交易日期不正确" };
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date());
+  const today = shanghaiDate();
   if (tradeDate > today) return { error: "交易日期不能晚于今天" };
   if (!reason || reason.length > 200) return { error: "请选择或填写交易原因" };
   if (
@@ -94,6 +95,43 @@ export function prepareTradeInput(payload: Record<string, unknown>): { values?: 
       feeCents,
     },
   };
+}
+
+/** 从交易备注/备注列文本中解析「最大亏损比例」（如"亏 5%""止损-8%"），
+ * 与 /api/trades 手动录入的约定一致。解析不到返回 null。 */
+export function extractMaxLossPercent(text: string): number | null {
+  const match = /亏\s*[-]?(\d+(?:\.\d+)?)\s*%/.exec(text);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+export type MaxLossAlert = {
+  symbol: string;
+  name: string;
+  direction: "below" | "above";
+  targetTenThousandths: number;
+  note: string;
+};
+
+/** 买入且设置了最大亏损线时，自动建立 3 条价格提醒（止损 / 止盈一 / 止盈二）。
+ * 与手动录入 /api/trades 共用，保证两种录入方式预警行为一致。price 单位为毫（×1000）。 */
+export function buildMaxLossAlerts(params: {
+  symbol: string;
+  name: string;
+  currentPriceMillis: number;
+  maxLossMillis: number;
+}): MaxLossAlert[] {
+  const { symbol, name, currentPriceMillis, maxLossMillis } = params;
+  const stopLossPrice = (currentPriceMillis - maxLossMillis) / 1000;
+  const riskUnit = (currentPriceMillis - maxLossMillis) / 1000;
+  const takeProfit1 = (currentPriceMillis + riskUnit) / 1000;
+  const takeProfit2 = (currentPriceMillis + riskUnit * 2) / 1000;
+  return [
+    { symbol, name, direction: "below", targetTenThousandths: Math.max(0, Math.round(stopLossPrice * 1000)), note: "止损线（最大亏损触发）" },
+    { symbol, name, direction: "above", targetTenThousandths: Math.round(takeProfit1 * 1000), note: "止盈目标一（风险等价）" },
+    { symbol, name, direction: "above", targetTenThousandths: Math.round(takeProfit2 * 1000), note: "止盈目标二（风险两倍）" },
+  ];
 }
 
 export type ParsedImportRow = {

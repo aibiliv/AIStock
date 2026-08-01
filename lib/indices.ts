@@ -1,6 +1,8 @@
 // 主要大盘指数实时行情（东方财富 push2 批量接口）。
 // 注意：指数代码与个股代码冲突（如 000001 既是平安银行也是上证指数），
 // 因此这里用东方财富 secid 精确区分，不走 lib/stocks 的 eastmoneySecid 规则。
+import { shanghaiIso } from "./time";
+
 export type IndexQuote = {
   code: string;
   name: string;
@@ -59,7 +61,7 @@ export async function getIndexQuotes(): Promise<IndicesData> {
     source: {
       name: "东方财富公开行情",
       url: "https://quote.eastmoney.com/center/index.html",
-      fetchedAt: new Date().toISOString(),
+      fetchedAt: shanghaiIso(),
     },
   };
 }

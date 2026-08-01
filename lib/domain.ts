@@ -1,3 +1,5 @@
+import { shanghaiDate } from "./time";
+
 export type Trade = {
   id: number;
   symbol: string;
@@ -222,10 +224,7 @@ export function buildTradeCycles(trades: Trade[]): TradeCycle[] {
 }
 
 export function localIsoDate(date = new Date()) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
+  return shanghaiDate(date);
 }
 
 export function toCents(value: unknown) {

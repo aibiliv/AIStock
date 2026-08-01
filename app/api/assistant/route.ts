@@ -13,6 +13,8 @@ type ChatResponse = {
   choices?: Array<{ message?: { content?: string } }>;
 };
 
+const OFFLINE_NOTE = "（当前为离线规则模式：未配置 AI 接口密钥，以下为本地规则生成的参考，非大模型回答。）\n";
+
 function summarizeContext(ctx: AssistantContext): string {
   const s = ctx.stock;
   const q = ctx.quote;
@@ -98,7 +100,7 @@ export async function POST(request: Request) {
   const fallback = buildFallbackAnswer(question, payload.context as AssistantContext, prefs);
   const ai = getAiConfig();
   if (!ai.configured) {
-    return Response.json({ answer: fallback, mode: "automatic" });
+    return Response.json({ answer: OFFLINE_NOTE + fallback, mode: "fallback" });
   }
 
   try {
@@ -144,16 +146,16 @@ export async function POST(request: Request) {
       }),
     });
     if (!response.ok) {
-      return Response.json({ answer: fallback, mode: "automatic" });
+      return Response.json({ answer: OFFLINE_NOTE + fallback, mode: "fallback" });
     }
 
     const result = await response.json().catch(() => null) as ChatResponse | null;
     const answer = result?.choices?.[0]?.message?.content?.trim();
     return Response.json({
-      answer: answer ? answer.slice(0, 3000) : fallback,
-      mode: answer ? ai.provider : "automatic",
+      answer: answer ? answer.slice(0, 3000) : OFFLINE_NOTE + fallback,
+      mode: answer ? "ai" : "fallback",
     });
   } catch {
-    return Response.json({ answer: fallback, mode: "automatic" });
+    return Response.json({ answer: OFFLINE_NOTE + fallback, mode: "fallback" });
   }
 }

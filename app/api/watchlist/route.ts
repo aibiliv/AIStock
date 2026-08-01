@@ -4,6 +4,7 @@ import { watchDetails, watchItems } from "../../../db/schema";
 import { isStockCode } from "../../../lib/domain";
 import { canonicalStockName } from "../../../lib/stocks";
 import { requireApiUser } from "../../../lib/auth";
+import { shanghaiIso } from "../../../lib/time";
 
 export async function GET() {
   const unauthorized = await requireApiUser();
@@ -63,8 +64,8 @@ export async function POST(request: Request) {
       });
     }
     const [itemRows] = await db.batch([
-      db.insert(watchItems).values({ symbol, name, note }).returning(),
-      db.insert(watchDetails).values({ symbol, conditionText, status: "研究中" }),
+      db.insert(watchItems).values({ symbol, name, note, createdAt: shanghaiIso() }).returning(),
+      db.insert(watchDetails).values({ symbol, conditionText, status: "研究中", tradedAt: shanghaiIso() }),
     ]);
     const item = itemRows[0];
     return Response.json({ item: { ...item, conditionText, status: "研究中", lastReviewedAt: null } }, { status: 201 });
@@ -122,15 +123,15 @@ export async function PATCH(request: Request) {
     const values = {
       conditionText,
       status: payload.status as "研究中" | "等待条件" | "已买入" | "暂停",
-      lastReviewedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      lastReviewedAt: shanghaiIso(),
+      updatedAt: shanghaiIso(),
       conditionMetric,
       conditionDirection,
       conditionValue,
     };
     const [detail] = existing.length
       ? await db.update(watchDetails).set(values).where(eq(watchDetails.symbol, symbol)).returning()
-      : await db.insert(watchDetails).values({ symbol, ...values }).returning();
+      : await db.insert(watchDetails).values({ symbol, ...values, tradedAt: shanghaiIso() }).returning();
     return Response.json({ detail });
   } catch {
     return Response.json({ error: "观察条件保存失败" }, { status: 500 });

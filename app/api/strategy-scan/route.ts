@@ -2,6 +2,7 @@ import { desc } from "drizzle-orm";
 import { requireApiUser } from "../../../lib/auth";
 import { getDb, ensureSchema } from "../../../db";
 import { strategyScan } from "../../../db/schema";
+import { shanghaiIso } from "../../../lib/time";
 
 /**
  * 策略扫描接口（跨机器联动 · 本地 PC 推送 / 云端读取）
@@ -82,7 +83,7 @@ export async function POST(req: Request) {
     await ensureSchema();
     const db = getDb();
     await db.insert(strategyScan).values({ payload: JSON.stringify(body) });
-    return Response.json({ ok: true, savedAt: new Date().toISOString() });
+    return Response.json({ ok: true, savedAt: shanghaiIso() });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return Response.json(

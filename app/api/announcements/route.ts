@@ -6,6 +6,7 @@ import { isStockCode } from "../../../lib/domain";
 import { getAiConfig } from "../../../lib/ai-config";
 import { requireApiUser } from "../../../lib/auth";
 import { isEtfCode } from "../../../lib/stocks";
+import { shanghaiIso } from "../../../lib/time";
 
 const allowedHosts = new Set([
   "static.cninfo.com.cn",
@@ -222,6 +223,7 @@ export async function POST(request: Request) {
       summary: result.summary,
       risksJson: JSON.stringify(result.risks),
       mode: result.mode,
+      createdAt: shanghaiIso(),
     }).returning();
     return Response.json({ note: { ...note, risks: result.risks } }, { status: 201 });
   } catch (error) {

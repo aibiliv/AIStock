@@ -2471,7 +2471,12 @@ svg { display: block; }
 .trade-row {
   display: grid;
   gap: 16px;
-  grid-template-columns: 36px .8fr 1fr .9fr 1.5fr .7fr;
+  grid-template-columns: 36px .8fr 1fr .9fr 1.5fr .7fr auto;
+}
+
+.trade-actions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .trade-index {

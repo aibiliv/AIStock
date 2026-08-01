@@ -1,6 +1,7 @@
 import A_STOCK_LIST from "../db/a_stock_list";
 import { USER_FUND_PROFILES } from "../db/funds_user";
 import { getRealtime, getKlines, getProfile } from "./market-data";
+import { shanghaiIso } from "./time";
 
 export type FundProfile = {
   name: string;
@@ -432,7 +433,7 @@ export async function analyzeStockData(query: string) {
       profitGrowth,
       debtRatio,
       marketCap: profile.marketCap,
-      // PE/PB 来自 MarketDataProvider（东方财富优先，Yahoo 兜底）
+      // PE/PB 来自 MarketDataProvider（东方财富优先，麦蕊/东财f100 兜底）
       pe: profile.pe,
       pb: profile.pb,
       roe: profile.roe,
@@ -450,7 +451,7 @@ export async function analyzeStockData(query: string) {
     source: {
       name: realtime ? `历史K线:${klines.sourceName} · 实时:${realtime.sourceName}` : `历史K线:${klines.sourceName} · 实时:行情源不可用`,
       url: klines.sourceUrl,
-      fetchedAt: new Date().toISOString(),
+      fetchedAt: shanghaiIso(),
     },
   };
 }
