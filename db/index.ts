@@ -156,6 +156,18 @@ export async function ensureSchema() {
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`),
       db.prepare("CREATE INDEX IF NOT EXISTS strategy_feedback_symbol_idx ON strategy_feedback(symbol)"),
+      db.prepare(`CREATE TABLE IF NOT EXISTS strategy_scan (
+        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`),
+      db.prepare(`CREATE TABLE IF NOT EXISTS strategy_writeback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+        payload TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`),
+      db.prepare("CREATE INDEX IF NOT EXISTS strategy_scan_created_idx ON strategy_scan(created_at)"),
+      db.prepare("CREATE INDEX IF NOT EXISTS strategy_writeback_created_idx ON strategy_writeback(created_at)"),
     ]);
     await addColumnIfMissing("trade_records", "price_millis", "price_millis INTEGER");
     await addColumnIfMissing("trade_records", "price_ten_thousandths", "price_ten_thousandths INTEGER");

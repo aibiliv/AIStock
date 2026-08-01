@@ -143,3 +143,18 @@ export const strategyFeedback = sqliteTable("strategy_feedback", {
   source: text("source").notNull().default("web"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+// 策略扫描推送结果（跨机器联动 · 本地 trading_agent 推送 / 云端读取）
+// 用 D1 存储而非裸文件：Cloudflare Workers 运行时不允许 handler 任意写文件系统。
+export const strategyScan = sqliteTable("strategy_scan", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  payload: text("payload").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+// 候选回写信号推送结果（dry-run；真实下单需接入带下单能力的连接器）
+export const strategyWriteback = sqliteTable("strategy_writeback", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  payload: text("payload").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
