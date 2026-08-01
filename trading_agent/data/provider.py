@@ -13,6 +13,7 @@ import os
 import time
 import urllib.parse
 import urllib.request
+from abc import ABC, abstractmethod
 from typing import Optional
 
 import config
@@ -222,3 +223,97 @@ def fetch_hot_stocks() -> list[dict]:
         })
     _save_cache("hot", "today", rows)
     return rows
+
+
+class DataProvider(ABC):
+    """数据源抽象（架构图「数据底座·连接器」的统一接口）。
+
+    trading_agent 引擎只认这个接口，不关心数据来自腾讯/东财直连、
+    还是来自 WorkBuddy 中枢（westock-mcp / tdx-connector）。
+    这让「WorkBuddy 当中枢」成为可能：中枢取数后注入 StaticProvider，
+    引擎照常计算，自身不直连任何 MCP。
+    """
+
+    @abstractmethod
+    def fetch_kline(self, code: str, beg: str, end: str) -> list[dict]: ...
+
+    @abstractmethod
+    def fetch_quote(self, code: str) -> dict: ...
+
+    @abstractmethod
+    def fetch_hot_stocks(self) -> list[dict]: ...
+
+
+class TencentEastMoneyProvider(DataProvider):
+    """默认数据源：腾讯估值 + 东财/新浪 K 线，免 key 直连。"""
+
+    def fetch_kline(self, code: str, beg: str, end: str) -> list[dict]:
+        return fetch_kline(code, beg, end)
+
+    def fetch_quote(self, code: str) -> dict:
+        return fetch_quote(code)
+
+    def fetch_hot_stocks(self) -> list[dict]:
+        return fetch_hot_stocks()
+
+
+class StaticProvider(DataProvider):
+    """WorkBuddy 中枢注入的预取数据（来自 westock/tdx 连接器）。
+
+    中枢先把 connectors 取到的 K 线/估值/热点放进这里，再交给引擎——
+    引擎完全不知道数据来源，实现中枢与引擎解耦。
+    """
+
+    def __init__(
+        self,
+        klines: Optional[dict[str, list[dict]]] = None,
+        quotes: Optional[dict[str, dict]] = None,
+        hot: Optional[list[dict]] = None,
+    ):
+        self._klines = klines or {}
+        self._quotes = quotes or {}
+        self._hot = hot if hot is not None else []
+
+    def fetch_kline(self, code: str, beg: str, end: str) -> list[dict]:
+        return list(self._klines.get(code, []))
+
+    def fetch_quote(self, code: str) -> dict:
+        return dict(self._quotes.get(code, {}))
+
+    def fetch_hot_stocks(self) -> list[dict]:
+        return list(self._hot)
+
+
+class GatewayProvider(DataProvider):
+    """通过 HTTP 网关取数（网关由 WorkBuddy 中枢托管，转发到连接器）。
+
+    适用于：trading_agent 以独立进程/定时任务运行，但仍希望数据走
+    WorkBuddy 中枢的连接器。网关地址由 WORKBUDDY_GATEWAY_URL 配置。
+    """
+
+    def __init__(self, gateway_url: str, timeout: int = 15):
+        self.gateway_url = gateway_url.rstrip("/")
+        self.timeout = timeout
+
+    def _get(self, path: str, params: dict) -> dict:
+        qs = urllib.parse.urlencode(params)
+        req = urllib.request.Request(f"{self.gateway_url}{path}?{qs}")
+        with urllib.request.urlopen(req, timeout=self.timeout) as r:
+            return json.loads(r.read().decode("utf-8", "replace"))
+
+    def fetch_kline(self, code: str, beg: str, end: str) -> list[dict]:
+        return self._get("/kline", {"code": code, "beg": beg, "end": end}).get("bars", [])
+
+    def fetch_quote(self, code: str) -> dict:
+        return self._get("/quote", {"code": code}).get("quote", {})
+
+    def fetch_hot_stocks(self) -> list[dict]:
+        return self._get("/hot", {}).get("stocks", [])
+
+
+def default_provider() -> DataProvider:
+    """按配置返回数据源：配了网关走网关（中枢托管），否则腾讯/东财直连。"""
+    gw = os.environ.get("WORKBUDDY_GATEWAY_URL", "").strip()
+    if gw:
+        return GatewayProvider(gw)
+    return TencentEastMoneyProvider()

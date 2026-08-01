@@ -58,9 +58,22 @@ def main():
     p.add_argument("--fast-ma", type=int, default=None)
     p.add_argument("--slow-ma", type=int, default=None)
     p.add_argument("--no-push", action="store_true", help="跳过云端推送（仅本地产出）")
+    p.add_argument("--no-connectors", action="store_true", help="跳过 westock/tdx 连接器（强制直连）")
+    p.add_argument("--no-writeback", action="store_true", help="跳过把信号写回通达信（即使已配置 tdx）")
+    p.add_argument("--serve", action="store_true", help="以 HTTP 服务方式运行（可被 WorkBuddy 调度）")
+    p.add_argument("--port", type=int, default=None, help="--serve 时监听端口（默认 AGENT_BIND_PORT）")
     args = p.parse_args()
 
     cfg = build_cfg(args)
+    if args.no_connectors:
+        cfg.connectors.westock_url = ""
+        cfg.connectors.tdx_url = ""
+
+    if args.serve:
+        from agent_server import serve
+        serve(cfg, host=config.AGENT_BIND_HOST, port=args.port or config.AGENT_BIND_PORT)
+        return
+
     result = loop.run(cfg)
     # 本地产出：写共享 JSON（本地查看用）
     from reports.report import write_scan_json
@@ -76,6 +89,9 @@ def main():
     else:
         print("SKIP 已指定 --no-push，跳过云端推送。")
 
+    # 执行回写 + 提醒推送（架构图「WorkBuddy 中枢 · 执行回写 + 推送提醒」）
+    _run_connectors(cfg, result, args)
+
     notifier = get_notifier(cfg)
     path = notifier.notify(result, cfg)
     print(f"报告已生成: {path}")
@@ -85,6 +101,52 @@ def main():
     removed = prune_reports()
     if removed:
         print(f"本地报告轮转：清理了 {removed} 个旧文件（默认保留最近 20 次，可用 REPORT_KEEP 调整）")
+
+
+def _run_connectors(cfg: config.AppConfig, result: dict, args: argparse.Namespace):
+    """在闭环末尾把结果写回通达信并推送企业微信提醒。"""
+    from bridge import ConnectorHub
+
+    if not (cfg.connectors.tdx_url or cfg.connectors.westock_url or cfg.connectors.wecom_webhook):
+        return  # 未配置任何连接器
+    hub = ConnectorHub(cfg)
+
+    # 1) 执行回写：把最终信号转成委托写回通达信（默认 dry_run 安全）
+    if cfg.connectors.tdx_url and not args.no_writeback:
+        signals = _build_writeback_signals(result)
+        if signals:
+            dry = not cfg.connectors.enable_writeback
+            receipts = hub.writeback_signals(signals, dry_run=dry)
+            print(f"[回写] 已下发 {len(receipts)} 笔委托（dry_run={dry}）")
+
+    # 2) 提醒推送：企业微信
+    if cfg.connectors.wecom_webhook:
+        r = hub.notify(result)
+        print(f"[推送] 企业微信: {r}")
+
+
+def _build_writeback_signals(result: dict) -> list:
+    """从最终信号中抽取待回写的委托（每只标的首买信号）。"""
+    meta = result.get("meta", {})
+    final = result.get("final", {})
+    # final.dates / final.equity 提供时间序列；这里用 selected 列表构造样例委托
+    signals = []
+    for r in result.get("selected", [])[: cfg_max_positions(result)]:
+        code = r.get("code", "")
+        if not code:
+            continue
+        signals.append({
+            "code": code,
+            "side": "BUY",
+            "price": float(r.get("price", 0) or 0),
+            "quantity": 100,
+        })
+    return signals
+
+
+def cfg_max_positions(result: dict) -> int:
+    return int(result.get("meta", {}).get("top_n", 8))
+
 
 
 if __name__ == "__main__":

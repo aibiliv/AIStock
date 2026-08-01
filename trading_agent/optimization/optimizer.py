@@ -12,7 +12,39 @@ from strategy import signals
 from backtest import engine
 
 
+def apply_feedback_adjustment(cfg: config.AppConfig) -> config.AppConfig:
+    """读取用户反馈，自适应调整因子权重与止损。
+
+    正面反馈占比高 -> 强化动量因子、放宽止损（当前策略被认可）；
+    占比低 -> 偏价值/流动性、收紧止损（当前策略需更谨慎）。
+    """
+    from feedback_store import feedback_summary
+
+    try:
+        s = feedback_summary()
+    except Exception:  # noqa: BLE001
+        return cfg
+    if s["count"] == 0:
+        return cfg
+
+    ratio = s["positive_ratio"]
+    w_mom = 0.3 + 0.4 * ratio
+    w_val = 0.45 - 0.2 * ratio
+    w_liq = max(0.1, round(1 - w_mom - w_val, 2))
+    w_mom = round(w_mom, 2)
+    w_val = round(w_val, 2)
+    cfg.screener.w_momentum = w_mom
+    cfg.screener.w_value = w_val
+    cfg.screener.w_liquidity = w_liq
+    cfg.signal.stop_loss_pct = round(-(0.06 + 0.04 * (1 - ratio)), 2)
+    return cfg
+
+
 def optimize(code_klines: dict, codes: list[str], cfg: config.AppConfig) -> dict:
+    # 反馈闭环：用历史用户评价自适应调整参数后再搜索
+    cfg = copy.deepcopy(cfg)
+    cfg = apply_feedback_adjustment(cfg)
+
     ocfg = cfg.optim
     grid = []
     for f in ocfg.fast_ma_grid:

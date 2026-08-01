@@ -13,14 +13,21 @@ from strategy import screener, signals
 from backtest import engine
 
 
-def run(cfg: config.AppConfig) -> dict:
+def run(cfg: config.AppConfig, dp=None) -> dict:
+    """运行完整闭环，产出结果字典。
+
+    dp: DataProvider（可注入）。None 时回退默认数据源（腾讯/东财直连）。
+    当 WorkBuddy 中枢取数后，应传入 StaticProvider 让引擎用中枢数据计算。
+    """
+    dp = dp or provider.default_provider()
+
     # 1) 选票
-    codes = universe_mod.get_universe(cfg)
-    selected = screener.screen(cfg, codes)
+    codes = universe_mod.get_universe(cfg, dp)
+    selected = screener.screen(cfg, codes, dp)
     selected_codes = [r["code"] for r in selected]
 
     # 拉取已选标的的历史 K 线（回测/信号所需）
-    code_klines = {c: provider.fetch_kline(c, cfg.beg, cfg.end) for c in selected_codes}
+    code_klines = {c: dp.fetch_kline(c, cfg.beg, cfg.end) for c in selected_codes}
 
     # 2) 操作（当前参数下的信号）
     code_signals = {c: signals.generate_signals(code_klines[c], cfg.signal) for c in selected_codes}

@@ -24,6 +24,22 @@ SCAN_SHARE_DIR = os.environ.get(
 CLOUD_SCAN_URL = os.environ.get("CLOUD_SCAN_URL", "")
 CLOUD_SCAN_TOKEN = os.environ.get("CLOUD_SCAN_TOKEN", "")
 
+# ---- 连接器（对应架构图「WorkBuddy 中枢 · 桥接连接器」） ----
+# 接入后填写端点与密钥；留空则对应连接器不启用，trading_agent 退回腾讯/东财直连。
+# 腾讯自选股 westock-mcp：查询为主（行情/估值/K线/财务），无回写/推送能力。
+WESTOCK_MCP_URL = os.environ.get("WESTOCK_MCP_URL", "")
+WESTOCK_MCP_TOKEN = os.environ.get("WESTOCK_MCP_TOKEN", "")
+# 通达信 tdx-connector：行情 + 条件选股 + 交易接口（下单/撤单，默认 dry-run）。
+# 端点形如 https://mcp.tdx.com.cn:3001/mcp ，密钥取 TDX:xxxx 填到 TDX_API_KEY。
+TDX_MCP_URL = os.environ.get("TDX_MCP_URL", "")
+TDX_API_KEY = os.environ.get("TDX_API_KEY", "")
+# 企业微信群机器人 Webhook（对应架构图「微信/腾讯自选股 App 提醒」）。
+# 腾讯自选股 App 推送无公开工具，统一走企业微信机器人最稳妥；留空则不推送。
+WECOM_WEBHOOK_URL = os.environ.get("WECOM_WEBHOOK_URL", "")
+# trading_agent 作为可调度 Agent 时监听的端口（WorkBuddy 经 HTTP 调度）。
+AGENT_BIND_HOST = os.environ.get("AGENT_BIND_HOST", "127.0.0.1")
+AGENT_BIND_PORT = int(os.environ.get("AGENT_BIND_PORT", "8080"))
+
 # 默认股票池：跨行业代表性标的（仅作示例，可在 AppConfig.universe 中修改）
 DEFAULT_UNIVERSE = [
     "600519", "000858", "601318", "600036", "000333", "000651", "600276",
@@ -88,6 +104,22 @@ class PushConfig:
 
 
 @dataclass
+class ConnectorsConfig:
+    """连接器（桥接 westock-mcp / tdx-connector）
+
+    对应架构图「WorkBuddy 中枢 · 桥接连接器」。所有字段留空即不启用，
+    trading_agent 退回腾讯/东财直连。接入连接器后填端点与密钥即可生效。
+    """
+    westock_url: str = WESTOCK_MCP_URL
+    westock_token: str = WESTOCK_MCP_TOKEN
+    tdx_url: str = TDX_MCP_URL
+    tdx_api_key: str = TDX_API_KEY
+    wecom_webhook: str = WECOM_WEBHOOK_URL
+    enable_writeback: bool = False     # 是否把信号/选股写回通达信（dry-run 安全默认）
+    enable_notify: bool = False        # 是否推送企业微信提醒
+
+
+@dataclass
 class AppConfig:
     """顶层配置"""
     universe: list = field(default_factory=lambda: list(DEFAULT_UNIVERSE))
@@ -100,3 +132,4 @@ class AppConfig:
     optim: OptimConfig = field(default_factory=OptimConfig)
     notifier: str = "local"             # local（默认）| email
     push: PushConfig = field(default_factory=PushConfig)
+    connectors: ConnectorsConfig = field(default_factory=ConnectorsConfig)

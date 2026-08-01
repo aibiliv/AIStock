@@ -84,6 +84,7 @@ trading_agent/cache/
 trading_agent/reports/*.csv
 trading_agent/reports/*.json
 trading_agent/reports/*.md
+trading_agent/feedback.jsonl
 
 # playwright（e2e 测试产物）
 /test-results/
