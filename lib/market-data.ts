@@ -345,29 +345,69 @@ async function eastmoneyF100Profile(code: string): Promise<Partial<StockProfile>
   }
 }
 
+// 东方财富「财务主指标」(datacenter) 兜底：在国内环境稳定可达，免费，用于补充
+// grossMargin(毛利率) / profitMargin(净利率) / roe(净资产收益率) / operatingCashflow(经营现金流) / sector(行业)。
+// 注：GROSS_PROFIT_RATIO / NETPROFIT_RATIO / ROE 均为百分比数值（如 91.5），已除 100 归一为小数；
+//     若实际部署环境该接口返回的是小数，需去掉 /100。失败时静默退化为 null。
+type EmFundamentals = {
+  grossMargin: number | null;
+  profitMargin: number | null;
+  roe: number | null;
+  operatingCashflow: number | null;
+  sector: string | null;
+};
+async function eastmoneyFundamentals(code: string): Promise<EmFundamentals> {
+  const secu = code.replace(/\.(SS|SZ|SH|BJ)$/i, "");
+  const url = `https://datacenter.eastmoney.com/securities/api/data/v1/get?reportName=RPT_F10_FIN_MAININDICATOR&columns=SECUCODE,SECURITY_CODE,REPORT_DATE,GROSS_PROFIT_RATIO,NETPROFIT_RATIO,ROE,OPERATE_CASH_FLOW,INDUSTRY_NAME&filter=(SECURITY_CODE%3D%22${secu}%22)&pageSize=5&sortColumns=REPORT_DATE&sortTypes=-1&source=HSF10&client=PC`;
+  const empty: EmFundamentals = { grossMargin: null, profitMargin: null, roe: null, operatingCashflow: null, sector: null };
+  try {
+    const res = await fetch(url, { headers: { "user-agent": UA }, signal: AbortSignal.timeout(TIMEOUT) });
+    if (!res.ok) return empty;
+    const data = await res.json() as {
+      data?: { result?: { data?: Array<Record<string, unknown>> } };
+    };
+    const rows = data.data?.result?.data ?? [];
+    const row = rows[0];
+    if (!row) return empty;
+    const pct = (v: unknown) => { const n = Number(v); return Number.isFinite(n) && n !== 0 ? n / 100 : null; };
+    const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : null; };
+    const industry = row.INDUSTRY_NAME;
+    return {
+      grossMargin: pct(row.GROSS_PROFIT_RATIO),
+      profitMargin: pct(row.NETPROFIT_RATIO),
+      roe: pct(row.ROE ?? row.WEIGHTAVG_ROE),
+      operatingCashflow: num(row.OPERATE_CASH_FLOW),
+      sector: typeof industry === "string" ? industry : null,
+    };
+  } catch {
+    return empty;
+  }
+}
+
 /** 基本面资料。
  * 东方财富对 A 股的名称/总市值/PE/PB 更可靠优先；
- * roe/profitMargin/businessSummary/industry 优先用麦蕊（仅配置 token 时），否则回退东方财富 f100。
- * （历史上 Yahoo 也参与兜底，但其在 Cloudflare Workers 国内环境基本不可达、且会拖慢请求，已移除。） */
+ * roe/profitMargin/businessSummary/industry 优先用麦蕊（仅配置 token 时），否则由东方财富财务主指标兜底；
+ * grossMargin/operatingCashflow/sector 由东方财富「财务主指标」免费接口补充（国内稳定可达）。 */
 export async function getProfile(code: string): Promise<StockProfile> {
   const mairuiEnabled = await isMairuiEnabled();
-  const [em, mairui, emF100] = await Promise.all([
+  const [em, mairui, emF100, emFund] = await Promise.all([
     eastmoneyProfile(code),
     mairuiEnabled ? getMairuiFundamentals(code) : Promise.resolve(null),
     eastmoneyF100Profile(code),
+    eastmoneyFundamentals(code),
   ]);
   return {
-    name: em.name,
-    marketCap: em.marketCap,
-    pe: em.pe,
-    pb: em.pb,
-    // 麦蕊(配置 token 时)提供 roe/profitMargin；grossMargin/operatingCashflow/sector
-    // 原由 Yahoo 提供，移除 Yahoo 后免费链路无稳定源，退化为 null（有 token 时麦蕊仍覆盖 roe/净利率）。
-    roe: mairui?.roe ?? null,
-    grossMargin: null,
-    profitMargin: mairui?.profitMargin ?? null,
-    operatingCashflow: null,
-    sector: null,
+    name: em.name ?? null,
+    marketCap: em.marketCap ?? null,
+    pe: em.pe ?? null,
+    pb: em.pb ?? null,
+    // 麦蕊(配置 token 时)优先，否则东方财富财务主指标兜底（无 token 也能填）。
+    roe: mairui?.roe ?? emFund.roe ?? null,
+    // 东方财富财务主指标免费接口兜底（无 token 也可用）。
+    grossMargin: emFund.grossMargin,
+    profitMargin: mairui?.profitMargin ?? emFund.profitMargin ?? null,
+    operatingCashflow: emFund.operatingCashflow,
+    sector: emFund.sector,
     // 行业/简介：麦蕊优先 → 东方财富 f100 兜底（国内稳定）
     industry: mairui?.industry ?? emF100.industry ?? null,
     businessSummary: mairui?.businessSummary ?? emF100.businessSummary ?? null,
