@@ -25,7 +25,7 @@ node --input-type=module -e '
   ];
   const lines = names
     .filter((name) => process.env[name])
-    .map((name) => `${name} = ${JSON.stringify(process.env[name])}`);
+    .map((name) => `${name} = ${JSON.stringify(String(process.env[name]).replace(/\r$/g, ""))}`);
   writeFileSync(".dev.vars", `${lines.join("\n")}\n`, { mode: 0o600 });
 '
 
