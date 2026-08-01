@@ -351,6 +351,12 @@ def main():
         print(f"已套用 strategy_config.yaml: {list(yaml_ov.keys())}")
     apply_config(cfg, ov)
 
+    # 防止宽基指数代码混入选股候选池：
+    # 中枢会把指数 K 线注入 klines["index_code"]，若 universe 由 klines 键推导则会包含它。
+    _idx = (cfg.market.index_code or "").strip()
+    if _idx and _idx in cfg.universe:
+        cfg.universe = [c for c in cfg.universe if c != _idx]
+
     def data_fetcher():
         return klines, quotes, hot
 
