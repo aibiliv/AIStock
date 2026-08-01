@@ -52,7 +52,6 @@ Thumbs.db
 .codebuddy/
 .workbuddy/
 .openai/
-/docs/
 
 # ---- local runtime data ----
 # deploy.sh 中说明数据目录为 $PROJECT_DIR/data (D1 SQLite)，属本地运行产物
