@@ -1,17 +1,17 @@
-import { readFile, writeFile, mkdir } from "fs/promises";
-import { dirname } from "path";
+import { desc } from "drizzle-orm";
 import { requireApiUser } from "../../../lib/auth";
+import { getDb, ensureSchema } from "../../../db";
+import { strategyWriteback } from "../../../db/schema";
 
 /**
  * 回写结果接口（跨机器联动 · 本地 PC 推送 / 云端读取）
  *
  * 部署形态：trading_agent 运行在本地 PC，AIStock（本服务）部署在远程云服务器。
- * - GET  ：前端「回写结果」页读取最新候选回写信号（来自 /data 卷文件）。
- * - POST ：本地 trading_agent 推送候选回写 JSON，校验 token 后写入 /data 卷文件。
+ * - GET  ：前端「回写结果」页读取最新候选回写信号（来自 D1 表 strategy_writeback）。
+ * - POST ：本地 trading_agent 推送候选回写 JSON，校验 token 后写入 D1。
  *
- * 存储位置（Docker 部署）：/data/strategy-writeback/latest.json
- *   - docker-compose 已将 ./data 挂载为持久化卷，容器重建不丢。
- *   - 可用环境变量 WRITEBACK_FILE 覆盖路径。
+ * 存储：使用 D1（Cloudflare Workers 原生、受沙箱允许），而非裸文件系统写入。
+ *   docker-compose 把 ./data 挂为 --persist-to /data，D1 持久化与此卷绑定，容器重建不丢。
  *
  * 鉴权：POST 需要 header `x-push-token`，值等于云端环境变量
  *   STRATEGY_PUSH_TOKEN（未设置时回退到 CRON_SECRET）。
@@ -19,9 +19,6 @@ import { requireApiUser } from "../../../lib/auth";
  * 说明：当前本环境的 tdx-connector 仅暴露查询工具（无 place_order），
  *   因此枢纽推送过来的信号恒为「候选回写 / dry-run」，真实下单需接入带下单能力的连接器。
  */
-const WRITEBACK_FILE =
-  process.env.WRITEBACK_FILE || "/data/strategy-writeback/latest.json";
-
 function pushSecret(): string | undefined {
   return process.env.STRATEGY_PUSH_TOKEN || process.env.CRON_SECRET || undefined;
 }
@@ -30,18 +27,28 @@ export async function GET() {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
-    const raw = await readFile(WRITEBACK_FILE, "utf-8");
-    const writeback = JSON.parse(raw);
+    await ensureSchema();
+    const db = getDb();
+    const rows = await db
+      .select()
+      .from(strategyWriteback)
+      .orderBy(desc(strategyWriteback.createdAt))
+      .limit(1);
+    if (!rows.length) {
+      return Response.json(
+        {
+          ok: false,
+          error:
+            "尚未生成回写结果。请先在本地 PC 运行 trading_agent，并推送到本服务（POST /api/writeback-signals）。",
+        },
+        { status: 404 },
+      );
+    }
+    const writeback = JSON.parse(rows[0].payload);
     return Response.json({ ok: true, writeback });
-  } catch {
-    return Response.json(
-      {
-        ok: false,
-        error:
-          "尚未生成回写结果。请先在本地 PC 运行 trading_agent，并推送到本服务（POST /api/writeback-signals）。",
-      },
-      { status: 404 },
-    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return Response.json({ ok: false, error: msg }, { status: 500 });
   }
 }
 
@@ -75,8 +82,9 @@ export async function POST(req: Request) {
   }
 
   try {
-    await mkdir(dirname(WRITEBACK_FILE), { recursive: true });
-    await writeFile(WRITEBACK_FILE, JSON.stringify(body), "utf-8");
+    await ensureSchema();
+    const db = getDb();
+    await db.insert(strategyWriteback).values({ payload: JSON.stringify(body) });
     return Response.json({ ok: true, savedAt: new Date().toISOString() });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

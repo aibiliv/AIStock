@@ -4680,8 +4680,10 @@ svg { display: block; }
   border: 1px solid var(--line);
   border-radius: 10px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, .08);
+  display: flex;
+  flex-direction: column;
   margin: 0;
-  max-height: min(72dvh, 660px);
+  max-height: min(82dvh, 760px);
   overflow: hidden;
 }
 .assistant-fab-panel .smart-assistant--floating .section-header {
@@ -4689,11 +4691,12 @@ svg { display: block; }
   background: transparent;
   border-bottom: 1px solid var(--line);
   border-radius: 0;
-  gap: 8px;
-  padding: 12px 16px 10px;
+  gap: 6px;
+  padding: 8px 14px;
 }
 .assistant-fab-panel .smart-assistant--floating .section-header__title {
-  font-size: var(--fs-base);
+  font-size: 13px;
+  font-weight: 600;
 }
 .assistant-fab-panel .smart-assistant--floating .section-header__eyebrow {
   color: var(--muted);
@@ -4701,26 +4704,34 @@ svg { display: block; }
   font-weight: 500;
 }
 .assistant-fab-panel .smart-assistant--floating .assistant-messages {
-  max-height: min(36dvh, 300px);
-  padding: 8px 16px;
+  flex: 1 1 auto;
+  max-height: none;
+  min-height: 220px;
+  padding: 6px 14px;
 }
 .assistant-fab-panel .smart-assistant--floating .assistant-prompts,
 .assistant-fab-panel .smart-assistant--floating .assistant-form,
 .assistant-fab-panel .smart-assistant--floating .assistant-disclaimer {
-  padding-left: 16px;
-  padding-right: 16px;
+  padding-left: 14px;
+  padding-right: 14px;
 }
 .assistant-fab-panel .smart-assistant--floating .assistant-prompts {
-  gap: 6px;
-  margin: 0 0 10px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: nowrap;
+  gap: 2px;
+  margin: 0;
+  overflow-x: auto;
+  padding: 4px 10px;
+  white-space: nowrap;
 }
 .assistant-fab-panel .smart-assistant--floating .assistant-prompts button {
   background: transparent;
-  border: none;
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
   color: var(--accent-ink);
-  font-size: var(--fs-2xs);
-  padding: 5px 8px;
+  flex-shrink: 0;
+  font-size: 11px;
+  padding: 3px 7px;
 }
 .assistant-fab-panel .smart-assistant--floating .assistant-prompts button:hover { background: var(--surface-2); }
 .assistant-fab-panel .smart-assistant--floating .assistant-form {
@@ -4728,8 +4739,8 @@ svg { display: block; }
   border: 1px solid var(--line);
   border-radius: 8px;
   gap: 0;
-  margin: 0 16px 12px;
-  padding: 3px 3px 3px 10px;
+  margin: 0 14px 10px;
+  padding: 2px 2px 2px 10px;
   transition: border-color .15s ease;
 }
 .assistant-fab-panel .smart-assistant--floating .assistant-form:focus-within {
@@ -4739,7 +4750,7 @@ svg { display: block; }
   background: transparent;
   border: 0;
   outline: none;
-  padding: 8px 0;
+  padding: 6px 0;
 }
 .assistant-fab-panel .smart-assistant--floating .assistant-form button {
   background: var(--accent);
@@ -4749,16 +4760,10 @@ svg { display: block; }
   font-size: var(--fs-2xs);
   font-weight: 600;
   outline: none;
-  padding: 6px 12px;
+  padding: 5px 10px;
 }
 .assistant-fab-panel .smart-assistant--floating .assistant-disclaimer {
-  background: transparent;
-  border: 0;
-  color: var(--muted);
-  font-size: var(--fs-2xs);
-  margin: 0;
-  padding-bottom: 12px;
-  padding-top: 0;
+  display: none;
 }
 
 .assistant-fab-panel .smart-assistant--floating .assistant-message p,
@@ -4850,7 +4855,7 @@ svg { display: block; }
     max-height: 92dvh;
   }
   .assistant-fab-panel .smart-assistant--floating .assistant-messages {
-    max-height: min(48dvh, 400px);
+    min-height: 240px;
   }
   .assistant-fab-linker {
     padding: 12px 16px;
