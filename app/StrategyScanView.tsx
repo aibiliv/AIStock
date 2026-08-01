@@ -208,13 +208,20 @@ export function StrategyScanView({
       setLoading(true);
       setError("");
       try {
-        const res = await fetch("/api/strategy-scan");
+        // 15 秒超时，避免 D1 慢查询或网络问题导致加载状态永远挂起
+        const ctrl = new AbortController();
+        const timer = window.setTimeout(() => ctrl.abort(), 15_000);
+        const res = await fetch("/api/strategy-scan", { signal: ctrl.signal }).finally(() => window.clearTimeout(timer));
         const json = (await res.json()) as StrategyScanResponse;
         if (!alive) return;
         if (json.ok && json.scan) setScan(json.scan);
         else setError(json.error || "暂时无法读取策略扫描结果");
-      } catch {
-        if (alive) setError("暂时无法读取策略扫描结果");
+      } catch (e: unknown) {
+        if (!alive) return;
+        const msg = e instanceof DOMException && e.name === "AbortError"
+          ? "请求超时：策略数据加载超过 15 秒，请检查网络或 D1 数据库连接后重试。"
+          : "暂时无法读取策略扫描结果";
+        setError(msg);
       } finally {
         if (alive) setLoading(false);
       }
@@ -256,19 +263,32 @@ export function StrategyScanView({
     setScanBusy(true);
     setScanError("");
     try {
+      // 90 秒超时（略大于后端 60s 超时，给网络留余量）
+      const ctrl = new AbortController();
+      const timer = window.setTimeout(() => ctrl.abort(), 90_000);
       const res = await fetch("/api/strategy-scan/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(overrides),
-      });
-      const json = (await res.json()) as { ok?: boolean; scan?: Scan; error?: string };
+        signal: ctrl.signal,
+      }).finally(() => window.clearTimeout(timer));
+      const json = (await res.json()) as { ok?: boolean; scan?: Scan; error?: string; code?: string };
       if (json.ok && json.scan) {
         setScan(json.scan);
+        setScanError("");
       } else {
-        setScanError(json.error || "扫描执行失败");
+        const msg = json.error || "扫描执行失败";
+        // 云端不运行引擎时，给出更友好的提示
+        const hint = json.code === "CLOUD_ENGINE_DISABLED"
+          ? `${msg}\n\n提示：当前部署在云端，无法直接运行选股引擎。请在本地 PC 运行 trading_agent 并推送结果到云端，或使用本地部署。`
+          : msg;
+        setScanError(hint);
       }
-    } catch {
-      setScanError("网络错误：无法连接扫描引擎");
+    } catch (e: unknown) {
+      const msg = e instanceof DOMException && e.name === "AbortError"
+        ? "扫描超时（超过 90 秒未完成），可能是数据量过大或 Python 引擎卡死，请重试。"
+        : "网络错误：无法连接扫描引擎";
+      setScanError(msg);
     } finally {
       setScanBusy(false);
     }
@@ -279,7 +299,7 @@ export function StrategyScanView({
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <ScreenerConfigPanel onRun={handleRunInteractive} busy={scanBusy} />
         {scanError && <Banner tone="warn" title="扫描失败">{scanError}</Banner>}
-        <div className="loading-state" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 24 }}>
           <Spinner /> 正在加载策略扫描结果…
         </div>
       </div>
@@ -290,11 +310,17 @@ export function StrategyScanView({
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <ScreenerConfigPanel onRun={handleRunInteractive} busy={scanBusy} />
         {scanError && <Banner tone="warn" title="扫描失败">{scanError}</Banner>}
-        <Banner tone="warn" title="暂无策略扫描数据">
-          {error ||
+        <Banner tone={scanBusy ? "info" : "warn"} title={scanBusy ? "正在运行策略扫描…" : "暂无策略扫描数据"}>
+          {scanBusy ? (
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <Spinner /> 策略引擎正在执行选股与回测，请耐心等待（最多 60 秒）…
+            </span>
+          ) : (
+            error ||
             (!scan
               ? "请先在本地运行 trading_agent 生成共享扫描 JSON，或使用上方配置面板触发扫描。"
-              : "扫描结果缺少回测数据（backtest），请重新在本地运行 trading_agent 生成完整共享 JSON。")}
+              : "扫描结果缺少回测数据（backtest），请重新在本地运行 trading_agent 生成完整共享 JSON。")
+          )}
         </Banner>
       </div>
     );

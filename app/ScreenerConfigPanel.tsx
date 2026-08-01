@@ -561,6 +561,7 @@ export function ScreenerConfigPanel({
             onChange={(e) => applyPreset(e.target.value)}
             style={{ ...SELECT, /* 移动端自适应宽度 */ maxWidth: "100%", width: "auto", minWidth: 140 }}
           >
+            <option value="">请选择策略预设</option>
             {STRATEGY_PRESETS.map((preset) => (
               <option key={preset.key} value={preset.key}>{preset.label}</option>
             ))}
