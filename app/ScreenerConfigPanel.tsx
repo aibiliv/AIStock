@@ -524,9 +524,9 @@ export function ScreenerConfigPanel({
 
       {/* 第一行：板块 + ST + 市值 */}
       <div
+        className="screener-row"
         style={{
           display: "grid",
-          gridTemplateColumns: "auto 1fr auto",
           gap: 16,
           alignItems: "start",
           marginBottom: 12,

@@ -3503,6 +3503,9 @@ svg { display: block; }
   .boundary-card__list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
+/* 策略扫描配置面板：桌面端三列网格（板块 / ST / 市值），移动端在 760px 媒体查询内堆叠为单列 */
+.screener-row { grid-template-columns: auto 1fr auto; }
+
 @media (max-width: 760px) {
   body { padding-bottom: 66px; }
   .sidebar { display: none; }
@@ -3752,6 +3755,16 @@ svg { display: block; }
   .nav-btn { min-height: 44px; }
   .rem-approve,
   .rem-skip { min-height: 40px; }
+
+  /* —— 策略扫描配置面板：三列网格在窄屏堆叠为单列 —— */
+  .screener-row { grid-template-columns: 1fr; gap: 14px; }
+  .screener-row > div { min-width: 0; }
+
+  /* —— 表格横向滚动兜底（已有内联 overflowX，这里确保触感顺滑与边框约束）—— */
+  table { max-width: 100%; }
+  .Card > div > table,
+  .Card table { font-size: 12px; }
+  .Card th, .Card td { padding: 8px 8px; white-space: nowrap; }
 
   /* 标题层级字距微调，移动端更精致 */
   h1, .panel-title { letter-spacing: -0.01em; }

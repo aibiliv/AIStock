@@ -459,6 +459,7 @@ export function StrategyScanView({
       {opt && (
         <Card>
           <CardHeader title="参数网格搜索 Top" desc="按夏普排序的参数组合表现。" />
+          <div style={{ overflowX: "auto" }}>
           <table style={tableStyle}>
             <thead>
               <tr>
@@ -485,6 +486,7 @@ export function StrategyScanView({
               ))}
             </tbody>
           </table>
+          </div>
         </Card>
       )}
 

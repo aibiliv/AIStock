@@ -178,6 +178,7 @@ export function WritebackView() {
         {writeback.signals.length === 0 ? (
           <Hint>本次运行未产生候选回写信号。</Hint>
         ) : (
+          <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
           <table style={tableStyle}>
             <thead>
               <tr>
@@ -204,6 +205,7 @@ export function WritebackView() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
 
