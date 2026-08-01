@@ -10,7 +10,7 @@ type ImportResult = {
   errors: Array<{ line: number; symbol: string; reason: string }>;
 };
 
-export function ImportPanel({ onImported }: { onImported: () => Promise<void> }) {
+export function ImportPanel({ onImported }: { onImported: () => void | Promise<void> }) {
   const [csv, setCsv] = useState("");
   const [previewRows, setPreviewRows] = useState<number>(0);
   const [busy, setBusy] = useState(false);
