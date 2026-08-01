@@ -46,14 +46,13 @@ export async function GET() {
           // 文件损坏则继续走下方的 404
         }
       }
-      return Response.json(
-        {
-          ok: false,
-          error:
-            "尚未生成策略扫描结果。请点击页面上的「应用并扫描」在本地运行引擎，或先在本地 PC 运行 trading_agent。",
-        },
-        { status: 404 },
-      );
+      // 无数据属正常业务状态，用 200 返回（避免被浏览器/监控当作路由 404 异常）。
+      return Response.json({
+        ok: false,
+        scan: null,
+        error:
+          "尚未生成策略扫描结果。请点击页面上的「应用并扫描」在本地运行引擎，或先在本地 PC 运行 trading_agent。",
+      });
     }
     const scan = JSON.parse(rows[0].payload);
     return Response.json({ ok: true, scan });
