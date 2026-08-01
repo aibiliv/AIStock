@@ -214,7 +214,6 @@ type Position = ReturnType<typeof calculatePortfolio>["positions"][number];
 type AssistantMessage = {
   role: "user" | "assistant";
   content: string;
-  mode?: "ai" | "fallback";
 };
 
 type Status = {
@@ -1890,6 +1889,7 @@ function SmartAssistant(
   const [asking, setAsking] = useState(false);
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [primed, setPrimed] = useState(false);
+  const [assistantMode, setAssistantMode] = useState<"ai" | "fallback" | null>(null);
 
   // 进入分析页或切换股票时重置对话并给出引导语
   const stockCode = analysis?.stock.code ?? "";
@@ -1900,6 +1900,7 @@ function SmartAssistant(
         ? `我已经读完${analysis.stock.name}的当前分析。你可以继续追问风险、财务，${position ? "也可以让我结合你的持仓成本解释。" : "记录持仓后还能获得个性化解释。"}`
         : "当前没有选中具体股票，我可以基于你的账户与持仓记录回答问题（如仓位、现金、收益）。想问某只股票，先去「智能选股」分析它。",
     }]);
+    setAssistantMode(null);
     setPrimed(true);
   }, [stockCode, analysis, position]);
 
@@ -1926,7 +1927,8 @@ function SmartAssistant(
           context: buildContext(),
         }),
       });
-      setMessages((current) => [...current, { role: "assistant", content: result.answer, mode: result.mode }]);
+      setAssistantMode(result.mode);
+      setMessages((current) => [...current, { role: "assistant", content: result.answer }]);
     } catch (error) {
       setMessages((current) => [...current, {
         role: "assistant",
@@ -1957,6 +1959,12 @@ function SmartAssistant(
         actions={
           <div className="assistant-header-actions">
             <Badge tone="accent">{analysis ? (position ? "已结合我的持仓" : "当前未记录持仓") : "未关联具体股票"}</Badge>
+            {assistantMode === "fallback" && (
+              <Badge tone="neutral" title="未配置 AI 接口，当前使用本地规则生成回答">规则模式</Badge>
+            )}
+            {assistantMode === "ai" && (
+              <Badge tone="accent" title="由大模型生成">AI</Badge>
+            )}
             {floating && (
               <button type="button" className="assistant-close" onClick={onClose} aria-label="收起助手">
                 <X size={16} />
@@ -1970,11 +1978,6 @@ function SmartAssistant(
         {messages.map((message, index) => (
           <div className={`assistant-message ${message.role}`} key={`${message.role}-${index}`}>
             <b>{message.role === "assistant" ? "助手" : "我"}</b>
-            {message.role === "assistant" && (
-              <Badge tone={message.mode === "ai" ? "accent" : "neutral"}>
-                {message.mode === "ai" ? "AI 已回答" : "离线规则模式"}
-              </Badge>
-            )}
             {message.role === "assistant" ? (
               <MarkdownMessage content={message.content} />
             ) : (
