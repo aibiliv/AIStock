@@ -108,6 +108,13 @@ textarea {
   font: inherit;
 }
 
+/* 全局兜底：原生 select 下拉选项必须可见（部分浏览器下拉菜单不继承 CSS 变量颜色） */
+select option,
+select optgroup {
+  background: #ffffff;
+  color: #1a1a18;
+}
+
 /* 输入框与可编辑区域内保留可见光标，便于输入定位 */
 input,
 textarea,

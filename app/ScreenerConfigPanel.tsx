@@ -80,6 +80,44 @@ export const STRATEGY_PRESETS: {
       macd_fast: 12, macd_slow: 26, macd_signal: 9, min_turnover_pct: 0.30,
     },
   },
+  // --- 激进策略 ---
+  {
+    key: "momentum_chase",
+    label: "强势追涨",
+    desc: "激进：极高动量权重，放开 PE/PB 限制，高换手门槛，精选 4 只。追涨不恐高。",
+    overrides: {
+      w_momentum: 0.50, w_liquidity: 0.22, w_trend: 0.14, w_rsi: 0.08,
+      w_macd: 0.06, w_value: 0.00, w_size: 0.00, w_quality: 0.00,
+      momentum_window: 10, max_pe_ttm: 10000, max_pb: 1000,
+      min_turnover_pct: 2.0, top_n: 4,
+      use_breakout_filter: true, breakout_window: 10,
+    },
+  },
+  {
+    key: "bottom_reversal",
+    label: "超跌反弹",
+    desc: "激进：重 RSI 低位 + MACD 反转，筛超跌后动能回暖标的，PE/PB 放宽，精选 5 只。",
+    overrides: {
+      w_rsi: 0.38, w_macd: 0.28, w_momentum: 0.16, w_liquidity: 0.08,
+      w_trend: 0.06, w_value: 0.04, w_size: 0.00, w_quality: 0.00,
+      momentum_window: 10, max_pe_ttm: 500, max_pb: 50,
+      min_turnover_pct: 0.50, top_n: 5,
+      use_breakout_filter: false,
+    },
+  },
+  {
+    key: "hot_theme",
+    label: "题材热点追踪",
+    desc: "激进：流动性为王 + 量能，不限 PE/PB，极高换手门槛，每板块只取 1 只，纯交易驱动。",
+    overrides: {
+      w_liquidity: 0.40, w_momentum: 0.25, w_macd: 0.15, w_trend: 0.12,
+      w_rsi: 0.06, w_value: 0.02, w_size: 0.00, w_quality: 0.00,
+      macd_fast: 6, macd_slow: 13, macd_signal: 5,
+      max_pe_ttm: 10000, max_pb: 1000,
+      min_turnover_pct: 3.0, top_n: 3, max_per_sector: 1,
+      use_breakout_filter: false,
+    },
+  },
 ];
 
 /** 默认值（与 config.py ScreenerConfig 默认值对齐） */
@@ -240,8 +278,9 @@ const SELECT: CSSProperties = {
   border: "1px solid rgba(148,163,184,0.3)",
   borderRadius: 6,
   fontSize: 13,
-  background: "transparent",
-  color: "inherit",
+  /* 不能透明，否则原生下拉菜单可能出现白底白字/透明文字，选项看不见 */
+  background: "var(--surface-soft)",
+  color: "#1a1a18",
   outline: "none",
   minWidth: 150,
   cursor: "pointer",
