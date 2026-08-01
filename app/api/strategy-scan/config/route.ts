@@ -7,7 +7,7 @@ import {
   isExecNotImplemented,
 } from "../../../../lib/pythonExec";
 import path from "path";
-import fs from "fs";
+import { env } from "cloudflare:workers";
 
 /**
  * 计算项目根目录（延迟求值，避免在 Workers/Miniflare 模块顶层
@@ -34,27 +34,32 @@ function dumpScript(): string {
   return path.join(projectRoot(), "trading_agent", "dump_config.py");
 }
 
-// 云端持久化配置文件：前端「保存配置」写入此文件，GET 优先读取它。
-// 放在 trading_agent/cloud_config/ 子目录，并挂载到宿主机持久卷
-// （docker-compose 的 ./cloud-config:/app/trading_agent/cloud_config），
-// 避免容器重建后配置丢失。
-function overridesPath(): string {
-  return path.join(projectRoot(), "trading_agent", "cloud_config", "strategy_config.overrides.json");
-}
-
-// 读取已持久化的云端配置（前端保存的）；读不到返回 null -> 回退默认。
-function readStoredConfig(): Record<string, unknown> | null {
+// 云端持久化配置：前端「保存配置」写入 D1（strategy_scan 表，只保留最新一行），
+// GET 优先读取它。workerd 沙箱禁止 fs 写入，故使用已挂载持久卷的 D1，容器重建不丢。
+async function readStoredConfig(): Promise<Record<string, unknown> | null> {
   try {
-    const p = overridesPath();
-    if (!fs.existsSync(p)) return null;
-    const data = JSON.parse(fs.readFileSync(p, "utf-8"));
-    if (data && typeof data === "object" && "config" in data) {
-      return (data as { config: Record<string, unknown> }).config;
-    }
-    return data as Record<string, unknown>;
+    if (!env.DB) return null;
+    const row = (await env.DB.prepare(
+      "SELECT payload FROM strategy_scan ORDER BY id DESC LIMIT 1"
+    ).first()) as { payload?: string } | null;
+    if (!row?.payload) return null;
+    const data = JSON.parse(row.payload);
+    return data && typeof data === "object" && "config" in data
+      ? (data as { config: Record<string, unknown> }).config
+      : (data as Record<string, unknown>);
   } catch {
     return null;
   }
+}
+
+async function saveStoredConfig(config: unknown): Promise<void> {
+  if (!env.DB) throw new Error("数据库暂不可用");
+  const payload = JSON.stringify({ savedAt: new Date().toISOString(), config });
+  // 只保留最新一行
+  await env.DB.batch([
+    env.DB.prepare("DELETE FROM strategy_scan"),
+    env.DB.prepare("INSERT INTO strategy_scan (payload) VALUES (?)").bind(payload),
+  ]);
 }
 
 // 云端/沙箱回退用的默认配置（与 trading_agent/strategy_config.yaml 默认值同步）。
@@ -113,7 +118,7 @@ export async function GET() {
   if (unauthorized) return unauthorized;
 
   // 优先返回前端已保存的云端配置；读不到才走 exec / 回退默认。
-  const stored = readStoredConfig();
+  const stored = await readStoredConfig();
   if (stored) {
     return Response.json({ ok: true, config: stored, saved: true });
   }
@@ -182,13 +187,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const p = overridesPath();
-    fs.mkdirSync(path.dirname(p), { recursive: true });
-    fs.writeFileSync(
-      p,
-      JSON.stringify({ savedAt: new Date().toISOString(), config }, null, 2),
-      "utf-8"
-    );
+    await saveStoredConfig(config);
     return Response.json({ ok: true, saved: true, config });
   } catch (e) {
     return Response.json(
