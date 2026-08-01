@@ -2025,6 +2025,9 @@ function FloatingAssistantLauncher(
 
   // 拖拽定位：相对右下角的偏移（向左/上为负）。null 时使用默认右下角。
   const [offset, setOffset] = useState<{ x: number; y: number } | null>(null);
+  const offsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const fabRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const dragState = useRef<{
     startX: number;
     startY: number;
@@ -2034,15 +2037,27 @@ function FloatingAssistantLauncher(
   } | null>(null);
   const draggedRef = useRef(false);
 
+  // 拖动中直接用 transform 操作 DOM，避免每次 pointermove 触发 React 重渲染（移动端卡顿主因）
+  const applyTransform = (x: number, y: number) => {
+    if (fabRef.current) fabRef.current.style.transform = `translate3d(${-x}px, ${-y}px, 0)`;
+    if (panelRef.current) panelRef.current.style.transform = `translate3d(${-x}px, ${-y}px, 0)`;
+  };
+
+  // 持久化定位（offset state）变化时同步 ref 与 transform，避免与拖拽中手动设置的 transform 冲突
+  useEffect(() => {
+    const next = offset ?? { x: 0, y: 0 };
+    offsetRef.current = next;
+    applyTransform(next.x, next.y);
+  }, [offset]);
+
   function handleFabPointerDown(event: React.PointerEvent<HTMLButtonElement>) {
     if (event.button !== 0) return;
     event.currentTarget.setPointerCapture(event.pointerId);
     dragState.current = {
       startX: event.clientX,
       startY: event.clientY,
-      // 当前按钮相对右下角的偏移（右/下为正）
-      originX: offset?.x ?? 0,
-      originY: offset?.y ?? 0,
+      originX: offsetRef.current.x,
+      originY: offsetRef.current.y,
       moved: false,
     };
   }
@@ -2056,11 +2071,19 @@ function FloatingAssistantLauncher(
       state.moved = true;
       draggedRef.current = true;
     }
-    setOffset({ x: state.originX + dx, y: state.originY + dy });
+    const nextX = state.originX + dx;
+    const nextY = state.originY + dy;
+    offsetRef.current = { x: nextX, y: nextY };
+    applyTransform(nextX, nextY);
   }
 
   function handleFabPointerUp(event: React.PointerEvent<HTMLButtonElement>) {
+    const state = dragState.current;
     dragState.current = null;
+    if (state?.moved) {
+      // 仅提交一次最终位置，触发一次重渲染以持久化定位
+      setOffset({ x: offsetRef.current.x, y: offsetRef.current.y });
+    }
   }
 
   const activeAnalysis = linked ?? analysis;
@@ -2082,20 +2105,18 @@ function FloatingAssistantLauncher(
     }
   }
 
-  // 把右下角偏移转成内联定位（覆盖 CSS 默认位置）。
-  // offset.x>0 向右移、offset.x<0 向左移（用 right 减小/增大表达）。
+  // 同步初始定位：用 offset state 决定基准 right/bottom，transform 处理拖拽偏移
   const fabStyle: React.CSSProperties = offset
     ? { right: Math.max(0, 22 - offset.x), bottom: Math.max(0, 22 - offset.y), left: "auto", top: "auto" }
     : {};
-  const panelOffset = offset ?? { x: 0, y: 0 };
   const panelStyle: React.CSSProperties = offset
-    ? { right: Math.max(0, 22 - panelOffset.x), bottom: Math.max(0, 84 - panelOffset.y), left: "auto", top: "auto" }
+    ? { right: Math.max(0, 22 - offset.x), bottom: Math.max(0, 84 - offset.y), left: "auto", top: "auto" }
     : {};
 
   return (
     <>
       {open && (
-        <div className="assistant-fab-panel" role="dialog" aria-label="智能复盘助手" style={panelStyle}>
+        <div ref={panelRef} className="assistant-fab-panel" role="dialog" aria-label="智能复盘助手" style={panelStyle}>
           <SmartAssistant
             floating
             analysis={activeAnalysis}
@@ -2160,6 +2181,7 @@ function FloatingAssistantLauncher(
         </div>
       )}
       <button
+        ref={fabRef}
         type="button"
         className={`assistant-fab${open ? " is-open" : ""}`}
         style={fabStyle}

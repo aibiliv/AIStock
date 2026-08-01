@@ -4681,6 +4681,9 @@ svg { display: block; }
   justify-content: center;
   position: fixed;
   right: 22px;
+  /* 拖拽优化：禁止浏览器触摸手势干扰，提示合成层，避免重排 */
+  touch-action: none;
+  will-change: transform;
   transition: box-shadow .15s ease;
   width: 50px;
   z-index: 60;
@@ -4695,6 +4698,9 @@ svg { display: block; }
   flex-direction: column;
   position: fixed;
   right: 22px;
+  /* 拖拽优化：与 FAB 同步位移，走合成层避免重排 */
+  touch-action: none;
+  will-change: transform;
   width: min(400px, calc(100vw - 44px));
   z-index: 60;
 }
