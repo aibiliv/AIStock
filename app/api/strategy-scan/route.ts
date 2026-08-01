@@ -3,6 +3,8 @@ import { requireApiUser } from "../../../lib/auth";
 import { getDb, ensureSchema } from "../../../db";
 import { strategyScan } from "../../../db/schema";
 import { shanghaiIso } from "../../../lib/time";
+import path from "path";
+import { existsSync, readFileSync } from "fs";
 
 /**
  * 策略扫描接口（跨机器联动 · 本地 PC 推送 / 云端读取）
@@ -33,11 +35,22 @@ export async function GET() {
       .orderBy(desc(strategyScan.createdAt))
       .limit(1);
     if (!rows.length) {
+      // 本地兜底：云端 D1 无数据时，回退读取本机引擎产物 scan_payload.json，
+      // 让本地 `npm run dev` 也能直接看到最近一次扫描结果（无需先推送到云端）。
+      const localPath = path.join(process.cwd(), "trading_agent", "scan_payload.json");
+      if (existsSync(localPath)) {
+        try {
+          const scan = JSON.parse(readFileSync(localPath, "utf-8"));
+          return Response.json({ ok: true, scan, source: "local-file" });
+        } catch {
+          // 文件损坏则继续走下方的 404
+        }
+      }
       return Response.json(
         {
           ok: false,
           error:
-            "尚未生成策略扫描结果。请先在本地 PC 运行 trading_agent 并推送到本服务（POST /api/strategy-scan）。",
+            "尚未生成策略扫描结果。请点击页面上的「应用并扫描」在本地运行引擎，或先在本地 PC 运行 trading_agent。",
         },
         { status: 404 },
       );

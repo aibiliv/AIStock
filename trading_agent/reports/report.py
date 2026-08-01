@@ -55,15 +55,20 @@ def write_report(result: dict, cfg: config.AppConfig) -> str:
     lines.append(f"- 行情区间：{meta['beg']} ~ {meta['end']}")
     lines.append(f"- 候选池：{meta['universe_size']} 只 → 选出：{meta['selected_n']} 只（目标 top_n={meta['top_n']}）")
     lines.append(f"- 触达方式：{meta['notifier']}")
+    ms = result.get("market_state") or {}
+    if ms:
+        st = ms.get("state", "unknown")
+        pf = ms.get("position_factor", 1.0)
+        lines.append(f"- 市场状态：{st}（仓位系数 {pf:.2f}）— {ms.get('detail', '')}")
     lines.append("")
     lines.append("## 一、选票结果（多因子打分 Top）")
     lines.append("")
-    lines.append("| 代码 | 名称 | 得分 | 动量(20d) | PE(TTM) | PB | 换手率% | 信号数 |")
-    lines.append("|------|------|------|-----------|----------|----|----------|--------|")
+    lines.append("| 代码 | 名称 | 行业 | 得分 | 动量(20d) | RSI | PE(TTM) | PB | 换手率% | 信号数 |")
+    lines.append("|------|------|------|------|-----------|-----|----------|----|----------|--------|")
     for r in selected:
         lines.append(
-            f"| {r['code']} | {r['name']} | {r['score']:.3f} | "
-            f"{_pct(r['momentum'])} | {r['pe_ttm']:.2f} | {r['pb']:.2f} | "
+            f"| {r['code']} | {r['name']} | {r.get('sector', '其他')} | {r['score']:.3f} | "
+            f"{_pct(r['momentum'])} | {r.get('rsi', 0):.1f} | {r['pe_ttm']:.2f} | {r['pb']:.2f} | "
             f"{r['turnover']:.2f} | {r.get('n_signals', 0)} |"
         )
     lines.append("")
@@ -143,6 +148,18 @@ def _json_default(o):
         return str(o)
 
 
+def _market_state_view(ms: dict) -> dict:
+    """把市场状态字典整理为前端友好的 camelCase 字段。"""
+    return {
+        "state": ms.get("state", "unknown"),
+        "positionFactor": float(ms.get("position_factor", 1.0)),
+        "score": float(ms.get("score", 0.0)),
+        "detail": ms.get("detail", ""),
+        "maGap": float(ms.get("ma_gap", 0.0)),
+        "momentum": float(ms.get("momentum", 0.0)),
+    }
+
+
 def write_scan_json(result: dict, cfg: config.AppConfig) -> str:
     """文件桥：把闭环结果写成结构化 JSON 到共享目录，供 AIStock 读取展示。
 
@@ -158,12 +175,22 @@ def write_scan_json(result: dict, cfg: config.AppConfig) -> str:
         {
             "code": r["code"],
             "name": r["name"],
+            "sector": r.get("sector", "其他"),
             "score": round(float(r["score"]), 4),
             "momentum": float(r["momentum"]),
             "peTtm": float(r["pe_ttm"]),
             "pb": float(r["pb"]),
             "turnover": float(r["turnover"]),
             "signals": int(r.get("n_signals", 0)),
+            # —— 新增因子维度（丰富选股策略）——
+            "rsi": round(float(r.get("rsi", 0.0)), 2),
+            "riskAdjMomentum": round(float(r.get("risk_adj_momentum", 0.0)), 4),
+            "macd": round(float(r.get("macd", 0.0)), 4),
+            "trend": round(float(r.get("trend", 0.0)), 4),
+            "factors": {k: float(v) for k, v in (r.get("factor_scores") or {}).items()},
+            # —— 质量因子（接数据源后才有；ROE / 股息率）——
+            "roe": (float(r["roe"]) if r.get("roe") is not None else None),
+            "dividendYield": (float(r["dividend_yield"]) if r.get("dividend_yield") is not None else None),
         }
         for r in result["selected"]
     ]
@@ -188,6 +215,7 @@ def write_scan_json(result: dict, cfg: config.AppConfig) -> str:
         "period": {"beg": meta["beg"], "end": meta["end"]},
         "universeSize": int(meta["universe_size"]),
         "selectedCount": int(meta["selected_n"]),
+        "marketState": _market_state_view(result.get("market_state") or {}),
         "selected": selected,
         "backtest": {
             "baseSignal": {"fastMa": int(base_sig["fast_ma"]), "slowMa": int(base_sig["slow_ma"])},

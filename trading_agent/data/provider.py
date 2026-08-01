@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 import config
+from data import fundamentals
 
 _UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/117.0.0.0 Safari/537.36"
 _CACHE_DIR = config.CACHE_DIR
@@ -243,6 +244,9 @@ class DataProvider(ABC):
     @abstractmethod
     def fetch_hot_stocks(self) -> list[dict]: ...
 
+    @abstractmethod
+    def fetch_fundamentals(self, code: str) -> dict: ...
+
 
 class TencentEastMoneyProvider(DataProvider):
     """默认数据源：腾讯估值 + 东财/新浪 K 线，免 key 直连。"""
@@ -251,10 +255,23 @@ class TencentEastMoneyProvider(DataProvider):
         return fetch_kline(code, beg, end)
 
     def fetch_quote(self, code: str) -> dict:
-        return fetch_quote(code)
+        q = fetch_quote(code)
+        # 接入基本面数据源：把 ROE / 股息率 合并进 quote，质量因子自动启用
+        try:
+            f = fundamentals.fetch_fundamentals(code)
+            if f.get("roe") is not None:
+                q["roe"] = f["roe"]
+            if f.get("dividend_yield") is not None:
+                q["dividend_yield"] = f["dividend_yield"]
+        except Exception:
+            pass
+        return q
 
     def fetch_hot_stocks(self) -> list[dict]:
         return fetch_hot_stocks()
+
+    def fetch_fundamentals(self, code: str) -> dict:
+        return fundamentals.fetch_fundamentals(code)
 
 
 class StaticProvider(DataProvider):
@@ -269,19 +286,35 @@ class StaticProvider(DataProvider):
         klines: Optional[dict[str, list[dict]]] = None,
         quotes: Optional[dict[str, dict]] = None,
         hot: Optional[list[dict]] = None,
+        fundamentals: Optional[dict[str, dict]] = None,
     ):
         self._klines = klines or {}
         self._quotes = quotes or {}
         self._hot = hot if hot is not None else []
+        self._fundamentals = fundamentals or {}
 
     def fetch_kline(self, code: str, beg: str, end: str) -> list[dict]:
         return list(self._klines.get(code, []))
 
     def fetch_quote(self, code: str) -> dict:
-        return dict(self._quotes.get(code, {}))
+        q = dict(self._quotes.get(code, {}))
+        # 合并注入的基本面（ROE / 股息率），质量因子据此启用
+        f = self._fundamentals.get(code) or {}
+        if f.get("roe") is not None:
+            q["roe"] = f["roe"]
+        if f.get("dividend_yield") is not None:
+            q["dividend_yield"] = f["dividend_yield"]
+        return q
 
     def fetch_hot_stocks(self) -> list[dict]:
         return list(self._hot)
+
+    def fetch_fundamentals(self, code: str) -> dict:
+        f = self._fundamentals.get(code) or {}
+        return {
+            "roe": f.get("roe"),
+            "dividend_yield": f.get("dividend_yield"),
+        }
 
 
 class GatewayProvider(DataProvider):

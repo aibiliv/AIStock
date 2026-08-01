@@ -17,6 +17,7 @@ import {
   Hint,
   Spinner,
 } from "./components";
+import { ScreenerConfigPanel, type ScreenerOverrides } from "./ScreenerConfigPanel";
 
 /* ----------------------------- 数据类型 ----------------------------- */
 type ScanSelected = {
@@ -28,6 +29,13 @@ type ScanSelected = {
   pb: number;
   turnover: number;
   signals: number;
+  /** 新增因子维度（丰富选股策略）；旧 payload 可能缺失，故可选 */
+  rsi?: number;
+  riskAdjMomentum?: number;
+  trend?: number;
+  factors?: Record<string, number>;
+  /** 行业（行业分散约束）；旧 payload 可能缺失，故可选 */
+  sector?: string;
 };
 type ScanMetrics = {
   totalReturn: number;
@@ -64,6 +72,14 @@ type Scan = {
     };
   };
   equityCurve: Array<{ date: string; value: number }>;
+  marketState?: {
+    state: string;
+    positionFactor: number;
+    score: number;
+    detail: string;
+    maGap: number;
+    momentum: number;
+  };
   disclaimer: string;
 };
 
@@ -185,6 +201,8 @@ export function StrategyScanView({
   const [error, setError] = useState(initialData && !initialData.ok ? initialData.error || "暂时无法读取策略扫描结果" : "");
   const [feedback, setFeedback] = useState<Record<string, "有效" | "无效">>({});
   const [feedbackBusy, setFeedbackBusy] = useState("");
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanError, setScanError] = useState("");
 
   const load = useCallback(async () => {
     let alive = true;
@@ -230,18 +248,48 @@ export function StrategyScanView({
     }
   }
 
+  async function handleRunInteractive(overrides: ScreenerOverrides) {
+    setScanBusy(true);
+    setScanError("");
+    try {
+      const res = await fetch("/api/strategy-scan/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(overrides),
+      });
+      const json = (await res.json()) as { ok?: boolean; scan?: Scan; error?: string };
+      if (json.ok && json.scan) {
+        setScan(json.scan);
+      } else {
+        setScanError(json.error || "扫描执行失败");
+      }
+    } catch {
+      setScanError("网络错误：无法连接扫描引擎");
+    } finally {
+      setScanBusy(false);
+    }
+  }
+
   if (loading) {
     return (
-      <div className="loading-state">
-        <Spinner /> 正在加载策略扫描结果…
+      <div className="loading-state" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <ScreenerConfigPanel onRun={handleRunInteractive} busy={scanBusy} />
+        {scanError && <Banner tone="warn" title="扫描失败">{scanError}</Banner>}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Spinner /> 正在加载策略扫描结果…
+        </div>
       </div>
     );
   }
   if (error || !scan) {
     return (
-      <Banner tone="warn" title="暂无策略扫描数据">
-        {error || "请先在本地运行 trading_agent 生成共享扫描 JSON。"}
-      </Banner>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <ScreenerConfigPanel onRun={handleRunInteractive} busy={scanBusy} />
+        {scanError && <Banner tone="warn" title="扫描失败">{scanError}</Banner>}
+        <Banner tone="warn" title="暂无策略扫描数据">
+          {error || "请先在本地运行 trading_agent 生成共享扫描 JSON，或使用上方配置面板触发扫描。"}
+        </Banner>
+      </div>
     );
   }
 
@@ -250,12 +298,36 @@ export function StrategyScanView({
 
   return (
     <div className="scan-view" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* 交互式配置面板 */}
+      <ScreenerConfigPanel onRun={handleRunInteractive} busy={scanBusy} />
+
+      {scanError && (
+        <Banner tone="warn" title="扫描失败">
+          {scanError}
+        </Banner>
+      )}
+
       <SectionHeader
         eyebrow="交易 Agent · 文件桥"
         title="策略扫描"
         subtitle={`候选池 ${scan.universeSize} 只 → 选出 ${scan.selectedCount} 只 ｜ 生成于 ${scan.generatedAt}`}
         desc="由 trading_agent 回测引擎生成，经文件桥同步到本页展示。"
       />
+
+      {scan.marketState && (
+        (() => {
+          const ms = scan.marketState!;
+          const tone =
+            ms.state === "bull" ? "success" : ms.state === "bear" ? "danger" : "info";
+          const label =
+            ms.state === "bull" ? "牛市 · 满仓" : ms.state === "bear" ? "熊市 · 空仓" : ms.state === "neutral" ? "中性 · 半仓" : "未知 · 中性";
+          return (
+            <Banner tone={tone} title={`市场状态：${label}（仓位系数 ${ms.positionFactor.toFixed(2)}）`}>
+              {ms.detail}
+            </Banner>
+          );
+        })()
+      )}
 
       <div
         style={{
@@ -291,14 +363,19 @@ export function StrategyScanView({
       </Card>
 
       <Card>
-        <CardHeader title="选股榜单（多因子打分）" desc="动量 + 估值 + 流动性加权打分，取 Top N。" />
+        <CardHeader title="选股榜单（多因子打分）" desc="风险调整动量 + 趋势 + 估值 + RSI/MACD 技术确认 + 流动性/规模，加权打分取 Top N；行业分散约束限制单行业最多入选数。" />
+        <div style={{ overflowX: "auto" }}>
         <table style={tableStyle}>
           <thead>
             <tr>
               <th style={thStyle()}>代码</th>
               <th style={thStyle()}>名称</th>
+              <th style={thStyle()}>行业</th>
               <th style={thStyle()}>得分</th>
               <th style={thStyle()}>动量(20d)</th>
+              <th style={thStyle()}>RSI</th>
+              <th style={thStyle()}>风险动量</th>
+              <th style={thStyle()}>趋势</th>
               <th style={thStyle()}>PE</th>
               <th style={thStyle()}>PB</th>
               <th style={thStyle()}>换手%</th>
@@ -311,9 +388,33 @@ export function StrategyScanView({
               <tr key={s.code}>
                 <td style={tdStyle()}>{s.code}</td>
                 <td style={tdStyle()}>{s.name}</td>
+                <td style={tdStyle()}>
+                  <span
+                    style={{
+                      display: "inline-block",
+                      padding: "2px 8px",
+                      borderRadius: 6,
+                      fontSize: 12,
+                      lineHeight: "18px",
+                      background: "rgba(37,99,235,0.12)",
+                      color: "#3b82f6",
+                      border: "1px solid rgba(37,99,235,0.25)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {s.sector ?? "其他"}
+                  </span>
+                </td>
                 <td style={tdStyle()}>{s.score.toFixed(3)}</td>
                 <td style={tdStyle()}>
                   <Tag tone={s.momentum >= 0 ? "up" : "down"}>{pct(s.momentum)}</Tag>
+                </td>
+                <td style={tdStyle()}>{s.rsi != null ? s.rsi.toFixed(1) : "-"}</td>
+                <td style={tdStyle()}>
+                  {s.factors ? `${(s.factors.momentum != null ? s.factors.momentum : 0) * 100 | 0}` : "-"}
+                </td>
+                <td style={tdStyle()}>
+                  {s.factors ? `${(s.factors.trend != null ? s.factors.trend : 0) * 100 | 0}` : "-"}
                 </td>
                 <td style={tdStyle()}>{s.peTtm.toFixed(2)}</td>
                 <td style={tdStyle()}>{s.pb.toFixed(2)}</td>
@@ -349,6 +450,7 @@ export function StrategyScanView({
             ))}
           </tbody>
         </table>
+        </div>
       </Card>
 
       {opt && (

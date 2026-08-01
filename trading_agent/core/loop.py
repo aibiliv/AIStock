@@ -9,8 +9,22 @@ from datetime import datetime
 
 import config
 from data import universe as universe_mod, provider
-from strategy import screener, signals
+from data.provider import StaticProvider
+from strategy import screener, signals, market_state
 from backtest import engine
+
+
+def _zero_metrics() -> dict:
+    """空仓（无入选）时的零化指标，保证下游报告/前端不崩。"""
+    return {
+        "total_return": 0.0,
+        "annual_return": 0.0,
+        "sharpe": 0.0,
+        "max_drawdown": 0.0,
+        "win_rate": 0.0,
+        "trades": 0,
+        "n_stocks": 0,
+    }
 
 
 def run(cfg: config.AppConfig, dp=None) -> dict:
@@ -21,9 +35,25 @@ def run(cfg: config.AppConfig, dp=None) -> dict:
     """
     dp = dp or provider.default_provider()
 
-    # 1) 选票
+    # 0) 市场状态（风控前置）：取宽基指数 K 线判定牛/中性/熊，给出仓位系数
+    regime = {
+        "state": "unknown", "position_factor": 1.0, "score": 0.0,
+        "detail": "市场状态未启用（config.market.enable=False）",
+        "ma_gap": 0.0, "momentum": 0.0,
+    }
+    if cfg.market.enable:
+        mk = dp.fetch_kline(cfg.market.index_code, cfg.beg, cfg.end)
+        # 静态/中枢注入模式下无指数行情则不回退实时网络（避免无谓延迟），
+        # 直接判为 unknown（中性，不强行空仓）；实时直连模式才回退取指数。
+        if not mk and not isinstance(dp, StaticProvider):
+            mk = provider.default_provider().fetch_kline(cfg.market.index_code, cfg.beg, cfg.end)
+        regime = market_state.detect_regime(cfg, mk)
+
+    # 1) 选票（按仓位系数缩放实际选股数；熊市 position=0 → 空仓）
+    target_top_n = cfg.screener.top_n
+    eff_top_n = max(0, int(round(target_top_n * regime["position_factor"])))
     codes = universe_mod.get_universe(cfg, dp)
-    selected = screener.screen(cfg, codes, dp)
+    selected = screener.screen(cfg, codes, dp, top_n_override=eff_top_n)
     selected_codes = [r["code"] for r in selected]
 
     # 拉取已选标的的历史 K 线（回测/信号所需）
@@ -31,6 +61,35 @@ def run(cfg: config.AppConfig, dp=None) -> dict:
 
     # 2) 操作（当前参数下的信号）
     code_signals = {c: signals.generate_signals(code_klines[c], cfg.signal) for c in selected_codes}
+
+    # 空仓保护：无入选标的时跳过回测/优化，产出零化指标，避免引擎崩溃
+    if not selected_codes:
+        result = {
+            "meta": {
+                "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "beg": cfg.beg,
+                "end": cfg.end,
+                "universe_size": len(codes),
+                "top_n": target_top_n,
+                "selected_n": 0,
+                "notifier": cfg.notifier,
+            },
+            "market_state": regime,
+            "selected": [],
+            "base": {
+                "signal": {"fast_ma": cfg.signal.fast_ma, "slow_ma": cfg.signal.slow_ma},
+                "metrics": _zero_metrics(),
+            },
+            "final": {
+                "signal": {"fast_ma": cfg.signal.fast_ma, "slow_ma": cfg.signal.slow_ma},
+                "metrics": _zero_metrics(),
+                "dates": [],
+                "equity": [],
+                "n_signals_total": 0,
+            },
+        }
+        return result
+
     base_bt = engine.backtest(code_klines, code_signals, cfg)
 
     # 补充每只标的的信号条数（买入 + 卖出事件）
@@ -44,10 +103,11 @@ def run(cfg: config.AppConfig, dp=None) -> dict:
             "beg": cfg.beg,
             "end": cfg.end,
             "universe_size": len(codes),
-            "top_n": cfg.screener.top_n,
+            "top_n": target_top_n,
             "selected_n": len(selected),
             "notifier": cfg.notifier,
         },
+        "market_state": regime,
         "selected": selected,
         "base": {
             "signal": {"fast_ma": cfg.signal.fast_ma, "slow_ma": cfg.signal.slow_ma},
