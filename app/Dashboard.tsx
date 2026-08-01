@@ -213,6 +213,7 @@ type Position = ReturnType<typeof calculatePortfolio>["positions"][number];
 type AssistantMessage = {
   role: "user" | "assistant";
   content: string;
+  mode?: "ai" | "fallback";
 };
 
 type Status = {
@@ -1904,7 +1905,7 @@ function SmartAssistant(
     setQuestion("");
     setAsking(true);
     try {
-      const result = await jsonRequest<{ answer: string; mode: string }>("/api/assistant", {
+      const result = await jsonRequest<{ answer: string; mode: "ai" | "fallback" }>("/api/assistant", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -1913,7 +1914,7 @@ function SmartAssistant(
           context: buildContext(),
         }),
       });
-      setMessages((current) => [...current, { role: "assistant", content: result.answer }]);
+      setMessages((current) => [...current, { role: "assistant", content: result.answer, mode: result.mode }]);
     } catch (error) {
       setMessages((current) => [...current, {
         role: "assistant",
@@ -1957,6 +1958,11 @@ function SmartAssistant(
         {messages.map((message, index) => (
           <div className={`assistant-message ${message.role}`} key={`${message.role}-${index}`}>
             <b>{message.role === "assistant" ? "助手" : "我"}</b>
+            {message.role === "assistant" && (
+              <Badge tone={message.mode === "ai" ? "accent" : "neutral"}>
+                {message.mode === "ai" ? "AI 已回答" : "离线规则模式"}
+              </Badge>
+            )}
             {message.role === "assistant" ? (
               <MarkdownMessage content={message.content} />
             ) : (
@@ -2002,6 +2008,46 @@ function FloatingAssistantLauncher(
   const [linking, setLinking] = useState(false);
   const [linkError, setLinkError] = useState("");
 
+  // 拖拽定位：相对右下角的偏移（向左/上为负）。null 时使用默认右下角。
+  const [offset, setOffset] = useState<{ x: number; y: number } | null>(null);
+  const dragState = useRef<{
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    moved: boolean;
+  } | null>(null);
+  const draggedRef = useRef(false);
+
+  function handleFabPointerDown(event: React.PointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragState.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      // 当前按钮相对右下角的偏移（右/下为正）
+      originX: offset?.x ?? 0,
+      originY: offset?.y ?? 0,
+      moved: false,
+    };
+  }
+
+  function handleFabPointerMove(event: React.PointerEvent<HTMLButtonElement>) {
+    const state = dragState.current;
+    if (!state) return;
+    const dx = event.clientX - state.startX;
+    const dy = event.clientY - state.startY;
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
+      state.moved = true;
+      draggedRef.current = true;
+    }
+    setOffset({ x: state.originX + dx, y: state.originY + dy });
+  }
+
+  function handleFabPointerUp(event: React.PointerEvent<HTMLButtonElement>) {
+    dragState.current = null;
+  }
+
   const activeAnalysis = linked ?? analysis;
   const activePosition = linked ? (portfolio.positions.find((p) => p.symbol === linked.stock.code) ?? null) : position;
 
@@ -2021,10 +2067,20 @@ function FloatingAssistantLauncher(
     }
   }
 
+  // 把右下角偏移转成内联定位（覆盖 CSS 默认位置）。
+  // offset.x>0 向右移、offset.x<0 向左移（用 right 减小/增大表达）。
+  const fabStyle: React.CSSProperties = offset
+    ? { right: Math.max(0, 22 - offset.x), bottom: Math.max(0, 22 - offset.y), left: "auto", top: "auto" }
+    : {};
+  const panelOffset = offset ?? { x: 0, y: 0 };
+  const panelStyle: React.CSSProperties = offset
+    ? { right: Math.max(0, 22 - panelOffset.x), bottom: Math.max(0, 84 - panelOffset.y), left: "auto", top: "auto" }
+    : {};
+
   return (
     <>
       {open && (
-        <div className="assistant-fab-panel" role="dialog" aria-label="智能复盘助手">
+        <div className="assistant-fab-panel" role="dialog" aria-label="智能复盘助手" style={panelStyle}>
           <SmartAssistant
             floating
             analysis={activeAnalysis}
@@ -2091,9 +2147,19 @@ function FloatingAssistantLauncher(
       <button
         type="button"
         className={`assistant-fab${open ? " is-open" : ""}`}
-        onClick={onToggle}
+        style={fabStyle}
+        onClick={(event) => {
+          if (draggedRef.current) {
+            draggedRef.current = false;
+            return;
+          }
+          onToggle();
+        }}
+        onPointerDown={handleFabPointerDown}
+        onPointerMove={handleFabPointerMove}
+        onPointerUp={handleFabPointerUp}
         aria-label={open ? "收起智能复盘助手" : "打开智能复盘助手"}
-        title={open ? "收起助手" : "智能复盘助手"}
+        title={open ? "收起助手（可拖拽移动）" : "智能复盘助手（可拖拽移动）"}
       >
         <Sparkles size={22} />
       </button>
