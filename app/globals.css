@@ -3671,9 +3671,12 @@ svg { display: block; }
     bottom: 0;
     box-shadow: 0 -1px 0 var(--line);
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    height: 66px;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    height: 64px;
     left: 0;
+    overflow-x: auto;
+    padding-bottom: env(safe-area-inset-bottom, 0);
     position: fixed;
     right: 0;
     z-index: 50;
@@ -3685,10 +3688,13 @@ svg { display: block; }
     color: var(--muted);
     display: flex;
     flex-direction: column;
-    font-size: var(--fs-2xs);
-    gap: 3px;
+    font-size: 10px;
+    gap: 2px;
     justify-content: center;
+    min-width: 60px;
+    padding: 4px 2px;
   }
+  .mobile-nav button svg { width: 18px; height: 18px; }
   .modal-backdrop { align-items: flex-end; padding: 8px; }
   .modal { border-radius: var(--radius-card) var(--radius-card) 8px 8px; max-height: calc(100dvh - 16px); }
   .settings-detail-head { align-items: flex-start; flex-direction: column; gap: 10px; }
