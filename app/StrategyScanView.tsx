@@ -281,13 +281,16 @@ export function StrategyScanView({
       </div>
     );
   }
-  if (error || !scan) {
+  if (error || !scan || !scan.backtest) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <ScreenerConfigPanel onRun={handleRunInteractive} busy={scanBusy} />
         {scanError && <Banner tone="warn" title="扫描失败">{scanError}</Banner>}
         <Banner tone="warn" title="暂无策略扫描数据">
-          {error || "请先在本地运行 trading_agent 生成共享扫描 JSON，或使用上方配置面板触发扫描。"}
+          {error ||
+            (!scan
+              ? "请先在本地运行 trading_agent 生成共享扫描 JSON，或使用上方配置面板触发扫描。"
+              : "扫描结果缺少回测数据（backtest），请重新在本地运行 trading_agent 生成完整共享 JSON。")}
         </Banner>
       </div>
     );

@@ -158,3 +158,11 @@ export const strategyWriteback = sqliteTable("strategy_writeback", {
   payload: text("payload").notNull(),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+// 云端「选股前置条件」配置（网页保存 / 本地 trading_agent 拉取）。
+// 与 strategy_scan（扫描结果）分离，避免配置数据污染扫描结果渲染。
+export const strategyConfig = sqliteTable("strategy_config", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  payload: text("payload").notNull(),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});

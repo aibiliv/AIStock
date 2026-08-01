@@ -166,6 +166,11 @@ export async function ensureSchema() {
         payload TEXT NOT NULL,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`),
+      db.prepare(`CREATE TABLE IF NOT EXISTS strategy_config (
+        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+        payload TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`),
       db.prepare("CREATE INDEX IF NOT EXISTS strategy_scan_created_idx ON strategy_scan(created_at)"),
       db.prepare("CREATE INDEX IF NOT EXISTS strategy_writeback_created_idx ON strategy_writeback(created_at)"),
     ]);

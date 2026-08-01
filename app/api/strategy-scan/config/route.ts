@@ -34,13 +34,14 @@ function dumpScript(): string {
   return path.join(projectRoot(), "trading_agent", "dump_config.py");
 }
 
-// 云端持久化配置：前端「保存配置」写入 D1（strategy_scan 表，只保留最新一行），
-// GET 优先读取它。workerd 沙箱禁止 fs 写入，故使用已挂载持久卷的 D1，容器重建不丢。
+// 云端持久化配置：前端「保存配置」写入 D1（strategy_config 表，只保留最新一行），
+// GET 优先读取它。与 strategy_scan（扫描结果）分离，避免配置污染扫描结果渲染。
+// workerd 沙箱禁止 fs 写入，故使用已挂载持久卷的 D1，容器重建不丢。
 async function readStoredConfig(): Promise<Record<string, unknown> | null> {
   try {
     if (!env.DB) return null;
     const row = (await env.DB.prepare(
-      "SELECT payload FROM strategy_scan ORDER BY id DESC LIMIT 1"
+      "SELECT payload FROM strategy_config ORDER BY id DESC LIMIT 1"
     ).first()) as { payload?: string } | null;
     if (!row?.payload) return null;
     const data = JSON.parse(row.payload);
@@ -57,8 +58,8 @@ async function saveStoredConfig(config: unknown): Promise<void> {
   const payload = JSON.stringify({ savedAt: new Date().toISOString(), config });
   // 只保留最新一行
   await env.DB.batch([
-    env.DB.prepare("DELETE FROM strategy_scan"),
-    env.DB.prepare("INSERT INTO strategy_scan (payload) VALUES (?)").bind(payload),
+    env.DB.prepare("DELETE FROM strategy_config"),
+    env.DB.prepare("INSERT INTO strategy_config (payload) VALUES (?)").bind(payload),
   ]);
 }
 
