@@ -3538,18 +3538,14 @@ svg { display: block; }
     box-shadow: none;
     display: grid;
     gap: 10px;
-    grid-template-columns: auto 1fr;
+    grid-template-columns: 1fr;
     padding: 0;
   }
   .stock-search:focus-within {
     border-color: transparent;
     box-shadow: none;
   }
-  .search-icon {
-    align-self: center;
-    grid-row: 1;
-    margin: 0 6px 0 10px;
-  }
+  .search-icon { display: none; }
   .stock-search input {
     background: var(--surface);
     border: 1px solid var(--line-strong);
