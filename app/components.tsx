@@ -76,6 +76,7 @@ type BadgeProps = {
   tone?: BadgeTone;
   square?: boolean;
   className?: string;
+  title?: string;
 };
 
 export function Badge({
@@ -83,9 +84,11 @@ export function Badge({
   tone = "neutral",
   square = false,
   className = "",
+  title,
 }: BadgeProps) {
   return (
     <span
+      title={title}
       className={[
         "badge",
         `badge--${tone}`,

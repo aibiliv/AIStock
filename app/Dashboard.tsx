@@ -1954,8 +1954,8 @@ function SmartAssistant(
     <section className={floating ? "panel smart-assistant smart-assistant--floating" : "panel smart-assistant"}>
       {headerSlot}
       <SectionHeader
-        eyebrow={analysis ? "可连续追问" : "账户级问答"}
-        title="智能复盘助手"
+        eyebrow="智能复盘助手"
+        title={analysis ? "可连续追问" : "账户级问答"}
         actions={
           <div className="assistant-header-actions">
             <Badge tone="accent">{analysis ? (position ? "已结合我的持仓" : "当前未记录持仓") : "未关联具体股票"}</Badge>
