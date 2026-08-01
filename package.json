@@ -2,6 +2,7 @@
   "name": "fupanbu-trading-journal",
   "version": "1.0.1",
   "private": true,
+  "license": "MIT",
   "engines": {
     "node": ">=22.13.0"
   },
