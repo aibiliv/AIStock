@@ -199,7 +199,10 @@ const INPUT: CSSProperties = {
   background: "transparent",
   color: "inherit",
   outline: "none",
+  /* 移动端自适应：不固定宽度，用 min/max 约束 */
   width: 80,
+  maxWidth: "100%",
+  boxSizing: "border-box" as const,
 };
 const INPUT_FOCUS: CSSProperties = {
   ...INPUT,
@@ -340,7 +343,7 @@ function SliderRow({
   const isDefault = Math.abs(value - defaultValue) < 0.001;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-      <span style={{ fontSize: 12, color: "#94a3b8", width: 90, flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 12, color: "#94a3b8", width: 90, flexShrink: 0, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
       <input
         type="range"
         min={min}
@@ -348,7 +351,7 @@ function SliderRow({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        style={{ flex: 1, accentColor: "#2563eb", height: 4 }}
+        style={{ flex: 1, accentColor: "#2563eb", height: 4, minWidth: 60 }}
       />
       <span
         style={{
@@ -358,6 +361,7 @@ function SliderRow({
           fontFamily: "monospace",
           color: isDefault ? "#94a3b8" : "#2563eb",
           fontWeight: isDefault ? 400 : 600,
+          flexShrink: 0,
         }}
       >
         {displayVal.toFixed(displayMultiplier === 1 ? 2 : 2)}
@@ -502,19 +506,13 @@ export function ScreenerConfigPanel({
 
       {/* 策略预设下拉框 */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: 13, color: "#64748b", fontWeight: 600 }}>策略预设</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+          <span style={{ fontSize: 13, color: "#64748b", fontWeight: 600, whiteSpace: "nowrap" }}>策略预设</span>
           <select
             value={selectedPreset}
             onChange={(e) => applyPreset(e.target.value)}
-            style={SELECT}
+            style={{ ...SELECT, /* 移动端自适应宽度 */ maxWidth: "100%", width: "auto", minWidth: 140 }}
           >
-            <option value="">自定义 / 默认</option>
-            {STRATEGY_PRESETS.map((p) => (
-              <option key={p.key} value={p.key}>{p.label}</option>
-            ))}
-          </select>
-        </div>
         {STRATEGY_PRESETS.find((p) => p.key === selectedPreset) && (
           <span style={{ fontSize: 12.5, color: "#94a3b8" }}>
             {STRATEGY_PRESETS.find((p) => p.key === selectedPreset)!.desc}
@@ -522,7 +520,7 @@ export function ScreenerConfigPanel({
         )}
       </div>
 
-      {/* 第一行：板块 + ST + 市值 */}
+      {/* 第一行：板块 + ST + 市值 —— 移动端自适应堆叠 */}
       <div
         className="screener-row"
         style={{
@@ -530,12 +528,14 @@ export function ScreenerConfigPanel({
           gap: 16,
           alignItems: "start",
           marginBottom: 12,
+          /* 桌面端三列并排；窄屏自动堆叠 */
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
         }}
       >
         {/* 板块 */}
         <div>
           <div style={LABEL}>板块 / 市场</div>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
             {BOARD_OPTIONS.map((b) => (
               <Checkbox
                 key={b.key}
@@ -544,14 +544,14 @@ export function ScreenerConfigPanel({
                 onChange={() => toggleBoard(b.key)}
               />
             ))}
-            <span style={{ fontSize: 11.5, color: "#94a3b8", alignSelf: "center" }}>不选 = 全A</span>
+            <span style={{ fontSize: 11.5, color: "#94a3b8", whiteSpace: "nowrap" }}>不选 = 全A</span>
           </div>
         </div>
 
         {/* ST 股 */}
         <div>
           <div style={LABEL}>ST 股</div>
-          <div style={{ display: "flex", gap: 12 }}>
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
             {ST_OPTIONS.map((s) => (
               <Radio
                 key={s.key}
@@ -566,14 +566,14 @@ export function ScreenerConfigPanel({
         {/* 流通市值 */}
         <div>
           <div style={LABEL}>流通市值（亿元）</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap" }}>
             <NumberInput
               value={ov.mcap_min}
               onChange={(v) => set("mcap_min", v)}
               placeholder="不限"
               min={0}
             />
-            <span style={{ color: "#94a3b8" }}>—</span>
+            <span style={{ color: "#94a3b8", whiteSpace: "nowrap", flexShrink: 0 }}>—</span>
             <NumberInput
               value={ov.mcap_max === 10000 ? undefined : ov.mcap_max}
               onChange={(v) => set("mcap_max", v || 10000)}
@@ -584,54 +584,66 @@ export function ScreenerConfigPanel({
         </div>
       </div>
 
-      {/* 操作按钮行 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => onRun(ov)}
-          style={{
-            ...BTN_PRIMARY,
-            opacity: busy ? 0.65 : 1,
-            cursor: busy ? "not-allowed" : "pointer",
-          }}
-        >
-          {busy ? "扫描中…" : "应用并扫描"}
-        </button>
-        <button
-          type="button"
-          disabled={saving}
-          onClick={saveConfig}
-          style={{
-            ...BTN_PRIMARY,
-            background: "#16a34a",
-            opacity: saving ? 0.65 : 1,
-            cursor: saving ? "not-allowed" : "pointer",
-          }}
-        >
-          {saving ? "保存中…" : "保存配置到云端"}
-        </button>
-        <button type="button" onClick={reset} style={BTN_SECONDARY}>
-          重置条件
-        </button>
-        {saveMsg && (
-          <span style={{ fontSize: 12, color: saveMsg.ok ? "#16a34a" : "#dc2626" }}>
-            {saveMsg.text}
-          </span>
-        )}
-        {/* 已应用摘要 */}
-        {summaryTags.length > 0 && (
-          <span style={{ fontSize: 12, color: "#64748b" }}>
-            已应用：
-            {summaryTags.map((t, i) => (
-              <span key={i} style={TAG_CHIP}>{t}</span>
-            ))}
-          </span>
-        )}
-        {hasCustomWeights && (
-          <span style={{ ...TAG_CHIP, background: "rgba(220,38,38,0.07)", color: "#dc2626", borderColor: "rgba(220,38,38,0.2)" }}>
-            自定义权重
-          </span>
+      {/* 操作按钮行 —— 移动端自适应 */}
+      <div style={{ marginBottom: 10 }}>
+        {/* 按钮组：移动端换行但不竖排文字 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => onRun(ov)}
+            style={{
+              ...BTN_PRIMARY,
+              /* 移动端按钮更紧凑 */
+              padding: "7px 14px",
+              whiteSpace: "nowrap",
+              opacity: busy ? 0.65 : 1,
+              cursor: busy ? "not-allowed" : "pointer",
+            }}
+          >
+            {busy ? "扫描中…" : "扫描"}
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            onClick={saveConfig}
+            style={{
+              ...BTN_PRIMARY,
+              background: "#16a34a",
+              padding: "7px 14px",
+              whiteSpace: "nowrap",
+              opacity: saving ? 0.65 : 1,
+              cursor: saving ? "not-allowed" : "pointer",
+            }}
+          >
+            {saving ? "保存中…" : "保存配置"}
+          </button>
+          <button type="button" onClick={reset} style={{ ...BTN_SECONDARY, padding: "7px 12px", whiteSpace: "nowrap" }}>
+            重置
+          </button>
+          {saveMsg && (
+            <span style={{ fontSize: 12, color: saveMsg.ok ? "#16a34a" : "#dc2626", flexShrink: 0 }}>
+              {saveMsg.text}
+            </span>
+          )}
+        </div>
+        {/* 已应用摘要 + 权量标签：独立一行，移动端不挤在按钮旁 */}
+        {(summaryTags.length > 0 || hasCustomWeights) && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6, alignItems: "center" }}>
+            {summaryTags.length > 0 && (
+              <>
+                <span style={{ fontSize: 12, color: "#94a3b8", flexShrink: 0 }}>已应用：</span>
+                {summaryTags.map((t, i) => (
+                  <span key={i} style={TAG_CHIP}>{t}</span>
+                ))}
+              </>
+            )}
+            {hasCustomWeights && (
+              <span style={{ ...TAG_CHIP, background: "rgba(220,38,38,0.07)", color: "#dc2626", borderColor: "rgba(220,38,38,0.2)" }}>
+                自定义权重
+              </span>
+            )}
+          </div>
         )}
       </div>
 
