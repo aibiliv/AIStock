@@ -272,10 +272,10 @@ export function StrategyScanView({
 
   if (loading) {
     return (
-      <div className="loading-state" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <ScreenerConfigPanel onRun={handleRunInteractive} busy={scanBusy} />
         {scanError && <Banner tone="warn" title="扫描失败">{scanError}</Banner>}
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div className="loading-state" style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Spinner /> 正在加载策略扫描结果…
         </div>
       </div>
