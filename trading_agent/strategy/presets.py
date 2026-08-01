@@ -15,7 +15,11 @@
 from __future__ import annotations
 
 
-# 三套经典短线打法：数据现成、风险可控（不含打板/题材等需实时涨停盘口数据的策略）
+# 选股预设集合：3 套经典（breakout/ma_golden/macd_cross）+ 3 套激进
+# （momentum_chase/bottom_reversal/hot_theme）+ 游资风格（youzi）。
+# 前端 app/ScreenerConfigPanel.tsx 的 STRATEGY_PRESETS 须与本字典保持同步，
+# 否则 CLI/API 直接按 preset 名调用会找不到预设、参数丢失退回默认。
+# 注：打板/连板等需实时涨停盘口数据的策略，引擎暂无对应因子，用「高换手+强动量」近似。
 STRATEGY_PRESETS: dict[str, dict] = {
     "breakout": {
         "label": "放量突破",
@@ -70,6 +74,67 @@ STRATEGY_PRESETS: dict[str, dict] = {
             "macd_slow": 26,
             "macd_signal": 9,
             "min_turnover_pct": 0.30,
+        },
+    },
+    # 游资(涨停敢死队)风格：超短强动量 + 高换手量能驱动 + 不恐高(放开估值) + 趋势确认。
+    # 注：真实打板/连板需当日涨停、封单等盘口数据（引擎暂无该因子），
+    # 此处用「超短周期动量 + 高换手门槛 + 量价齐升」近似游资超短打法。
+    # 不依赖 mcap 市值约束——westock 行情快照无 mcap 字段，mcap_min>0 会把全部票过滤成 0 只。
+    "youzi": {
+        "label": "游资风格",
+        "desc": "游资超短打法近似：超短周期强动量(8日) + 高换手量能驱动 + 不恐高(放开估值) + 短周期突破确认。捕捉游资控盘、放量拉升的弹性标的（注：真实打板需涨停盘口数据，此处用高换手+强动量近似）。",
+        "overrides": {
+            "w_momentum": 0.42,
+            "w_liquidity": 0.28,      # 游资本质是资金/量能驱动，权重最高之一
+            "w_trend": 0.14,
+            "w_rsi": 0.08,
+            "w_macd": 0.08,
+            "w_value": 0.00,          # 游资炒情绪不炒价值，估值权重归零
+            "w_size": 0.00,
+            "w_quality": 0.00,
+            "momentum_window": 8,     # 超短周期（游资做超短，今天进明天出）
+            "max_pe_ttm": 10000,      # 不恐高，放开估值上限
+            "max_pb": 1000,
+            "min_turnover_pct": 1.8,  # 高换手门槛（游资进出频繁，日均换手显著高于机构票）
+            "top_n": 5,
+            "st_filter": "exclude_st",
+            "use_breakout_filter": True,
+            "breakout_window": 12,    # 短周期突破，捕捉启动
+        },
+    },
+    # —— 激进策略（与前端 ScreenerConfigPanel.tsx 的 STRATEGY_PRESETS 同步）——
+    "momentum_chase": {
+        "label": "强势追涨",
+        "desc": "激进：极高动量权重，放开 PE/PB 限制，高换手门槛，精选 4 只。追涨不恐高。",
+        "overrides": {
+            "w_momentum": 0.50, "w_liquidity": 0.22, "w_trend": 0.14, "w_rsi": 0.08,
+            "w_macd": 0.06, "w_value": 0.00, "w_size": 0.00, "w_quality": 0.00,
+            "momentum_window": 10, "max_pe_ttm": 10000, "max_pb": 1000,
+            "min_turnover_pct": 2.0, "top_n": 4,
+            "use_breakout_filter": True, "breakout_window": 10,
+        },
+    },
+    "bottom_reversal": {
+        "label": "超跌反弹",
+        "desc": "激进：重 RSI 低位 + MACD 反转，筛超跌后动能回暖标的，PE/PB 放宽，精选 5 只。",
+        "overrides": {
+            "w_rsi": 0.38, "w_macd": 0.28, "w_momentum": 0.16, "w_liquidity": 0.08,
+            "w_trend": 0.06, "w_value": 0.04, "w_size": 0.00, "w_quality": 0.00,
+            "momentum_window": 10, "max_pe_ttm": 500, "max_pb": 50,
+            "min_turnover_pct": 0.50, "top_n": 5,
+            "use_breakout_filter": False,
+        },
+    },
+    "hot_theme": {
+        "label": "题材热点追踪",
+        "desc": "激进：流动性为王 + 量能，不限 PE/PB，极高换手门槛，每板块只取 1 只，纯交易驱动。",
+        "overrides": {
+            "w_liquidity": 0.40, "w_momentum": 0.25, "w_macd": 0.15, "w_trend": 0.12,
+            "w_rsi": 0.06, "w_value": 0.02, "w_size": 0.00, "w_quality": 0.00,
+            "macd_fast": 6, "macd_slow": 13, "macd_signal": 5,
+            "max_pe_ttm": 10000, "max_pb": 1000,
+            "min_turnover_pct": 3.0, "top_n": 3, "max_per_sector": 1,
+            "use_breakout_filter": False,
         },
     },
 }

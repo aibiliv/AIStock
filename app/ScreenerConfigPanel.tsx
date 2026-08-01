@@ -118,6 +118,19 @@ export const STRATEGY_PRESETS: {
       use_breakout_filter: false,
     },
   },
+  // --- 游资风格 ---
+  {
+    key: "youzi",
+    label: "游资风格",
+    desc: "游资超短打法近似：超短周期强动量(8日) + 高换手量能驱动 + 不恐高(放开估值) + 短周期突破确认。捕捉游资控盘、放量拉升的弹性标的。",
+    overrides: {
+      w_momentum: 0.42, w_liquidity: 0.28, w_trend: 0.14, w_rsi: 0.08,
+      w_macd: 0.08, w_value: 0.00, w_size: 0.00, w_quality: 0.00,
+      momentum_window: 8, max_pe_ttm: 10000, max_pb: 1000,
+      min_turnover_pct: 1.8, top_n: 5, st_filter: "exclude_st",
+      use_breakout_filter: true, breakout_window: 12,
+    },
+  },
 ];
 
 /** 默认值（与 config.py ScreenerConfig 默认值对齐） */
@@ -549,7 +562,7 @@ export function ScreenerConfigPanel({
             style={{ ...SELECT, /* 移动端自适应宽度 */ maxWidth: "100%", width: "auto", minWidth: 140 }}
           >
             {STRATEGY_PRESETS.map((preset) => (
-              <option key={preset.key} value={preset.key}>{preset.name}</option>
+              <option key={preset.key} value={preset.key}>{preset.label}</option>
             ))}
           </select>
         </div>
