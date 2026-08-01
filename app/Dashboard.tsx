@@ -15,6 +15,7 @@ import { SectionHeader, Badge, Stat, Button, IconButton, Field, Input, Select, T
 import { AnalyticsView } from "./AnalyticsView";
 import { ImportPanel } from "./ImportPanel";
 import { MarkdownMessage } from "./MarkdownMessage";
+import { StrategyScanView } from "./StrategyScanView";
 import {
   ArrowDown,
   ArrowUp,
@@ -68,7 +69,7 @@ import {
   type TradingPreferences,
 } from "../lib/preferences";
 
-type View = "home" | "watchlist" | "trades" | "settings" | "analytics" | "analysis";
+type View = "home" | "watchlist" | "trades" | "settings" | "analytics" | "analysis" | "scan";
 type TradeMode = "buy" | "sell";
 
 type WatchItem = {
@@ -228,6 +229,7 @@ const navItems: Array<{ id: View; label: string; icon: LucideIcon }> = [
   { id: "trades", label: "交易记录", icon: ArrowLeftRight },
   { id: "analytics", label: "复盘总结", icon: TrendingUp },
   { id: "settings", label: "系统设置", icon: SettingsIcon },
+  { id: "scan", label: "策略扫描", icon: Bot },
 ];
 
 const buyReasons = ["看好公司业绩", "看好行业题材", "价格回调", "突破买入", "朋友或网络推荐", "担心错过", "冲动买入", "其他"];
@@ -786,6 +788,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 onImported={loadData}
               />
             )}
+            {view === "scan" && <StrategyScanView />}
           </>
         )}
       </main>

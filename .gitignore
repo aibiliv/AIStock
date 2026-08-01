@@ -65,3 +65,26 @@ package-lock.json
 
 # build state marker (deploy.sh 记录上次构建的源码 commit，勿提交)
 .last_build_commit
+
+# ---------------------------------------------------------------------
+# Python (trading_agent/)
+# ---------------------------------------------------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+.venv/
+venv/
+env/
+.python-version
+
+# trading_agent: runtime cache & generated reports（API 缓存与回测报告，勿提交）
+trading_agent/cache/
+trading_agent/reports/*.csv
+trading_agent/reports/*.json
+trading_agent/reports/*.md
+
+# playwright（e2e 测试产物）
+/test-results/
+/playwright-report/
