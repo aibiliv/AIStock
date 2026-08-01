@@ -15,7 +15,7 @@ import { SectionHeader, Badge, Stat, Button, IconButton, Field, Input, Select, T
 import { AnalyticsView } from "./AnalyticsView";
 import { ImportPanel } from "./ImportPanel";
 import { MarkdownMessage } from "./MarkdownMessage";
-import { StrategyScanView } from "./StrategyScanView";
+import { StrategyScanView, type StrategyScanResponse } from "./StrategyScanView";
 import {
   ArrowDown,
   ArrowUp,
@@ -303,7 +303,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const VALID_VIEWS: View[] = ["home", "analysis", "watchlist", "trades", "settings", "analytics"];
+  const VALID_VIEWS: View[] = ["home", "analysis", "watchlist", "trades", "settings", "analytics", "scan"];
   useEffect(() => {
     const target = searchParams.get("view");
     if (target && VALID_VIEWS.includes(target as View)) {
@@ -324,6 +324,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const [initialCapitalCents, setInitialCapitalCents] = useState<number | null>(null);
   const [capitalFlows, setCapitalFlows] = useState<CapitalFlow[]>([]);
   const [preferences, setPreferences] = useState<TradingPreferences | null>(null);
+  const [strategyScan, setStrategyScan] = useState<StrategyScanResponse | null>(null);
   const [tradeMode, setTradeMode] = useState<TradeMode | null>(null);
   const [reviewCycleEndTradeId, setReviewCycleEndTradeId] = useState<number | null>(null);
   const [settingsSection, setSettingsSection] = useState<string | null>(null);
@@ -401,6 +402,13 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       setError(loadError instanceof Error ? loadError.message : "个人数据暂时无法读取");
     } finally {
       setLoading(false);
+    }
+    // 预取策略扫描结果（无历史数据时接口返回非 2xx，属正常情况，静默忽略）
+    try {
+      const scanData = await jsonRequest<StrategyScanResponse>("/api/strategy-scan");
+      setStrategyScan(scanData);
+    } catch {
+      setStrategyScan(null);
     }
   }, []);
 
@@ -788,7 +796,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 onImported={loadData}
               />
             )}
-            {view === "scan" && <StrategyScanView />}
+            {view === "scan" && <StrategyScanView initialData={strategyScan} onRefresh={loadData} />}
           </>
         )}
       </main>

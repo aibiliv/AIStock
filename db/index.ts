@@ -146,6 +146,16 @@ export async function ensureSchema() {
       db.prepare("CREATE INDEX IF NOT EXISTS reviews_symbol_idx ON reviews(symbol)"),
       db.prepare("CREATE INDEX IF NOT EXISTS analysis_reports_symbol_idx ON analysis_reports(symbol)"),
       db.prepare("CREATE INDEX IF NOT EXISTS announcement_notes_symbol_idx ON announcement_notes(symbol)"),
+      db.prepare(`CREATE TABLE IF NOT EXISTS strategy_feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+        symbol TEXT NOT NULL,
+        name TEXT NOT NULL DEFAULT '',
+        verdict TEXT NOT NULL DEFAULT '有效',
+        note TEXT NOT NULL DEFAULT '',
+        source TEXT NOT NULL DEFAULT 'web',
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`),
+      db.prepare("CREATE INDEX IF NOT EXISTS strategy_feedback_symbol_idx ON strategy_feedback(symbol)"),
     ]);
     await addColumnIfMissing("trade_records", "price_millis", "price_millis INTEGER");
     await addColumnIfMissing("trade_records", "price_ten_thousandths", "price_ten_thousandths INTEGER");
