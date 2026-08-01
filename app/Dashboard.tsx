@@ -9,6 +9,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
 import { SectionHeader, Badge, Stat, Button, IconButton, Field, Input, Select, Textarea, Banner, Hint } from "./components";
@@ -16,6 +17,7 @@ import { AnalyticsView } from "./AnalyticsView";
 import { ImportPanel } from "./ImportPanel";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { StrategyScanView, type StrategyScanResponse } from "./StrategyScanView";
+import { WritebackView } from "./WritebackView";
 import {
   ArrowDown,
   ArrowUp,
@@ -24,6 +26,7 @@ import {
   CalendarDays,
   ChevronRight,
   TrendingUp,
+  Upload,
   CheckCircle2,
   MessageCircle,
   ClipboardList,
@@ -36,6 +39,7 @@ import {
   Pencil,
   Plus,
   Bot,
+  Sparkles,
   ShieldCheck,
   LogOut,
   Star,
@@ -68,8 +72,9 @@ import {
   type RiskProfile,
   type TradingPreferences,
 } from "../lib/preferences";
+import type { AssistantContext } from "../lib/assistant";
 
-type View = "home" | "watchlist" | "trades" | "settings" | "analytics" | "analysis" | "scan";
+type View = "home" | "watchlist" | "trades" | "settings" | "analytics" | "analysis" | "scan" | "writeback";
 type TradeMode = "buy" | "sell";
 
 type WatchItem = {
@@ -230,6 +235,7 @@ const navItems: Array<{ id: View; label: string; icon: LucideIcon }> = [
   { id: "analytics", label: "复盘总结", icon: TrendingUp },
   { id: "settings", label: "系统设置", icon: SettingsIcon },
   { id: "scan", label: "策略扫描", icon: Bot },
+  { id: "writeback", label: "回写结果", icon: Upload },
 ];
 
 const buyReasons = ["看好公司业绩", "看好行业题材", "价格回调", "突破买入", "朋友或网络推荐", "担心错过", "冲动买入", "其他"];
@@ -302,7 +308,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const [view, setView] = useState<View>("home");
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const VALID_VIEWS: View[] = ["home", "analysis", "watchlist", "trades", "settings", "analytics", "scan"];
+  const VALID_VIEWS: View[] = ["home", "analysis", "watchlist", "trades", "settings", "analytics", "scan", "writeback"];
   useEffect(() => {
     const target = searchParams.get("view");
     if (target && VALID_VIEWS.includes(target as View)) {
@@ -665,6 +671,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   }
 
   const analyzedPosition = portfolio.positions.find((position) => position.symbol === analysis?.stock.code);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const currentTradeStock = tradeMode === "sell"
     ? analyzedPosition ?? portfolio.positions[0] ?? null
     : analysis?.stock ?? null;
@@ -805,6 +812,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
               />
             )}
             {view === "scan" && <div className="page-content inner-page"><StrategyScanView initialData={strategyScan} onRefresh={loadData} /></div>}
+            {view === "writeback" && <div className="page-content inner-page"><WritebackView /></div>}
           </>
         )}
       </main>
@@ -837,6 +845,17 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         />
       )}
       {toast && <div className="toast" role="status" aria-live="polite"><CheckCircle2 size={19} />{toast}</div>}
+      <FloatingAssistantLauncher
+        open={assistantOpen}
+        onToggle={() => setAssistantOpen((value) => !value)}
+        analysis={analysis}
+        position={analyzedPosition ?? null}
+        portfolioInsights={portfolioInsights}
+        portfolio={portfolio}
+        watchlist={watchlist}
+        recentAnalyses={recentAnalyses}
+        fetchAnalysis={fetchAnalysis}
+      />
       {confirming === "logout" && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setConfirming(null); }}>
           <section className="modal watch-confirm" role="alertdialog" aria-modal="true" aria-labelledby="logout-confirm-title">
@@ -1540,7 +1559,6 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
 
       <StrategyCard analysis={analysis} position={position} portfolioInsights={portfolioInsights} />
       <EvidencePanel analysis={analysis} position={position} />
-      <SmartAssistant key={stock.code} analysis={analysis} position={position} portfolioInsights={portfolioInsights} />
 
       <MarketChart analysis={analysis} />
 
@@ -1823,19 +1841,60 @@ function StrategyCard({ analysis, position, portfolioInsights }: {
   );
 }
 
-function SmartAssistant({ analysis, position, portfolioInsights }: {
-  analysis: Analysis;
-  position: Position | null;
-  portfolioInsights: PortfolioInsights;
-}) {
+// 当浮窗不在分析页时，用占位股票 + 真实账户数据拼一个能通过
+// isValidContext 校验的 context。后端与原有 /api/assistant 逻辑完全不改，
+// AI 在 system 约束下会如实说明「未关联具体股票」，不会编造个股数字。
+function buildPlaceholderContext(portfolioInsights: PortfolioInsights): AssistantContext {
+  return {
+    stock: { code: "", name: "未选择股票", industry: "未关联", instrumentType: "stock" },
+    quote: { price: 0, changePercent: 0, ma20: 0, support: 0, resistance: 0, volatility: 0, marketTime: null },
+    financials: { revenueGrowth: null, profitGrowth: null, debtRatio: null, pe: null, pb: null, roe: null },
+    summary: "用户未在当前分析页选中具体股票，仅提供账户级上下文。",
+    risks: [],
+    missingInformation: ["未关联具体股票，无法提供个股行情与财务"],
+    source: { name: "账户记录", fetchedAt: new Date().toISOString() },
+    position: null,
+    portfolio: {
+      totalAssets: portfolioInsights.totalAssetsCents === null ? null : portfolioInsights.totalAssetsCents / 100,
+      cash: portfolioInsights.cashCents === null ? null : portfolioInsights.cashCents / 100,
+      totalPositionPercent: portfolioInsights.totalPositionPercent,
+      totalProfitPercent: portfolioInsights.totalProfitPercent,
+    },
+  };
+}
+
+function SmartAssistant(
+  { analysis, position, portfolioInsights, floating = false, onClose, headerSlot }: {
+    analysis: Analysis | null;
+    position: Position | null;
+    portfolioInsights: PortfolioInsights;
+    floating?: boolean;
+    onClose?: () => void;
+    headerSlot?: ReactNode;
+  },
+) {
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
-  const [messages, setMessages] = useState<AssistantMessage[]>([{
-    role: "assistant",
-    content: `我已经读完${analysis.stock.name}的当前分析。你可以继续追问风险、财务，${position ? "也可以让我结合你的持仓成本解释。" : "记录持仓后还能获得个性化解释。"}`,
-  }]);
+  const [messages, setMessages] = useState<AssistantMessage[]>([]);
+  const [primed, setPrimed] = useState(false);
 
-  const buildAssistantContext = buildAnalysisContext;
+  // 进入分析页或切换股票时重置对话并给出引导语
+  const stockCode = analysis?.stock.code ?? "";
+  useEffect(() => {
+    setMessages([{
+      role: "assistant",
+      content: analysis
+        ? `我已经读完${analysis.stock.name}的当前分析。你可以继续追问风险、财务，${position ? "也可以让我结合你的持仓成本解释。" : "记录持仓后还能获得个性化解释。"}`
+        : "当前没有选中具体股票，我可以基于你的账户与持仓记录回答问题（如仓位、现金、收益）。想问某只股票，先去「智能选股」分析它。",
+    }]);
+    setPrimed(true);
+  }, [stockCode, analysis, position]);
+
+  function buildContext() {
+    return analysis
+      ? buildAnalysisContext(analysis, position, portfolioInsights)
+      : buildPlaceholderContext(portfolioInsights);
+  }
 
   async function ask(text: string) {
     const clean = text.trim();
@@ -1851,7 +1910,7 @@ function SmartAssistant({ analysis, position, portfolioInsights }: {
         body: JSON.stringify({
           question: clean,
           messages: history,
-          context: buildAssistantContext(analysis, position, portfolioInsights),
+          context: buildContext(),
         }),
       });
       setMessages((current) => [...current, { role: "assistant", content: result.answer }]);
@@ -1870,14 +1929,31 @@ function SmartAssistant({ analysis, position, portfolioInsights }: {
     void ask(question);
   }
 
-  const prompts = position
-    ? ["当前仓位是否允许加仓？", "结合我的成本怎么看？", "主要风险是什么？"]
-    : ["当前仓位是否允许买入？", "主要风险是什么？", "财务数据说明了什么？"];
+  const prompts = analysis
+    ? (position
+      ? ["当前仓位是否允许加仓？", "结合我的成本怎么看？", "主要风险是什么？"]
+      : ["当前仓位是否允许买入？", "主要风险是什么？", "财务数据说明了什么？"])
+    : ["我的总仓位多少？", "还能加仓多少现金？", "账户整体收益如何？"];
 
   return (
-    <section className="panel smart-assistant">
-        <SectionHeader eyebrow="可连续追问" title="智能复盘助手" actions={<Badge tone="accent">{position ? "已结合我的持仓" : "当前未记录持仓"}</Badge>} />
+    <section className={floating ? "panel smart-assistant smart-assistant--floating" : "panel smart-assistant"}>
+      {headerSlot}
+      <SectionHeader
+        eyebrow={analysis ? "可连续追问" : "账户级问答"}
+        title="智能复盘助手"
+        actions={
+          <div className="assistant-header-actions">
+            <Badge tone="accent">{analysis ? (position ? "已结合我的持仓" : "当前未记录持仓") : "未关联具体股票"}</Badge>
+            {floating && (
+              <button type="button" className="assistant-close" onClick={onClose} aria-label="收起助手">
+                <X size={16} />
+              </button>
+            )}
+          </div>
+        }
+      />
       <div className="assistant-messages" aria-live="polite">
+        {!primed && <div className="assistant-message assistant"><b>助手</b><p>正在准备…</p></div>}
         {messages.map((message, index) => (
           <div className={`assistant-message ${message.role}`} key={`${message.role}-${index}`}>
             <b>{message.role === "assistant" ? "助手" : "我"}</b>
@@ -1898,13 +1974,124 @@ function SmartAssistant({ analysis, position, portfolioInsights }: {
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
           maxLength={300}
-          placeholder={`继续问${analysis.stock.name}，例如"这个结论依据是什么？"`}
+          placeholder={analysis ? `继续问${analysis.stock.name}…` : "问账户、持仓或收益…"}
           aria-label="向智能复盘助手提问"
         />
         <Button variant="primary" type="submit" disabled={asking || !question.trim()}>{asking ? "思考中…" : "发送"}</Button>
       </form>
       <small className="assistant-disclaimer">回答仅基于当前页面数据与个人记录，不构成投资建议。</small>
     </section>
+  );
+}
+
+function FloatingAssistantLauncher(
+  { open, onToggle, analysis, position, portfolioInsights, portfolio, watchlist, recentAnalyses, fetchAnalysis }: {
+    open: boolean;
+    onToggle: () => void;
+    analysis: Analysis | null;
+    position: Position | null;
+    portfolioInsights: PortfolioInsights;
+    portfolio: ReturnType<typeof calculatePortfolio>;
+    watchlist: WatchItem[];
+    recentAnalyses: Analysis[];
+    fetchAnalysis: (query: string, showResult?: boolean) => Promise<Analysis | null>;
+  },
+) {
+  // 浮窗内关联的股票分析（与主页面 analysis 解耦，不影响主页视图）
+  const [linked, setLinked] = useState<Analysis | null>(null);
+  const [linking, setLinking] = useState(false);
+  const [linkError, setLinkError] = useState("");
+
+  const activeAnalysis = linked ?? analysis;
+  const activePosition = linked ? (portfolio.positions.find((p) => p.symbol === linked.stock.code) ?? null) : position;
+
+  async function linkStock(value: string) {
+    const code = value.trim();
+    if (!code) return;
+    setLinking(true);
+    setLinkError("");
+    try {
+      const result = await fetchAnalysis(code, false);
+      if (result) setLinked(result);
+      else setLinkError("未找到该股票的分析");
+    } catch {
+      setLinkError("关联失败，请检查代码后重试");
+    } finally {
+      setLinking(false);
+    }
+  }
+
+  return (
+    <>
+      {open && (
+        <div className="assistant-fab-panel" role="dialog" aria-label="智能复盘助手">
+          <SmartAssistant
+            floating
+            analysis={activeAnalysis}
+            position={activePosition}
+            portfolioInsights={portfolioInsights}
+            onClose={onToggle}
+            headerSlot={
+              <>
+                <div className="assistant-fab-linker">
+                  <select
+                    value={linked?.stock.code ?? ""}
+                    disabled={linking}
+                    onChange={(event) => event.target.value && void linkStock(event.target.value)}
+                    aria-label="关联自选股进行分析问答"
+                  >
+                    <option value="">{linked ? "切换关联股票…" : "关联股票提问…"}</option>
+                    {watchlist.length > 0 && (
+                      <optgroup label="自选股">
+                        {watchlist.map((item) => (
+                          <option key={item.id} value={item.symbol}>{item.name}（{item.symbol}）</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {recentAnalyses.length > 0 && (
+                      <optgroup label="最近分析">
+                        {recentAnalyses
+                          .filter((item) => !watchlist.some((w) => w.symbol === item.stock.code))
+                          .map((item) => (
+                            <option key={item.stock.code} value={item.stock.code}>{item.stock.name}（{item.stock.code}）</option>
+                          ))}
+                      </optgroup>
+                    )}
+                  </select>
+                  <input
+                    defaultValue=""
+                    placeholder={linking ? "分析中…" : "或输入代码回车"}
+                    disabled={linking}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        const target = event.currentTarget;
+                        void linkStock(target.value).then(() => { target.value = ""; });
+                      }
+                    }}
+                    aria-label="输入股票代码关联"
+                  />
+                  {linked && (
+                    <button type="button" className="assistant-fab-unlink" onClick={() => setLinked(null)} aria-label="取消关联">
+                      解绑
+                    </button>
+                  )}
+                </div>
+                {linkError && <small className="assistant-fab-linkerror">{linkError}</small>}
+              </>
+            }
+          />
+        </div>
+      )}
+      <button
+        type="button"
+        className={`assistant-fab${open ? " is-open" : ""}`}
+        onClick={onToggle}
+        aria-label={open ? "收起智能复盘助手" : "打开智能复盘助手"}
+        title={open ? "收起助手" : "智能复盘助手"}
+      >
+        <Sparkles size={22} />
+      </button>
+    </>
   );
 }
 

@@ -1,6 +1,6 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
+# ---- dependencies ----
 /node_modules
 /.pnp
 .pnp.*
@@ -9,11 +9,12 @@
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
+package-lock.json
 
-# testing
+# ---- testing ----
 /coverage
 
-# build outputs (Next.js / Vite / vinext + Cloudflare Worker)
+# ---- build outputs (Next.js / Vite + Cloudflare Workers) ----
 /.next/
 /.vinext/
 /out/
@@ -24,51 +25,49 @@
 /backups/
 .vercel
 
-# vite / typescript caches
+# ---- vite / typescript caches ----
 /.vite
 *.tsbuildinfo
 next-env.d.ts
 
-# logs (本地开发与服务运行产生的日志)
+# ---- logs (本地开发与服务运行产生的日志) ----
 *.log
 
-# env & secrets —— 切勿提交，含 API 密钥
+# ---- env & secrets (切勿提交，含 API 密钥) ----
 .env
 .env.*
 !.env.example
 .dev.vars
 
-# misc
+# ---- OS junk ----
 .DS_Store
+Thumbs.db
 *.pem
 
-# local auth / runtime secrets (会话 cookie 等，切勿提交)
+# ---- local auth / runtime secrets (会话 cookie 等，切勿提交) ----
 .auth-cookie.txt
 *.cookie.txt
 
-# local IDE / agent project data
+# ---- personal IDE / agent data (不共享的个人开发数据) ----
 .codebuddy/
 
-# local runtime data (Cloudflare Workers / D1 / Miniflare 本地 SQLite 数据库与缓存)
-# deploy.sh 中说明数据目录为 $PROJECT_DIR/data (D1 SQLite)，属本地运行产物，切勿提交
+# ---- local runtime data ----
+# deploy.sh 中说明数据目录为 $PROJECT_DIR/data (D1 SQLite)，属本地运行产物
 /data/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
 *.db
 
-# backup files
+# ---- temp / backup files ----
 *.bak
 *.bak.*
 *.tmp
-package-lock.json
 
-# build state marker (deploy.sh 记录上次构建的源码 commit，勿提交)
+# ---- deploy marker (deploy.sh 记录上次构建的源码 commit) ----
 .last_build_commit
 
-# ---------------------------------------------------------------------
-# Python (trading_agent/)
-# ---------------------------------------------------------------------
+# ---- Python (trading_agent/) ----
 __pycache__/
 *.pyc
 *.pyo
@@ -79,13 +78,22 @@ venv/
 env/
 .python-version
 
-# trading_agent: runtime cache & generated reports（API 缓存与回测报告，勿提交）
+# ---- trading_agent: runtime cache & generated reports ----
 trading_agent/cache/
 trading_agent/reports/*.csv
 trading_agent/reports/*.json
 trading_agent/reports/*.md
 trading_agent/feedback.jsonl
 
-# playwright（e2e 测试产物）
+# ---- trading_agent: 本地联调临时数据 ----
+trading_agent/.tmp_cloud/
+
+# ---- trading_agent: 扫描与信号输出（本地运行产物） ----
+trading_agent/prefetched.json
+trading_agent/scan_payload.json
+trading_agent/signals_out.json
+trading_agent/watchlist.json
+
+# ---- Playwright (e2e 测试产物) ----
 /test-results/
 /playwright-report/
