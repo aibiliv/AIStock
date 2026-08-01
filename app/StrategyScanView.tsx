@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   createChart,
   ColorType,
@@ -111,14 +111,29 @@ function StrategyCurveChart({ points }: { points: Array<{ date: string; value: n
       .sort((a, b) => (a.time as number) - (b.time as number));
     series.setData(data);
     if (data.length) chart.timeScale().setVisibleLogicalRange({ from: -0.5, to: data.length - 0.5 });
-    const onResize = () => chart.applyOptions({ width: container.clientWidth || 600 });
-    window.addEventListener("resize", onResize);
+
+    // 用 ResizeObserver 让宽度随卡片自适应，避免首帧 clientWidth 为 0 时
+    // 以固定 600 宽创建、布局稳定后再跳变宽度造成的页面闪烁。
+    const syncWidth = () => {
+      const w = container.clientWidth;
+      if (w) chart.applyOptions({ width: w });
+    };
+    syncWidth();
+    const ro = new ResizeObserver(syncWidth);
+    ro.observe(container);
     return () => {
-      window.removeEventListener("resize", onResize);
+      ro.disconnect();
       chart.remove();
     };
   }, [points]);
-  return <div ref={ref} role="img" aria-label="策略组合净值曲线" />;
+  return (
+    <div
+      ref={ref}
+      role="img"
+      aria-label="策略组合净值曲线"
+      style={{ width: "100%" }}
+    />
+  );
 }
 
 /* ------------------------------ 表格样式 ------------------------------ */
@@ -139,32 +154,81 @@ function thStyle(): CSSProperties {
 function tdStyle(): CSSProperties {
   return { padding: "8px 10px", borderBottom: "1px solid rgba(148,163,184,0.12)" };
 }
+function feedbackBtn(active: boolean): CSSProperties {
+  return {
+    cursor: "pointer",
+    padding: "3px 9px",
+    fontSize: 12,
+    borderRadius: 6,
+    border: active ? "1px solid currentColor" : "1px solid rgba(148,163,184,0.3)",
+    background: active ? "rgba(148,163,184,0.12)" : "transparent",
+    color: "rgba(148,163,184,0.85)",
+  };
+}
+function verdictOf(feedback: Record<string, "有效" | "无效">, symbol: string): "有效" | "无效" | "" {
+  return feedback[symbol] || "";
+}
 
 /* ------------------------------ 主视图 ------------------------------ */
-export function StrategyScanView() {
-  const [scan, setScan] = useState<Scan | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+export type StrategyScanResponse = { ok: boolean; scan?: Scan; error?: string };
 
-  useEffect(() => {
+export function StrategyScanView({
+  initialData,
+  onRefresh,
+}: {
+  initialData?: StrategyScanResponse | null;
+  onRefresh?: () => void | Promise<void>;
+}) {
+  const [scan, setScan] = useState<Scan | null>(initialData?.ok ? initialData.scan ?? null : null);
+  // 若顶层已预取数据，则直接进入“已加载”状态，避免进入时骨架屏闪烁一次
+  const [loading, setLoading] = useState(!initialData || !initialData.ok);
+  const [error, setError] = useState(initialData && !initialData.ok ? initialData.error || "暂时无法读取策略扫描结果" : "");
+  const [feedback, setFeedback] = useState<Record<string, "有效" | "无效">>({});
+  const [feedbackBusy, setFeedbackBusy] = useState("");
+
+  const load = useCallback(async () => {
     let alive = true;
-    (async () => {
-      try {
-        const res = await fetch("/api/strategy-scan");
-        const json = (await res.json()) as { ok: boolean; scan?: Scan; error?: string };
-        if (!alive) return;
-        if (json.ok && json.scan) setScan(json.scan);
-        else setError(json.error || "暂时无法读取策略扫描结果");
-      } catch {
-        if (alive) setError("暂时无法读取策略扫描结果");
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/strategy-scan");
+      const json = (await res.json()) as StrategyScanResponse;
+      if (!alive) return;
+      if (json.ok && json.scan) setScan(json.scan);
+      else setError(json.error || "暂时无法读取策略扫描结果");
+    } catch {
+      if (alive) setError("暂时无法读取策略扫描结果");
+    } finally {
+      if (alive) setLoading(false);
+    }
     return () => {
       alive = false;
     };
   }, []);
+
+  useEffect(() => {
+    // 仅在顶层未预取数据时才自行拉取，避免进入页面时重复加载造成闪烁
+    if (initialData?.ok && initialData.scan) return;
+    const cleanup = load();
+    return () => {
+      void cleanup;
+    };
+  }, [initialData, load]);
+
+  async function submitFeedback(symbol: string, name: string, verdict: "有效" | "无效") {
+    if (feedbackBusy) return;
+    setFeedbackBusy(symbol + verdict);
+    try {
+      const res = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ symbol, name, verdict, source: "web" }),
+      });
+      if (res.ok) setFeedback((prev) => ({ ...prev, [symbol]: verdict }));
+    } finally {
+      setFeedbackBusy("");
+    }
+  }
 
   if (loading) {
     return (
@@ -239,6 +303,7 @@ export function StrategyScanView() {
               <th style={thStyle()}>PB</th>
               <th style={thStyle()}>换手%</th>
               <th style={thStyle()}>信号数</th>
+              <th style={thStyle()}>反馈</th>
             </tr>
           </thead>
           <tbody>
@@ -254,6 +319,32 @@ export function StrategyScanView() {
                 <td style={tdStyle()}>{s.pb.toFixed(2)}</td>
                 <td style={tdStyle()}>{s.turnover.toFixed(2)}</td>
                 <td style={tdStyle()}>{s.signals}</td>
+                <td style={tdStyle()}>
+                  <span style={{ display: "inline-flex", gap: 6 }}>
+                    <button
+                      type="button"
+                      disabled={feedbackBusy === s.code + "有效"}
+                      onClick={() => submitFeedback(s.code, s.name, "有效")}
+                      style={{
+                        ...feedbackBtn(verdictOf(feedback, s.code) === "有效"),
+                        color: verdictOf(feedback, s.code) === "有效" ? "#0f6e56" : undefined,
+                      }}
+                    >
+                      有效
+                    </button>
+                    <button
+                      type="button"
+                      disabled={feedbackBusy === s.code + "无效"}
+                      onClick={() => submitFeedback(s.code, s.name, "无效")}
+                      style={{
+                        ...feedbackBtn(verdictOf(feedback, s.code) === "无效"),
+                        color: verdictOf(feedback, s.code) === "无效" ? "#a32d2d" : undefined,
+                      }}
+                    >
+                      无效
+                    </button>
+                  </span>
+                </td>
               </tr>
             ))}
           </tbody>

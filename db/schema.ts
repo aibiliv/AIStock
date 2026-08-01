@@ -131,3 +131,15 @@ export const tradingPreferences = sqliteTable("trading_preferences", {
   disciplineNote: text("discipline_note").notNull().default(""),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+// 用户反馈（对应架构图「用户 → 本项目 → 优化策略」闭环）
+// 用户在「策略扫描」页对某只标的/某次信号给出有效/无效评价，供 optimizer 调整权重。
+export const strategyFeedback = sqliteTable("strategy_feedback", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  symbol: text("symbol").notNull(),
+  name: text("name").notNull().default(""),
+  verdict: text("verdict", { enum: ["有效", "无效"] }).notNull().default("有效"),
+  note: text("note").notNull().default(""),
+  source: text("source").notNull().default("web"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
