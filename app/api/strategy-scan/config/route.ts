@@ -1,11 +1,13 @@
 import { requireApiUser } from "../../../../lib/auth";
 import { execFileSync } from "child_process";
+import type { NextRequest } from "next/server";
 import {
   SUPPORTS_EXEC,
   resolvePython,
   isExecNotImplemented,
 } from "../../../../lib/pythonExec";
 import path from "path";
+import fs from "fs";
 
 /**
  * 计算项目根目录（延迟求值，避免在 Workers/Miniflare 模块顶层
@@ -30,6 +32,29 @@ function projectRoot(): string {
  */
 function dumpScript(): string {
   return path.join(projectRoot(), "trading_agent", "dump_config.py");
+}
+
+// 云端持久化配置文件：前端「保存配置」写入此文件，GET 优先读取它。
+// 放在 trading_agent/cloud_config/ 子目录，并挂载到宿主机持久卷
+// （docker-compose 的 ./cloud-config:/app/trading_agent/cloud_config），
+// 避免容器重建后配置丢失。
+function overridesPath(): string {
+  return path.join(projectRoot(), "trading_agent", "cloud_config", "strategy_config.overrides.json");
+}
+
+// 读取已持久化的云端配置（前端保存的）；读不到返回 null -> 回退默认。
+function readStoredConfig(): Record<string, unknown> | null {
+  try {
+    const p = overridesPath();
+    if (!fs.existsSync(p)) return null;
+    const data = JSON.parse(fs.readFileSync(p, "utf-8"));
+    if (data && typeof data === "object" && "config" in data) {
+      return (data as { config: Record<string, unknown> }).config;
+    }
+    return data as Record<string, unknown>;
+  } catch {
+    return null;
+  }
 }
 
 // 云端/沙箱回退用的默认配置（与 trading_agent/strategy_config.yaml 默认值同步）。
@@ -87,6 +112,12 @@ export async function GET() {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
 
+  // 优先返回前端已保存的云端配置；读不到才走 exec / 回退默认。
+  const stored = readStoredConfig();
+  if (stored) {
+    return Response.json({ ok: true, config: stored, saved: true });
+  }
+
   if (SUPPORTS_EXEC) {
     try {
       const DUMP = dumpScript();
@@ -123,4 +154,46 @@ export async function GET() {
     config: FALLBACK_CONFIG,
     note: "云端环境（沙箱）无法读取实时 YAML，已返回内置默认配置。实际选股由本地程序拉取本配置后执行。",
   });
+}
+
+// 保存前端提交的选股前置条件配置到云端持久文件。
+export async function POST(req: NextRequest) {
+  try {
+    const unauthorized = await requireApiUser();
+    if (unauthorized) return unauthorized;
+  } catch {
+    return Response.json({ ok: false, error: "未授权" }, { status: 401 });
+  }
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ ok: false, error: "请求体不是合法 JSON" }, { status: 400 });
+  }
+
+  const config =
+    body && typeof body === "object" && "config" in body
+      ? (body as { config: unknown }).config
+      : body;
+
+  if (!config || typeof config !== "object") {
+    return Response.json({ ok: false, error: "缺少 config 对象" }, { status: 400 });
+  }
+
+  try {
+    const p = overridesPath();
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(
+      p,
+      JSON.stringify({ savedAt: new Date().toISOString(), config }, null, 2),
+      "utf-8"
+    );
+    return Response.json({ ok: true, saved: true, config });
+  } catch (e) {
+    return Response.json(
+      { ok: false, error: `保存失败: ${String(e)}` },
+      { status: 500 }
+    );
+  }
 }

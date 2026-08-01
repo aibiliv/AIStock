@@ -113,7 +113,64 @@ const DEFAULTS: Required<ScreenerOverrides> = {
   market_enable: true,
 };
 
-/* ----------------------------- 板块定义 ----------------------------- */
+/* ----------------------------- 嵌套/扁平互转 -----------------------------
+ * 云端存储与本地 pull_cloud_config.py 使用「嵌套结构」(screener/market/signal/optim)，
+ * 与 trading_agent/config.py 的 _FLAT_MAP 对应；前端表单是「扁平结构」(ScreenerOverrides)。
+ * 这里做双向转换，保证网页保存 != 本地拉取的数据契约一致。
+ */
+function toNested(ov: ScreenerOverrides): Record<string, unknown> {
+  const screener: Record<string, unknown> = {};
+  const market: Record<string, unknown> = {};
+  const signal: Record<string, unknown> = {};
+  const optim: Record<string, unknown> = {};
+
+  const copy = (dst: Record<string, unknown>, key: keyof ScreenerOverrides) => {
+    if (ov[key] !== undefined) dst[key as string] = ov[key];
+  };
+
+  // screener 节（字段名与扁平键一致）
+  ([
+    "top_n", "max_per_sector", "momentum_window", "w_momentum", "w_value",
+    "w_liquidity", "w_rsi", "w_macd", "w_trend", "w_size", "w_quality",
+    "min_turnover_pct", "max_pe_ttm", "max_pb", "boards", "st_filter",
+    "mcap_min", "mcap_max",
+  ] as (keyof ScreenerOverrides)[]).forEach((k) => copy(screener, k));
+
+  // market 节（enable -> market_enable）
+  if (ov.market_enable !== undefined) market["enable"] = ov.market_enable;
+
+  // signal 节
+  (["fast_ma", "slow_ma", "use_breakout_filter", "breakout_window"] as (keyof ScreenerOverrides)[]).forEach((k) => copy(signal, k));
+
+  return {
+    screener,
+    ...(Object.keys(market).length ? { market } : {}),
+    ...(Object.keys(signal).length ? { signal } : {}),
+    optim: { enabled: true },
+  };
+}
+
+function fromNested(cfg: Record<string, unknown>): Partial<ScreenerOverrides> {
+  const out: Partial<ScreenerOverrides> = {};
+  const s = (cfg["screener"] as Record<string, unknown>) || {};
+  const m = (cfg["market"] as Record<string, unknown>) || {};
+  const sig = (cfg["signal"] as Record<string, unknown>) || {};
+
+  ([
+    "top_n", "max_per_sector", "momentum_window", "w_momentum", "w_value",
+    "w_liquidity", "w_rsi", "w_macd", "w_trend", "w_size", "w_quality",
+    "min_turnover_pct", "max_pe_ttm", "max_pb", "boards", "st_filter",
+    "mcap_min", "mcap_max",
+  ] as (keyof ScreenerOverrides)[]).forEach((k) => {
+    if (k in s) (out as Record<string, unknown>)[k] = s[k];
+  });
+  if ("enable" in m) out.market_enable = Boolean(m["enable"]);
+  (["fast_ma", "slow_ma", "use_breakout_filter", "breakout_window"] as (keyof ScreenerOverrides)[]).forEach((k) => {
+    if (k in sig) (out as Record<string, unknown>)[k] = sig[k];
+  });
+  return out;
+}
+
 const BOARD_OPTIONS = [
   { key: "main", label: "主板", desc: "60/00 开头" },
   { key: "cyb", label: "创业板", desc: "300 开头" },
@@ -321,14 +378,14 @@ export function ScreenerConfigPanel({
   const [showWeights, setShowWeights] = useState(false);
   const [selectedPreset, setSelectedPreset] = useState<string>("");
 
-  // 挂载时拉取 strategy_config.yaml 作为默认，使网页与 CLI 共用同一份持久配置
+  // 挂载时拉取云端持久配置作为默认，使网页与 CLI 共用同一份持久配置
   useEffect(() => {
     let cancelled = false;
     fetch("/api/strategy-scan/config")
       .then((r) => r.json() as { ok?: boolean; config?: Record<string, unknown> })
       .then((data) => {
         if (cancelled || !data?.ok || !data?.config) return;
-        const cfg = data.config as Partial<ScreenerOverrides>;
+        const cfg = fromNested(data.config as Record<string, unknown>);
         setOv((prev) => ({ ...DEFAULTS, ...prev, ...cfg }));
       })
       .catch(() => {
@@ -338,6 +395,31 @@ export function ScreenerConfigPanel({
       cancelled = true;
     };
   }, []);
+
+  // 保存当前配置到云端（POST /api/strategy-scan/config）
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const saveConfig = useCallback(async () => {
+    setSaving(true);
+    setSaveMsg(null);
+    try {
+      const res = await fetch("/api/strategy-scan/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ config: toNested(ov) }),
+      });
+      const data = (await res.json()) as { ok?: boolean; error?: string };
+      if (data?.ok) {
+        setSaveMsg({ ok: true, text: "已保存到云端，本地拉取后将生效" });
+      } else {
+        setSaveMsg({ ok: false, text: data?.error || "保存失败" });
+      }
+    } catch (e) {
+      setSaveMsg({ ok: false, text: `保存失败: ${String(e)}` });
+    } finally {
+      setSaving(false);
+    }
+  }, [ov]);
 
   const set = useCallback(<K extends keyof ScreenerOverrides>(k: K, v: ScreenerOverrides[K]) => {
     setOv((prev) => ({ ...prev, [k]: v }));
@@ -516,9 +598,27 @@ export function ScreenerConfigPanel({
         >
           {busy ? "扫描中…" : "应用并扫描"}
         </button>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={saveConfig}
+          style={{
+            ...BTN_PRIMARY,
+            background: "#16a34a",
+            opacity: saving ? 0.65 : 1,
+            cursor: saving ? "not-allowed" : "pointer",
+          }}
+        >
+          {saving ? "保存中…" : "保存配置到云端"}
+        </button>
         <button type="button" onClick={reset} style={BTN_SECONDARY}>
           重置条件
         </button>
+        {saveMsg && (
+          <span style={{ fontSize: 12, color: saveMsg.ok ? "#16a34a" : "#dc2626" }}>
+            {saveMsg.text}
+          </span>
+        )}
         {/* 已应用摘要 */}
         {summaryTags.length > 0 && (
           <span style={{ fontSize: 12, color: "#64748b" }}>

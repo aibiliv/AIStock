@@ -20,6 +20,9 @@ services:
     volumes:
       # D1 数据持久化（本地 SQLite），容器重建不丢
       - ./data:/data
+      # 云端「选股前置条件」配置持久化，容器重建不丢
+      # 对应 app/api/strategy-scan/config/route.ts 的 overridesPath
+      - ./cloud-config:/app/trading_agent/cloud_config
 
     restart: unless-stopped
 
