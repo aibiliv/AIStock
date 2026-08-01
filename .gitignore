@@ -51,8 +51,6 @@ Thumbs.db
 # ---- personal IDE / agent data (不共享的个人开发数据) ----
 .codebuddy/
 .workbuddy/
-.openai/
-!.openai/hosting.json
 /docs/
 
 # ---- local runtime data ----
