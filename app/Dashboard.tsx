@@ -755,13 +755,15 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
               />
             )}
             {view === "analytics" && portfolioInsights && (
-              <AnalyticsView
-                trades={trades}
-                capitalFlows={capitalFlows}
-                reviews={reviews}
-                portfolioInsights={portfolioInsights}
-                initialCapitalCents={initialCapitalCents}
-              />
+              <div className="page-content inner-page">
+                <AnalyticsView
+                  trades={trades}
+                  capitalFlows={capitalFlows}
+                  reviews={reviews}
+                  portfolioInsights={portfolioInsights}
+                  initialCapitalCents={initialCapitalCents}
+                />
+              </div>
             )}
             {view === "watchlist" && (
               <Watchlist
