@@ -2018,41 +2018,61 @@ function FloatingAssistantLauncher(
   const [linking, setLinking] = useState(false);
   const [linkError, setLinkError] = useState("");
 
-  // 拖拽定位：相对右下角的偏移（向左/上为负）。null 时使用默认右下角。
-  const [offset, setOffset] = useState<{ x: number; y: number } | null>(null);
-  const offsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  // 拖拽定位：记录 FAB 当前固定的 left/top（视口坐标）。null 表示使用 CSS 默认右下角。
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const fabRef = useRef<HTMLButtonElement | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const dragState = useRef<{
-    startX: number;
-    startY: number;
-    originX: number;
-    originY: number;
+    pointerX: number;
+    pointerY: number;
+    fabLeft: number;
+    fabTop: number;
     moved: boolean;
   } | null>(null);
   const draggedRef = useRef(false);
 
-  // 拖动中直接用 transform 操作 DOM，避免每次 pointermove 触发 React 重渲染（移动端卡顿主因）
-  const applyTransform = (x: number, y: number) => {
-    if (fabRef.current) fabRef.current.style.transform = `translate3d(${-x}px, ${-y}px, 0)`;
-    if (panelRef.current) panelRef.current.style.transform = `translate3d(${-x}px, ${-y}px, 0)`;
+  // 把 FAB 定位到指定视口坐标，并让面板跟随 FAB 但始终夹在视口内。
+  // 直接写 DOM 的 left/top（不触发 React 重渲染），保持移动端拖拽流畅。
+  const applyPos = (left: number, top: number) => {
+    if (fabRef.current) {
+      fabRef.current.style.left = `${left}px`;
+      fabRef.current.style.top = `${top}px`;
+      fabRef.current.style.right = "auto";
+      fabRef.current.style.bottom = "auto";
+    }
+    if (panelRef.current) {
+      const margin = 8;
+      const pw = panelRef.current.offsetWidth || Math.min(400, window.innerWidth - 44);
+      const ph = panelRef.current.offsetHeight || Math.min(window.innerHeight * 0.82, 760);
+      // 默认放在 FAB 左上方（面板右下对齐 FAB 右上，底部贴 FAB 顶上 12px）
+      let pLeft = left + 50 - pw;
+      let pTop = top - 12 - ph;
+      // 夹在视口内；若某一侧放不下则翻转到另一侧
+      if (pTop < margin) pTop = top + 50 + 12; // 上方放不下 → 放 FAB 下方
+      if (pLeft < margin) pLeft = left; // 左侧放不下 → 与 FAB 左边缘对齐
+      pLeft = Math.max(margin, Math.min(window.innerWidth - pw - margin, pLeft));
+      pTop = Math.max(margin, Math.min(window.innerHeight - ph - margin, pTop));
+      panelRef.current.style.left = `${pLeft}px`;
+      panelRef.current.style.top = `${pTop}px`;
+      panelRef.current.style.right = "auto";
+      panelRef.current.style.bottom = "auto";
+    }
   };
 
-  // 持久化定位（offset state）变化时同步 ref 与 transform，避免与拖拽中手动设置的 transform 冲突
+  // 持久化定位（pos state）变化时同步 DOM，避免与拖拽中手动设置的定位冲突
   useEffect(() => {
-    const next = offset ?? { x: 0, y: 0 };
-    offsetRef.current = next;
-    applyTransform(next.x, next.y);
-  }, [offset]);
+    if (pos) applyPos(pos.left, pos.top);
+  }, [pos]);
 
   function handleFabPointerDown(event: React.PointerEvent<HTMLButtonElement>) {
     if (event.button !== 0) return;
     event.currentTarget.setPointerCapture(event.pointerId);
+    const rect = event.currentTarget.getBoundingClientRect();
     dragState.current = {
-      startX: event.clientX,
-      startY: event.clientY,
-      originX: offsetRef.current.x,
-      originY: offsetRef.current.y,
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+      fabLeft: rect.left,
+      fabTop: rect.top,
       moved: false,
     };
   }
@@ -2060,24 +2080,35 @@ function FloatingAssistantLauncher(
   function handleFabPointerMove(event: React.PointerEvent<HTMLButtonElement>) {
     const state = dragState.current;
     if (!state) return;
-    const dx = event.clientX - state.startX;
-    const dy = event.clientY - state.startY;
+    const dx = event.clientX - state.pointerX;
+    const dy = event.clientY - state.pointerY;
     if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
       state.moved = true;
       draggedRef.current = true;
     }
-    const nextX = state.originX + dx;
-    const nextY = state.originY + dy;
-    offsetRef.current = { x: nextX, y: nextY };
-    applyTransform(nextX, nextY);
+    // 夹紧到视口内（保留 8px 边距），保证 FAB 完全可见、想拖到哪就拖到哪
+    const fabW = 50;
+    const fabH = 50;
+    const margin = 8;
+    const nextLeft = Math.max(margin, Math.min(window.innerWidth - fabW - margin, state.fabLeft + dx));
+    const nextTop = Math.max(margin, Math.min(window.innerHeight - fabH - margin, state.fabTop + dy));
+    applyPos(nextLeft, nextTop);
   }
 
   function handleFabPointerUp(event: React.PointerEvent<HTMLButtonElement>) {
     const state = dragState.current;
     dragState.current = null;
     if (state?.moved) {
-      // 仅提交一次最终位置，触发一次重渲染以持久化定位
-      setOffset({ x: offsetRef.current.x, y: offsetRef.current.y });
+      const fabW = 50;
+      const fabH = 50;
+      const margin = 8;
+      const rect = fabRef.current?.getBoundingClientRect();
+      if (rect) {
+        const left = Math.max(margin, Math.min(window.innerWidth - fabW - margin, rect.left));
+        const top = Math.max(margin, Math.min(window.innerHeight - fabH - margin, rect.top));
+        // 仅提交一次最终位置，触发一次重渲染以持久化定位
+        setPos({ left, top });
+      }
     }
   }
 
@@ -2100,12 +2131,18 @@ function FloatingAssistantLauncher(
     }
   }
 
-  // 同步初始定位：用 offset state 决定基准 right/bottom，transform 处理拖拽偏移
-  const fabStyle: React.CSSProperties = offset
-    ? { right: Math.max(0, 22 - offset.x), bottom: Math.max(0, 22 - offset.y), left: "auto", top: "auto" }
+  // 定位：有持久化位置 pos 时用 left/top（绝对坐标），否则用 CSS 默认右下角。
+  // 与 applyPos 算法保持一致，避免 React 重渲染覆盖拖拽结果（SSR 安全，用 CSS 估算面板尺寸）。
+  const fabStyle: React.CSSProperties = pos
+    ? { left: pos.left, top: pos.top, right: "auto", bottom: "auto" }
     : {};
-  const panelStyle: React.CSSProperties = offset
-    ? { right: Math.max(0, 22 - offset.x), bottom: Math.max(0, 84 - offset.y), left: "auto", top: "auto" }
+  const panelStyle: React.CSSProperties = pos
+    ? {
+        left: `clamp(8px, ${pos.left + 50}px - min(400px, 100vw - 44px), 100vw - min(400px, 100vw - 44px) - 8px)`,
+        top: `max(8px, ${pos.top}px - 12px - min(82vh, 760px))`,
+        right: "auto",
+        bottom: "auto",
+      }
     : {};
 
   return (
