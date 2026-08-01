@@ -14,9 +14,10 @@
 - 公告摘要（支持上传 PDF / 链接，自动解析文本）
 - 交易复盘（记录是否按计划、偏离原因、情绪、评分、备注）
 - 策略扫描：本地 Python 量化脚本（trading_agent）跑选股/信号/回测，推送结果到云端，前端可视化
+- 回写结果：trading_agent 中枢编排（run_hub.py）生成的候选信号，经云端审核后在「回写结果」页展示
+- 全局浮窗 AI 对话助手：点击右下角浮动按钮，可在任意页面随时提问（支持绑定特定股票分析、组合持仓查询）
 - 板块行情与个股主力资金流向查询
 - 分析历史留存、数据导出（JSON / 备份）
-- 对话式复盘助手（SmartAssistant，调用 `/api/assistant`）
 
 ## 本地运行
 
@@ -29,14 +30,15 @@ npm run dev      # 实际执行 vinext dev
 
 > 本项目使用 `vinext`（Cloudflare 适配的 Next 构建工具）而非原生 `next`，`dev`/`build`/`start` 脚本均已映射。
 
-访问终端显示的本地地址。登录与 AI 配置放在不会提交到 Git 的 `.env` 中（字段说明见 `.env.example`）：
+访问终端显示的本地地址。登录与 AI 配置放在不会提交到 Git 的 `.env` 中（完整字段说明见 `.env.example`）：
 
 ```dotenv
+# 必填
 APP_USERNAME=owner
 APP_PASSWORD=至少12位密码
 APP_AUTH_SECRET=至少32位随机字符
 
-DEEPSEEK_API_KEY=
+DEEPSEEK_API_KEY=sk-xxxx
 ```
 
 不配置 AI 密钥时应用进入「自动解释」模式（无 AI 分析，其余功能正常）。
@@ -68,7 +70,7 @@ sudo ufw allow 9003/tcp
 
 ```bash
 git clone <repo> && cd <repo>
-cp .env.example .env        # 填写 AI 密钥与登录凭据（见下方字段说明）
+cp .env.example .env        # 填写必填配置项
 chmod +x deploy.sh
 ./deploy.sh
 ```
@@ -98,34 +100,28 @@ git pull origin main
 
 ### 环境变量
 
-登录与 AI 配置放在不会提交到 Git 的 `.env` 中；完整字段与示例见 `.env.example`：
+完整配置项见 `.env.example`（模板，不含真实密钥）或 `.env`（本地实际值）。必填项：
 
-```dotenv
-# 单用户登录（必填）：openssl rand -hex 32 生成安全密钥
-APP_USERNAME=owner
-APP_PASSWORD=至少12位密码
-APP_AUTH_SECRET=至少32位随机字符
+| 变量 | 说明 |
+|------|------|
+| `APP_USERNAME` | 登录用户名 |
+| `APP_PASSWORD` | 登录密码（≥12 位） |
+| `APP_AUTH_SECRET` | Session 签名密钥（≥32 位随机字符，生产用 `openssl rand -hex 32` 生成） |
+| `DEEPSEEK_API_KEY` | DeepSeek API 密钥（不填则无 AI 分析） |
 
-# AI 模型源（可选；不配则自动解释模式）
-DEEPSEEK_API_KEY=
-AI_PROVIDER=
-AI_API_KEY=
-AI_API_BASE=
-AI_MODEL=
+常用可选配置：
 
-# 行情增强（可选）：麦蕊智数 licence，覆盖实时现价/涨跌
-MAIRUI_TOKEN=
+| 变量 | 说明 |
+|------|------|
+| `AI_PROVIDER` / `AI_API_KEY` / `AI_API_BASE` / `AI_MODEL` | 切换 OpenAI 兼容模型源（Ollama / OpenRouter 等） |
+| `MAIRUI_TOKEN` | 麦蕊智数实时行情增强（免费档 500 次/日） |
+| `NOTIFY_WEBHOOK_URLS` | 止盈/止损推送目标（企业微信/飞书/Bark，逗号分隔） |
+| `CRON_SECRET` | 外部 Cron 调用鉴权密钥 |
+| `STRATEGY_PUSH_TOKEN` | 策略扫描推送鉴权（本地 trading_agent → 云端） |
+| `CLOUD_SCAN_URL` / `CLOUD_SCAN_TOKEN` | 云端扫描接收地址与令牌 |
+| `CLOUD_WRITEBACK_URL` | 云端回写信号接收地址 |
 
-# 主动提醒推送（可选）：止盈/止损触发时 Webhook 推送（企业微信/飞书/Slack/Bark）
-NOTIFY_WEBHOOK_URLS=https://qyapi.weixin.qq.com/...,https://api.day.app/KEY/
-
-# 定时器密钥（可选）：外部 Cron 调用 POST /api/cron/check-alerts 时鉴权
-CRON_SECRET=
-
-# 策略扫描推送鉴权（可选）：本地 trading_agent 推送结果到云端
-STRATEGY_PUSH_TOKEN=
-STRATEGY_SCAN_FILE=           # 覆盖扫描结果存储路径，默认 /data/strategy-scan/latest.json
-```
+更多可选变量（MCP 连接器、推送渠道、Docker 路径等）见 `.env.example` 中的注释说明。
 
 ## API 路由
 
@@ -144,11 +140,12 @@ STRATEGY_SCAN_FILE=           # 覆盖扫描结果存储路径，默认 /data/st
 | `/api/analyze` | GET / POST | 股票分析（`POST {query, saveHistory, explain}`） |
 | `/api/analysis-history` | GET / DELETE | 分析历史留存 |
 | `/api/announcements` | GET / POST / DELETE | 公告（`POST` 用 FormData：symbol/name/title/file/sourceUrl，支持 PDF 解析） |
-| `/api/assistant` | POST | 对话式复盘助手（SmartAssistant） |
+| `/api/assistant` | POST | 对话式复盘助手（支持上下文：持仓 + 当前股票分析） |
 | `/api/market` | GET | 板块行情（`type=concepts`）与个股主力资金流（`type=fundflow&symbol=`） |
 | `/api/indices` `/api/sector-heatmap` | GET | 指数与板块热力图 |
 | `/api/preferences` | GET / PUT | 用户偏好设置 |
 | `/api/strategy-scan` | GET / POST | 策略扫描结果读取（GET）/ 本地 trading_agent 推送（POST，需 `x-push-token`） |
+| `/api/writeback-signals` | GET / POST | 回写信号读取（GET）/ 本地 trading_agent 推送（POST，需 `x-push-token`） |
 | `/api/cron/check-alerts` | POST | 定时器入口：拉取实时价判断是否触发提醒并推送（需 `Authorization: Bearer <CRON_SECRET>`） |
 | `/api/status` | GET | 运行状态 |
 
@@ -160,19 +157,49 @@ STRATEGY_SCAN_FILE=           # 覆盖扫描结果存储路径，默认 /data/st
 
 ```bash
 cd trading_agent
+
+# 单次选股
 python main.py                  # 默认：选 8 只 + 参数优化
 python main.py --top-n 10       # 选出 10 只
 python main.py --no-optim       # 跳过优化
 python main.py --use-hot        # 同花顺当日强势股作候选池
+
+# 中枢编排（定时/手动触发，自动串联选股→信号→推送）
+python run_hub.py               # 一次跑完整流程，推送结果到云端
+
+# 云端模拟器（本地调试云端接口，无需真实 Worker 服务）
+python cloud_emulator.py        # 启动本地 HTTP 模拟（端口 8899）
 ```
 
-该模块通常在**本地 PC**运行，跑完选股/信号/回测后，将结果 POST 到云端的 `/api/strategy-scan`（带 `x-push-token`，值等于云端的 `STRATEGY_PUSH_TOKEN`/`CRON_SECRET`），前端「策略扫描」视图再 GET 展示。结果为历史数据分析/回测/模拟，不构成投资建议，不做真实下单。
+### 数据流向
+
+```
+本地 PC (trading_agent)
+  │
+  ├─ main.py / run_hub.py ──选股/信号──► POST /api/strategy-scan ──► 前端「策略扫描」视图
+  │
+  └─ run_hub.py ──候选回写──► POST /api/writeback-signals ──► 前端「回写结果」视图
+```
+
+该模块通常在**本地 PC** 运行，跑完选股/信号/回测后，将结果 POST 到云端的对应接口（带 `x-push-token`，值等于云端的 `STRATEGY_PUSH_TOKEN`）。结果为历史数据分析/回测/模拟，不构成投资建议，不做真实下单。
+
+### 可选数据源扩展
+
+`trading_agent` 默认走腾讯/东财免费公开接口。也可接入以下 MCP 连接器获取增强数据：
+
+- **腾讯自选股 MCP**（`WESTOCK_MCP_URL` / `WESTOCK_MCP_TOKEN`）：行情 / K 线 / 财务查询
+- **通达信 MCP**（`TDX_MCP_URL` / `TDX_API_KEY`）：行情 + 条件选股 + 交易接口
+- **WorkBuddy 网关**（`WORKBUDDY_GATEWAY_URL`）：增强行情数据
+
+在 `.env` 中填入对应 URL 和 Token 即可启用。
 
 ## 前端与组件
 
 - 单页应用：主入口 `app/page.tsx`（服务端校验登录后渲染 `app/Dashboard.tsx`）。
-- 视图状态机 `view ∈ home | analysis | watchlist | trades | settings | analytics | strategyScan`；分析页由 `app/AnalyticsView.tsx` 渲染。
-- 组件库统一封装在 `app/components.tsx`，样式由 `app/globals.css` 的语义化 class + CSS 变量驱动，新增页面优先复用，详见 `app/UI-COMPONENTS.md`。
+- 视图状态机 `view ∈ home | analysis | watchlist | trades | settings | analytics | strategyScan | writeback`；分析页由 `app/AnalyticsView.tsx` 渲染，回写结果页由 `app/WritebackView.tsx` 渲染。
+- 全局浮窗 AI 助手 `FloatingAssistantLauncher`：右下角浮动按钮，展开后支持绑定股票分析、组合持仓查询，选股下拉框自动合并关注列表与最近分析历史。
+- 对话式复盘助手 `SmartAssistant`：分析页内嵌使用，调用 `/api/assistant`，支持分析上下文自动注入。
+- 组件库统一封装在 `app/components.tsx`，样式由 `app/globals.css` 的语义化 class + CSS 变量驱动。
 - 图表使用 `lightweight-charts`；分析页导出 PDF 用 `html-to-image` + `jspdf`（动态 import）。
 - 金额统一以整数存储（`priceMillis` ×1000 为主，旧数据可能仅 `priceCents` ×100），前端避免散落浮点金额计算，格式化集中在 `lib/format.ts`。
 

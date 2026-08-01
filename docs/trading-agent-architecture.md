@@ -124,7 +124,7 @@ trading_agent 可作为被 WorkBuddy / 复盘应用调度的 Agent（对应架�
 ### 4.5 触达层 — `notify.py` + `reports/report.py`
 - `reports/report.py`：写本地报告（Markdown / CSV / JSON），同时 `write_scan_json` 产出与云端同一份 payload；`prune_reports` 轮转（默认保留最近 20 次，可用 `REPORT_KEEP` 调整）。
 - `notify.py`：`get_notifier(cfg)` 返回 `local`（默认，仅本地文件）或 `email`（架构预留，需连接 agent-mail）。
-- 微信 / App 提醒通过 `connectors/push.py` 的企业微信 Webhook 实现（配置 `WECOM_WEBHOOK_URL` 后生效）。
+- 微信 / App 提醒：`connectors/push.py` 的企业微信 Webhook 为可选代码路径（配置 `WECOM_WEBHOOK_URL` 后生效）；云端部署实际用 WorkBuddy 智能体邮箱（agent-mail）中转（见 `docs/OPS.md`）。
 
 ---
 
@@ -150,8 +150,9 @@ trading_agent 可作为被 WorkBuddy / 复盘应用调度的 Agent（对应架�
 
 1. 本地 `main.py` 跑完闭环，由 `reports/report.py` 产出 `scan_payload`（共享 JSON，本地查看）。
 2. `cloud.push_scan_json` 用 HTTP POST 把 `scan_payload` 推到云端 `POST /api/strategy-scan`，header 带 `x-push-token`（值等于云端环境变量 `STRATEGY_PUSH_TOKEN` / 回退 `CRON_SECRET`）。
-3. 云端校验 token 后写入 `/data/strategy-scan/latest.json`（Docker 部署下 `./data` 持久化卷；可用 `STRATEGY_SCAN_FILE` 覆盖路径）。
+3. 云端校验 token 后写入 **D1 表 `strategy_scan`**（Cloudflare Workers 沙箱禁止 handler 写裸文件 `/data/...`，故改用 D1；docker-compose 把 `./data` 挂为 `--persist-to /data`，D1 持久化绑定此卷，容器重建不丢）。
 4. 前端「策略扫描」视图 `GET /api/strategy-scan` 读取并展示。
+5. 同理，候选回写信号经 `POST /api/writeback-signals` 写入 D1 表 `strategy_writeback`，前端「回写结果」页 `GET` 读取（详见 `docs/OPS.md`）。
 
 配置方式（本地 PC 环境变量，部署时填写，不写则仅本地产出）：
 
@@ -227,4 +228,5 @@ AGENT_BIND_PORT=8080
 
 - 结果为历史数据分析 / 回测 / 模拟，不构成投资建议。**执行回写默认 dry-run 安全**，真实下单需显式开启 `enable_writeback` 且 `dry_run=False`。
 - `WestockConnector` / `TdxConnector` 已实现，连接后由 `config.ConnectorsConfig` 启用；未配置则自动退回腾讯/东财直连，保持零连接可跑。
-- 微信 / App 提醒通过企业微信 Webhook（`WECOM_WEBHOOK_URL`）实现；如需推送到腾讯自选股 App 本身，需另行接入其官方推送通道。
+- 微信 / App 提醒：云端部署实际采用 **WorkBuddy 智能体邮箱（agent-mail）** 中转个人微信（零额外账号，已启用 `nphr6414@agent.qq.com`）；`connectors/push.py` 的企业微信 Webhook（`WECOM_WEBHOOK_URL`）为可选代码路径，未配置企业微信时不用。个人微信也可选 Server酱 / PushPlus 等第三方 relay。
+- **Cloudflare Workers 沙箱禁止 handler 内 `fs.writeFile('/data/...')`**（`operation not permitted`）。扫描/回写结果一律存 D1（`strategy_scan` / `strategy_writeback`），切勿改回裸文件写入。
