@@ -389,8 +389,8 @@ export async function analyzeStockData(query: string) {
   const debtRatio = assets ? (debt / assets) * 100 : null;
 
   let resolvedName = A_STOCK_LIST[stock.code] ?? profile.name ?? stock.name;
-  // 基金/ETF 不在股票列表里，若行情源也没给出中文名，则用名称检索兜底（如腾讯 smartbox）
-  if (isFund && (resolvedName === stock.code || !/[一-龥]/.test(resolvedName))) {
+  // 若本地列表/行情源都没给出中文名，用名称检索兜底（如腾讯 smartbox），对股票和基金都适用
+  if (resolvedName === stock.code || !/[一-龥]/.test(resolvedName)) {
     const fallback = await searchStockByName(stock.code);
     if (fallback) resolvedName = fallback.name;
   }
