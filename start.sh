@@ -21,6 +21,7 @@ node --input-type=module -e '
     "MAIRUI_TOKEN",
     "NOTIFY_WEBHOOK_URLS",
     "CRON_SECRET",
+    "STRATEGY_PUSH_TOKEN",
   ];
   const lines = names
     .filter((name) => process.env[name])
