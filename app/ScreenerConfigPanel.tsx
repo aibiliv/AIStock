@@ -293,7 +293,7 @@ const SELECT: CSSProperties = {
   fontSize: 13,
   /* 不能透明，否则原生下拉菜单可能出现白底白字/透明文字，选项看不见 */
   background: "var(--surface-soft)",
-  color: "#1a1a18",
+  color: "var(--text)",
   outline: "none",
   minWidth: 150,
   cursor: "pointer",
