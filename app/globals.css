@@ -4805,11 +4805,12 @@ svg { display: block; }
 .assistant-close:hover { color: var(--text); }
 
 .assistant-fab-linker {
-  align-items: center;
+  align-items: flex-start;
   background: transparent;
   border-bottom: 1px solid var(--line);
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   padding: 10px 16px;
 }
 .assistant-fab-linker select,
@@ -4822,11 +4823,10 @@ svg { display: block; }
   font-size: 13px;
   height: 32px;
   padding: 0 2px;
+  width: 100%;
 }
-.assistant-fab-linker select { flex: 1 1 auto; min-width: 0; }
 .assistant-fab-linker select:focus,
 .assistant-fab-linker input:focus { border-bottom-color: var(--line-strong); outline: none; }
-.assistant-fab-linker input { flex: 1 1 110px; min-width: 0; }
 .assistant-fab-linker input::placeholder { color: var(--muted); }
 .assistant-fab-unlink {
   align-items: center;
