@@ -92,7 +92,7 @@ function buildTraderSystemPrompt(prefs: TradingPreferences, context: AssistantCo
 
 // 规则兜底的综合策略：无持仓→建仓决策；有持仓→操作决策。不依赖问句分类。
 export function buildStrategyFallback(context: AssistantContext, prefs: TradingPreferences): string {
-  const { stock, quote, position } = context;
+  const { quote, position } = context;
   const osc = oscillatorTip(context);
 
   if (!position) {

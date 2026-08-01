@@ -818,7 +818,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 onImported={loadData}
               />
             )}
-            {view === "scan" && <div className="page-content inner-page"><StrategyScanView initialData={strategyScan} onRefresh={loadData} /></div>}
+            {view === "scan" && <div className="page-content inner-page"><StrategyScanView initialData={strategyScan} /></div>}
             {view === "writeback" && <div className="page-content inner-page"><WritebackView /></div>}
           </>
         )}
@@ -2095,7 +2095,7 @@ function FloatingAssistantLauncher(
     applyPos(nextLeft, nextTop);
   }
 
-  function handleFabPointerUp(event: React.PointerEvent<HTMLButtonElement>) {
+  function handleFabPointerUp() {
     const state = dragState.current;
     dragState.current = null;
     if (state?.moved) {
@@ -2217,7 +2217,7 @@ function FloatingAssistantLauncher(
         type="button"
         className={`assistant-fab${open ? " is-open" : ""}`}
         style={fabStyle}
-        onClick={(event) => {
+        onClick={() => {
           if (draggedRef.current) {
             draggedRef.current = false;
             return;

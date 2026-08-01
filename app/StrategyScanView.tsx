@@ -190,10 +190,8 @@ export type StrategyScanResponse = { ok: boolean; scan?: Scan; error?: string };
 
 export function StrategyScanView({
   initialData,
-  onRefresh,
 }: {
   initialData?: StrategyScanResponse | null;
-  onRefresh?: () => void | Promise<void>;
 }) {
   const [scan, setScan] = useState<Scan | null>(initialData?.ok ? initialData.scan ?? null : null);
   // 若顶层已预取数据，则直接进入“已加载”状态，避免进入时骨架屏闪烁一次

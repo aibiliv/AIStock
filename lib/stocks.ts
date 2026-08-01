@@ -57,33 +57,6 @@ export function isEtfCode(code: string) {
   return Boolean(FUND_PROFILES[code]);
 }
 
-type YahooChart = {
-  chart?: {
-    result?: Array<{
-      meta?: {
-        symbol?: string;
-        shortName?: string;
-        longName?: string;
-        regularMarketPrice?: number;
-        chartPreviousClose?: number;
-        regularMarketTime?: number;
-        currency?: string;
-      };
-      timestamp?: number[];
-      indicators?: {
-        quote?: Array<{
-          open?: Array<number | null>;
-          close?: Array<number | null>;
-          high?: Array<number | null>;
-          low?: Array<number | null>;
-          volume?: Array<number | null>;
-        }>;
-      };
-    }>;
-    error?: { description?: string };
-  };
-};
-
 type FundamentalSeries = {
   meta?: { type?: string[] };
   timestamp?: number[];

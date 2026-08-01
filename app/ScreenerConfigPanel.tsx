@@ -122,7 +122,6 @@ function toNested(ov: ScreenerOverrides): Record<string, unknown> {
   const screener: Record<string, unknown> = {};
   const market: Record<string, unknown> = {};
   const signal: Record<string, unknown> = {};
-  const optim: Record<string, unknown> = {};
 
   const copy = (dst: Record<string, unknown>, key: keyof ScreenerOverrides) => {
     if (ov[key] !== undefined) dst[key as string] = ov[key];
@@ -293,14 +292,12 @@ function NumberInput({
   onChange,
   placeholder,
   min = 0,
-  max,
   step,
 }: {
   value: number | undefined;
   onChange: (v: number) => void;
   placeholder?: string;
   min?: number;
-  max?: number;
   step?: number;
 }) {
   const [focus, setFocus] = useState(false);
@@ -339,7 +336,6 @@ function SliderRow({
   displayMultiplier?: number;
 }) {
   const displayVal = value * displayMultiplier;
-  const defaultDisplay = defaultValue * displayMultiplier;
   const isDefault = Math.abs(value - defaultValue) < 0.001;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
@@ -513,6 +509,11 @@ export function ScreenerConfigPanel({
             onChange={(e) => applyPreset(e.target.value)}
             style={{ ...SELECT, /* 移动端自适应宽度 */ maxWidth: "100%", width: "auto", minWidth: 140 }}
           >
+            {STRATEGY_PRESETS.map((preset) => (
+              <option key={preset.key} value={preset.key}>{preset.name}</option>
+            ))}
+          </select>
+        </div>
         {STRATEGY_PRESETS.find((p) => p.key === selectedPreset) && (
           <span style={{ fontSize: 12.5, color: "#94a3b8" }}>
             {STRATEGY_PRESETS.find((p) => p.key === selectedPreset)!.desc}

@@ -4,6 +4,8 @@ import { getDb, ensureSchema } from "../../../db";
 import { strategyWriteback } from "../../../db/schema";
 import { shanghaiIso } from "../../../lib/time";
 
+const MAX_PUSH_BYTES = 1_000_000;
+
 /**
  * 回写结果接口（跨机器联动 · 本地 PC 推送 / 云端读取）
  *
@@ -63,6 +65,10 @@ export async function POST(req: Request) {
   if (!secret || provided !== secret) {
     return Response.json({ ok: false, error: "unauthorized" }, { status: 401 });
   }
+  const contentLength = Number(req.headers.get("content-length") ?? 0);
+  if (Number.isFinite(contentLength) && contentLength > MAX_PUSH_BYTES) {
+    return Response.json({ ok: false, error: "payload too large" }, { status: 413 });
+  }
 
   let body: unknown;
   try {
@@ -83,9 +89,13 @@ export async function POST(req: Request) {
   }
 
   try {
+    const payload = JSON.stringify(body);
+    if (payload.length > MAX_PUSH_BYTES) {
+      return Response.json({ ok: false, error: "payload too large" }, { status: 413 });
+    }
     await ensureSchema();
     const db = getDb();
-    await db.insert(strategyWriteback).values({ payload: JSON.stringify(body) });
+    await db.insert(strategyWriteback).values({ payload });
     return Response.json({ ok: true, savedAt: shanghaiIso() });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

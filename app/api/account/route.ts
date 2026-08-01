@@ -1,4 +1,4 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { accountSettings, capitalFlows } from "../../../db/schema";
 import { requireApiUser } from "../../../lib/auth";
