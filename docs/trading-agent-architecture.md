@@ -11,46 +11,42 @@
 提供一个可在本地 PC 直接运行的轻量量化闭环：
 
 1. **零连接启动**：数据底座走真实 A 股公开接口（腾讯财经估值 + 东财前复权日线），免 key、无需接入任何连接器即可跑通。
-2. **四步闭环**：选票 → 操作（信号）→ 回测 → 优化策略，由中枢编排器串联。
+2. **四步闭环**：选票 → 操作（信号）→ 回测 → 优化策略，由引擎编排。
 3. **跨机器联动**：本地 PC 跑完闭环后，把结果推送（HTTP POST）到远程云端的 AIStock 服务（`/api/strategy-scan`），前端「策略扫描」视图读取展示。
-4. **可插拔数据源**：通过桥接层（ConnectorHub）把上层策略与底层数据源解耦，连接器接入后即可即插即用切换。
+4. **WorkBuddy 当中枢**：数据获取、执行回写、提醒推送均由 **WorkBuddy 中枢**负责（调用 westock-mcp / tdx-connector / 企业微信）。trading_agent 只做**纯计算引擎**，数据通过可注入的 `DataProvider` 接口传入，自身不直连任何 MCP。
 
 ---
 
-## 2. 分层架构
+## 2. 分层架构（WorkBuddy 中枢模式）
 
 ```
-┌───────────────────────────────────────────────────────────┐
-│  业务层（策略）                                              │
-│   strategy/screener.py      选票（多因子打分）              │
-│   strategy/signals.py       操作（均线交叉 + 突破 + 止损）  │
-│   backtest/engine.py        回测引擎                        │
-│   backtest/metrics.py       回测指标（收益/夏普/回撤…）     │
-│   optimization/optimizer.py  优化策略（网格搜索）           │
-├───────────────────────────────────────────────────────────┤
-│  中枢层（WorkBuddy 中枢）                                   │
-│   core/loop.py              闭环编排（四步流水线）          │
-│   bridge.py                 ConnectorHub（数据源路由+回写+推送）│
-│   connectors/               westock / tdx / push 连接器实现  │
-│   feedback_store.py         用户反馈存储（反馈闭环）        │
-│   agent_server.py           HTTP 调度入口（可被 WorkBuddy 调用）│
-│   notify.py                 本地报告通知                    │
-│   reports/report.py         本地报告 / 扫描 JSON 产出        │
-├───────────────────────────────────────────────────────────┤
-│  数据底座                                                    │
-│   data/provider.py          腾讯 / 东财直连（含缓存）       │
-│   data/universe.py          候选池构造（默认池 / 同花顺强势）│
-├───────────────────────────────────────────────────────────┤
-│  触达层                                                      │
-│   本地报告（Markdown / CSV / JSON）                          │
-│   云端推送 cloud.py → POST AIStock /api/strategy-scan        │
-│   企业微信 Webhook 推送（微信/App 提醒，可配置）            │
-└───────────────────────────────────────────────────────────┘
+┌──────────────────────────── 中枢：WorkBuddy（本 Agent） ────────────────────────────┐
+│  调用 westock-mcp（行情/估值）· tdx-connector（K线/回写）· 企业微信（推送）           │
+│   hub.py 编排：取数 → 注入引擎 → 回写 → 推送                                        │
+└───────────────┬───────────────────────────────────────────────┬───────────────────┘
+                │ 注入 (klines, quotes, hot)                      │ 回写 / 推送 指令
+                ▼                                                 ▼
+┌───────────────────────────────────────────┐      ┌──────────────────────────────────┐
+│  trading_agent（纯计算引擎 + HTTP 调度）     │      │  云端 AIStock（Docker 部署）       │
+│   core/loop.py        四步闭环编排           │      │   /api/strategy-scan  落盘展示     │
+│   strategy/screener   选票（多因子）         │      │   /api/feedback       反馈入口     │
+│   strategy/signals    操作（信号）           │      └──────────────────────────────────┘
+│   backtest/*          回测引擎 + 指标        │
+│   optimization/*      优化策略（网格）       │
+│   data/provider.py    DataProvider 接口      │
+│     · StaticProvider  中枢注入数据           │
+│     · TencentEastMoneyProvider 直连兜底      │
+│   agent_server.py     /run 接受 prefetched   │
+│   feedback_store.py   反馈存储（闭环）       │
+└───────────────────────────────────────────┘
+
+数据底座（兜底，零配置可用）：腾讯 / 东财直连（provider 默认实现）+ 同花顺热点候选池。
+connectors/ 作为「独立直连模式」备选：trading_agent 自行调 MCP（用于无中枢的独立部署）。
 ```
 
-> 连接器接入后，本模块的「桥接 / 执行回写 / 推送 / 反馈闭环 / Agent 调度」全部打通，
-> 完整对应架构图「WorkBuddy 中枢 · 桥接连接器 · 策略计算 Agent · 执行回写 + 推送提醒」。
-> 未配置连接器时自动退回腾讯/东财直连，保持零连接可跑。
+> 默认且推荐：**WorkBuddy 当中枢**。中枢取数后注入引擎，引擎完全不知道连接器存在；
+> 真实连接器（westock-mcp / tdx-connector）在 WorkBuddy 连接器面板 trust 后即可由中枢调用。
+> 未配置中枢时，引擎回退腾讯/东财直连，保持零连接可跑。
 
 ---
 

@@ -3,8 +3,11 @@
 实现 `docs/trading-agent-architecture.md` 的完整闭环：**选票 → 操作 → 回测 → 优化策略**，
 并补齐架构图的「桥接连接器 / 执行回写 / 推送提醒 / 用户反馈闭环 / Agent 调度」。
 
-数据底座默认走**真实 A 股公开接口**（腾讯财经估值 + 东财前复权日线），免 key、无需连接连接器即可运行；
-接入 `westock-mcp` / `tdx-connector` 后即通过连接器取数，并把信号回写通达信、推送到企业微信。
+**默认且推荐：WorkBuddy 当中枢。** `trading_agent` 只做纯计算引擎，数据经可注入的
+`DataProvider` 接口传入（中枢从连接器取数后注入），自身不直连任何 MCP；回写与推送也由中枢调用
+`tdx-connector` / 企业微信完成。`connectors/` + `bridge.py` 保留为「独立直连模式」备选。
+
+数据底座默认走**真实 A 股公开接口**（腾讯财经估值 + 东财前复权日线），免 key、无需连接连接器即可运行。
 
 ## 架构与文档映射
 
@@ -14,11 +17,11 @@
 | 业务层：操作 | `strategy/signals.py`（均线交叉 + 突破 + 止损） |
 | 业务层：回测 | `backtest/engine.py` + `backtest/metrics.py` |
 | 业务层：优化策略 | `optimization/optimizer.py`（网格搜索 + 消费用户反馈） |
-| 中枢：桥接连接器 | `bridge.py` + `connectors/`（westock / tdx / push 真实实现） |
-| 中枢：策略计算 Agent | `core/loop.py`（四步编排） |
-| 中枢：执行回写 + 推送 | `bridge.writeback_signals` + `connectors/push.py`（企业微信） |
-| 中枢：Agent 调度 | `agent_server.py`（HTTP 服务，可被 WorkBuddy 调用） |
-| 数据底座 | `data/provider.py`（腾讯 / 东财直连，含缓存；连接器启用后切换） |
+| **中枢：WorkBuddy 编排** | `hub.py`（取数→注入引擎→回写→推送，回调可注入） |
+| 中枢：策略计算 Agent | `core/loop.py`（四步编排，接受注入 DataProvider） |
+| 中枢：Agent 调度 | `agent_server.py`（HTTP `/run` 接受 prefetched 注入） |
+| 数据底座（接口） | `data/provider.py`：`DataProvider` / `StaticProvider`（中枢注入）/ `TencentEastMoneyProvider`（直连兜底） |
+| 独立直连模式（备选） | `bridge.py` + `connectors/`（westock / tdx / push 直接调 MCP） |
 | 用户反馈闭环 | `feedback_store.py` + `app/api/feedback`（前端有效/无效 → 优化权重） |
 | 触达层 | 本地报告 + 云端推送 + 企业微信提醒 |
 
@@ -36,7 +39,20 @@ python main.py --no-writeback   # 跳过把信号写回通达信
 python main.py --serve --port 8080   # 以 HTTP 调度服务运行
 ```
 
-## 连接器接入（可选，配置即启用）
+## WorkBuddy 中枢模式（推荐）
+
+`trading_agent` 作为纯引擎，由 WorkBuddy 中枢驱动完整链路：
+
+1. 在 WorkBuddy 连接器面板 **trust** `westock-mcp` 与 `tdx-connector`（首次会要求填 `tdx-api-key: TDX:xxxx`）；
+2. 在本会话让 WorkBuddy 跑中枢编排：调用连接器取数 → 注入引擎（经 `hub.py` 或 `agent_server` 的 `/run` 带 `prefetched`）→ 调用 `tdx-connector` 回写 → 推送企业微信 + 云端 `/api/strategy-scan`；
+3. 引擎 HTTP 调度入口：`python main.py --serve`（默认 `127.0.0.1:8080`），中枢可 `POST /run`（支持 `prefetched` 注入、`no_writeback` 交由中枢代管）。
+
+> 执行回写默认 `dry_run=True`（仅模拟，不下真实委托）。要真下单需显式开启 `ENABLE_WRITEBACK=true`。
+> 无中枢时，引擎回退腾讯/东财直连，照常运行。
+
+## 连接器接入（独立直连模式，可选）
+
+若不以 WorkBuddy 为中枢、而让 `trading_agent` 自行调 MCP，配置即启用：
 
 ```bash
 # 腾讯自选股 westock-mcp（行情/估值/K线查询）
