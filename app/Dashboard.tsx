@@ -802,7 +802,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 onImported={loadData}
               />
             )}
-            {view === "scan" && <StrategyScanView initialData={strategyScan} onRefresh={loadData} />}
+            {view === "scan" && <div className="page-content inner-page"><StrategyScanView initialData={strategyScan} onRefresh={loadData} /></div>}
           </>
         )}
       </main>
