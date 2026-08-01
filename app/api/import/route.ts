@@ -58,6 +58,7 @@ export async function POST(request: Request) {
         reason: prepared.values.reason,
         maxLossCents: prepared.values.maxLossCents,
         feeCents: prepared.values.feeCents,
+        otherReason: null,
         createdAt: new Date().toISOString(),
       };
       if (candidate.side === "卖出") {
