@@ -7,10 +7,14 @@ import {
   isExecNotImplemented,
 } from "../../../../lib/pythonExec";
 import path from "path";
-import { fileURLToPath } from "url";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+/**
+ * 计算项目根目录（延迟求值，避免在 Workers/Miniflare 模块顶层
+ * 使用 import.meta.url/fileURLToPath 导致 "path must be string" 崩溃）。
+ */
+function projectRoot(): string {
+  return path.resolve(process.cwd(), "../../..");
+}
 
 /**
  * 读取当前选股默认配置（strategy_config.yaml 摊平结果）
@@ -22,8 +26,9 @@ const __dirname = path.dirname(__filename);
  *
  * 真实 Node 直接执行；Workers / Miniflare 沙箱则转发给本机守护进程。
  */
-const PROJECT_ROOT = path.resolve(__dirname, "../../../../");
-const DUMP = path.join(PROJECT_ROOT, "trading_agent", "dump_config.py");
+function dumpScript(): string {
+  return path.join(projectRoot(), "trading_agent", "dump_config.py");
+}
 
 export async function GET() {
   const unauthorized = await requireApiUser();
@@ -31,9 +36,10 @@ export async function GET() {
 
   if (SUPPORTS_EXEC) {
     try {
+      const DUMP = dumpScript();
       const python = resolvePython();
       const stdout = execFileSync(python, [DUMP], {
-        cwd: path.join(PROJECT_ROOT, "trading_agent"),
+        cwd: path.join(projectRoot(), "trading_agent"),
         timeout: 15000,
         encoding: "utf-8",
         env: { ...process.env },

@@ -8,10 +8,17 @@ import {
   isExecNotImplemented,
 } from "../../../../lib/pythonExec";
 import path from "path";
-import { fileURLToPath } from "url";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+/**
+ * 计算项目根目录（延迟求值，避免在 Workers/Miniflare 模块顶层
+ * 使用 import.meta.url/fileURLToPath 导致 "path must be string" 崩溃）。
+ *
+ * 容器内 wrangler 运行时 cwd 为 /app/dist/server，trading_agent 在 /app，
+ * 故向上三层即为项目根；本地真实 Node 部署同样适用。
+ */
+function projectRoot(): string {
+  return path.resolve(process.cwd(), "../../..");
+}
 
 /**
  * 交互式选股扫描接口
@@ -28,10 +35,6 @@ const __dirname = path.dirname(__filename);
  *
  * Body (JSON, 所有字段可选): 见下方 ALLOWED_KEYS 白名单。
  */
-const PROJECT_ROOT = path.resolve(__dirname, "../../../../");
-const PREFETCHED = path.join(PROJECT_ROOT, "trading_agent", "prefetched.json");
-const RUN_HUB = path.join(PROJECT_ROOT, "trading_agent", "run_hub.py");
-const SCAN_PAYLOAD = path.join(PROJECT_ROOT, "trading_agent", "scan_payload.json");
 
 // 允许前端传递的字段白名单（安全边界）
 const ALLOWED_KEYS = new Set([
@@ -79,6 +82,10 @@ export async function POST(req: Request) {
   // 路径 A：真实 Node 运行时，直接执行
   if (SUPPORTS_EXEC) {
     try {
+      const PROJECT_ROOT = projectRoot();
+      const PREFETCHED = path.join(PROJECT_ROOT, "trading_agent", "prefetched.json");
+      const RUN_HUB = path.join(PROJECT_ROOT, "trading_agent", "run_hub.py");
+      const SCAN_PAYLOAD = path.join(PROJECT_ROOT, "trading_agent", "scan_payload.json");
       const python = resolvePython();
       const stdout = execFileSync(
         python,
