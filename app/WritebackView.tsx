@@ -67,30 +67,36 @@ export function WritebackView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
     let alive = true;
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/writeback-signals");
-      const json = (await res.json()) as WritebackResponse;
-      if (!alive) return;
-      if (json.ok && json.writeback) setWriteback(json.writeback);
-      else setError(json.error || "暂时无法读取回写结果");
-    } catch {
-      if (alive) setError("暂时无法读取回写结果");
-    } finally {
-      if (alive) setLoading(false);
-    }
+    void (async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const res = await fetch("/api/writeback-signals");
+        const json = (await res.json()) as WritebackResponse;
+        if (!alive) return;
+        if (json.ok && json.writeback) setWriteback(json.writeback);
+        else setError(json.error || "暂时无法读取回写结果");
+      } catch {
+        if (alive) setError("暂时无法读取回写结果");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
     return () => {
       alive = false;
     };
   }, []);
 
   useEffect(() => {
-    const cleanup = load();
+    let cleanup: (() => void) | undefined;
+    const timer = window.setTimeout(() => {
+      cleanup = load();
+    }, 0);
     return () => {
-      void cleanup;
+      window.clearTimeout(timer);
+      cleanup?.();
     };
   }, [load]);
 

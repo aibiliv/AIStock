@@ -345,7 +345,11 @@ export async function analyzeStockData(query: string) {
   const symbol = yahooSymbol(stock.code);
   const fund = FUND_PROFILES[stock.code] ?? null;
   const isFund = Boolean(fund) || isFundCode(stock.code);
-  const klines = await getKlines(stock.code);
+  const klinesPromise = getKlines(stock.code);
+  const realtimePromise = getRealtime(stock.code);
+  const fundamentalsPromise = getFundamentals(symbol);
+  const profilePromise = getProfile(stock.code);
+  const klines = await klinesPromise;
   const history = buildHistory(klines.rows);
   const closes = history.map((row) => row.close);
   const currentPrice = closes.at(-1) ?? 0;
@@ -354,7 +358,7 @@ export async function analyzeStockData(query: string) {
 
   // 实时行情走 MarketDataProvider（麦蕊[可选]→东方财富→腾讯→新浪 多级降级）。
   // 任何缺失/失败都静默回退到由历史 K 线推算的现价/昨收。
-  const realtime = await getRealtime(stock.code);
+  const realtime = await realtimePromise;
   let livePrice = currentPrice;
   let livePreviousClose = previousClose;
   let liveChangePercent = previousClose ? ((currentPrice - previousClose) / previousClose) * 100 : 0;
@@ -379,10 +383,7 @@ export async function analyzeStockData(query: string) {
   const support = Math.min(...lows.slice(-20));
   const resistance = Math.max(...highs.slice(-60));
   const riskPerShare = Math.max(livePrice - support, livePrice * 0.03);
-  const [fundamentals, profile] = await Promise.all([
-    getFundamentals(symbol),
-    getProfile(stock.code),
-  ]);
+  const [fundamentals, profile] = await Promise.all([fundamentalsPromise, profilePromise]);
   const revenueGrowth = growth(fundamentals.quarterlyTotalRevenue);
   const profitGrowth = growth(fundamentals.quarterlyNetIncome);
   const assets = fundamentals.quarterlyTotalAssets?.at(-1)?.value ?? 0;

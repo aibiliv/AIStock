@@ -77,6 +77,7 @@ import { formatDateShanghai, formatDateTimeShanghai } from "../lib/time";
 
 type View = "home" | "watchlist" | "trades" | "settings" | "analytics" | "analysis" | "scan" | "writeback";
 type TradeMode = "buy" | "sell";
+const VALID_VIEWS: View[] = ["home", "analysis", "watchlist", "trades", "settings", "analytics", "scan", "writeback"];
 
 type WatchItem = {
   id: number;
@@ -306,18 +307,12 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string }) {
-  const [view, setView] = useState<View>("home");
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const VALID_VIEWS: View[] = ["home", "analysis", "watchlist", "trades", "settings", "analytics", "scan", "writeback"];
-  useEffect(() => {
+  const [view, setView] = useState<View>(() => {
     const target = searchParams.get("view");
-    if (target && VALID_VIEWS.includes(target as View)) {
-      setView(target as View);
-    }
-    // 仅在挂载时从 URL 恢复视图，无需把依赖加入
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return target && VALID_VIEWS.includes(target as View) ? target as View : "home";
+  });
   const [query, setQuery] = useState("");
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [recentAnalyses, setRecentAnalyses] = useState<Analysis[]>([]);

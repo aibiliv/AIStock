@@ -204,21 +204,23 @@ export function StrategyScanView({
   const [scanBusy, setScanBusy] = useState(false);
   const [scanError, setScanError] = useState("");
 
-  const load = useCallback(async () => {
+  const load = useCallback(() => {
     let alive = true;
-    setLoading(true);
-    setError("");
-    try {
-      const res = await fetch("/api/strategy-scan");
-      const json = (await res.json()) as StrategyScanResponse;
-      if (!alive) return;
-      if (json.ok && json.scan) setScan(json.scan);
-      else setError(json.error || "暂时无法读取策略扫描结果");
-    } catch {
-      if (alive) setError("暂时无法读取策略扫描结果");
-    } finally {
-      if (alive) setLoading(false);
-    }
+    void (async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const res = await fetch("/api/strategy-scan");
+        const json = (await res.json()) as StrategyScanResponse;
+        if (!alive) return;
+        if (json.ok && json.scan) setScan(json.scan);
+        else setError(json.error || "暂时无法读取策略扫描结果");
+      } catch {
+        if (alive) setError("暂时无法读取策略扫描结果");
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
     return () => {
       alive = false;
     };
@@ -227,9 +229,13 @@ export function StrategyScanView({
   useEffect(() => {
     // 仅在顶层未预取数据时才自行拉取，避免进入页面时重复加载造成闪烁
     if (initialData?.ok && initialData.scan) return;
-    const cleanup = load();
+    let cleanup: (() => void) | undefined;
+    const timer = window.setTimeout(() => {
+      cleanup = load();
+    }, 0);
     return () => {
-      void cleanup;
+      window.clearTimeout(timer);
+      cleanup?.();
     };
   }, [initialData, load]);
 

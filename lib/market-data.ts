@@ -21,6 +21,8 @@
 
 const UA = "Mozilla/5.0 (compatible; AIStock/1.0)";
 const TIMEOUT = 10_000;
+const REALTIME_CACHE_MS = 15_000;
+const realtimeCache = new Map<string, { expiresAt: number; value: Promise<RealtimeQuote | null> | RealtimeQuote | null }>();
 
 // 麦蕊（商业付费 API）作为「可选增强层」：仅当配置了 MAIRUI_TOKEN 时启用，
 // 作为实时行情 / 基本面的更高优先级源；无 token 时自动走下方免费多级降级链。
@@ -207,7 +209,7 @@ async function sinaRealtime(code: string): Promise<RealtimeQuote> {
 
 /** 实时行情，多级降级；全部失败返回 null（调用方应回退到历史K线推算值）。
  * 优先级：麦蕊（仅配置 MAIRUI_TOKEN 时）→ 东方财富 → 腾讯 → 新浪。 */
-export async function getRealtime(code: string): Promise<RealtimeQuote | null> {
+async function fetchRealtime(code: string): Promise<RealtimeQuote | null> {
   if (await isMairuiEnabled()) {
     try {
       const m = await getMairuiRealtime(code);
@@ -237,6 +239,23 @@ export async function getRealtime(code: string): Promise<RealtimeQuote | null> {
     }
   }
   return null;
+}
+
+export async function getRealtime(code: string): Promise<RealtimeQuote | null> {
+  const key = code.trim();
+  const now = Date.now();
+  const cached = realtimeCache.get(key);
+  if (cached && cached.expiresAt > now) return await cached.value;
+
+  const promise = fetchRealtime(key);
+  realtimeCache.set(key, { expiresAt: now + REALTIME_CACHE_MS, value: promise });
+  const result = await promise;
+  if (result) {
+    realtimeCache.set(key, { expiresAt: Date.now() + REALTIME_CACHE_MS, value: result });
+  } else {
+    realtimeCache.delete(key);
+  }
+  return result;
 }
 
 // ---------------------------------------------------------------------------
