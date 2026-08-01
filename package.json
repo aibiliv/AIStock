@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "vinext dev",
+    "engine": "node trading_agent/local_engine_server.js",
     "build": "vinext build",
     "start": "vinext start",
     "test": "npm run build && tsx --test tests/*.test.ts",

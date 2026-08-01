@@ -1,0 +1,64 @@
+# ============================================================
+# trading_agent 选股策略配置（持久默认）
+# ============================================================
+# 改这个文件 = 改「默认配置」。
+# 优先级（从低到高）：config.py 硬编码默认值 < 本文件 < prefetched.json 内嵌 config
+#                     < 策略预设(preset) < 网页/CLI 的 --overrides（单次覆盖）
+# 字段与 config.py 的 ScreenerConfig / MarketStateConfig /
+#      SignalConfig / OptimConfig 一一对应。
+# 注意：本文件改完即生效（CLI 直接读；网页「策略扫描」页会从这里初始化表单）。
+# ============================================================
+
+screener:
+  top_n: 8                       # 选出标的数量
+  max_per_sector: 2              # 行业分散约束：单行业最多入选（>=top_n 即关闭）
+  momentum_window: 20            # 动量回看窗口（交易日）
+
+  # —— 因子权重（运行时按活跃因子归一化，无需和为 1）——
+  w_momentum: 0.30               # 风险调整动量（收益 ÷ 年化波动）
+  w_value: 0.18                  # 估值复合（1/PE 与 1/PB 各半）
+  w_liquidity: 0.08              # 流动性（换手率）
+  w_rsi: 0.12                    # RSI(14)：强势但未超买
+  w_macd: 0.12                   # MACD 动能（柱为正且放大）
+  w_trend: 0.16                  # 趋势强度（价 vs 长期均线）
+  w_size: 0.04                   # 规模（总市值对数，越大越稳）
+  w_quality: 0.06                # 质量（ROE + 股息率；data.fundamentals 接入后自动启用）
+
+  # —— 因子计算参数 ——
+  rsi_window: 14                 # RSI 周期
+  macd_fast: 12                  # MACD 快线
+  macd_slow: 26                  # MACD 慢线
+  macd_signal: 9                 # MACD 信号线
+  vol_window: 20                 # 年化波动率回看窗口
+
+  # —— 硬性过滤 ——
+  min_turnover_pct: 0.15         # 换手率下限，过低剔除（流动性过滤）
+  max_pe_ttm: 200.0              # PE(TTM) 上限，过高剔除
+  max_pb: 20.0                   # PB 上限，过高剔除
+
+  # —— 前置条件过滤（板块 / ST / 流通市值，单位：亿元）——
+  boards: [main, cyb, kc, bj]    # 允许的板块：主板/创业/科创/北交
+  st_filter: exclude_st          # all | include_st | exclude_st
+  mcap_min: 0.0                  # 流通市值下限（0=不限制）
+  mcap_max: 10000.0              # 流通市值上限（0=不限制）
+
+market:
+  enable: true                   # 是否启用牛熊风控前置
+  index_code: "000300"           # 宽基指数代码（沪深300；引号保留字符串，避免被读成数字）
+  ma_window: 120                 # 长期均线窗口（约半年）
+  mom_window: 60                 # 中期动量窗口（约一季）
+  bull_ma_gap: 0.0               # 价格≥MA*(1+此值) 视为站上长均线
+  bear_ma_gap: -0.03             # 价格≤MA*(1+此值) 视为跌破长均线
+  bull_mom: 0.08                 # 中期动量≥此值视为上行
+  bear_mom: -0.05                # 中期动量≤此值视为下行
+
+signal:
+  fast_ma: 5                     # 快线均线周期
+  slow_ma: 20                    # 慢线均线周期
+  use_breakout_filter: true      # 是否要求突破 N 日新高才买入
+  breakout_window: 20            # 突破窗口
+  stop_loss_pct: -0.08           # 止损比例（基于买入价）
+  max_positions: 8               # 最大持仓数（与选股 top_n 对齐）
+
+optim:
+  enabled: true                  # 是否启用参数优化

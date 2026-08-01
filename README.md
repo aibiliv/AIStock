@@ -50,6 +50,33 @@ npm run lint
 npm test
 ```
 
+## 常见问题
+
+### `npm run dev` 报 `__dirname is not defined`
+
+错误出现在 `@cloudflare/vite-plugin` 的 runner worker 中，通常是 Vite 依赖优化缓存与当前 lockfile 不一致导致。
+
+**解决**：清除缓存后重启：
+
+```powershell
+# Windows PowerShell
+Remove-Item -Recurse -Force node_modules/.vite
+npm run dev
+```
+
+```bash
+# macOS / Linux
+rm -rf node_modules/.vite
+npm run dev
+```
+
+### 依赖安装 / 版本问题
+
+- 本项目 `package.json` 的 `engines` 要求 Node.js ≥22.13.0。
+- 项目使用 `"type": "module"`（ESM），注意不要混用 CommonJS 语法。
+- `package-lock.json` 已在 `.gitignore` 中忽略（跨平台二进制差异），部署时容器内重新 `npm install`。
+- 若出现奇怪的运行时错误（特别是 workerd / miniflare 相关），可尝试 `rm -rf node_modules && npm install` 全量重装依赖。
+
 ## 部署
 
 - Cloudflare Workers：使用 `worker/`（边缘入口）与 `build/`（`vinext build` 产物）。数据库为 D1，迁移位于 `drizzle/`（不要手工删除或重新编号）。

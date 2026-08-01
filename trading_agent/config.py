@@ -11,6 +11,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CACHE_DIR = os.path.join(BASE_DIR, "cache")
 REPORT_DIR = os.path.join(BASE_DIR, "reports")
 
+# 持久选股配置（YAML）。改这个文件 = 改默认；网页/CLI 的 --overrides 仍可在单次运行时覆盖它。
+# 优先级：config.py 默认值 < strategy_config.yaml < prefetched 内嵌 config < 预设 < 显式 overrides。
+STRATEGY_CONFIG_PATH = os.path.join(BASE_DIR, "strategy_config.yaml")
+
 # 本地镜像目录：trading_agent 把扫描 JSON 写到这里供本地查看。
 # 跨机器场景下，真正送达云端 AIStock 的是「云端推送」（见 PushConfig / cloud.push_scan_json），
 # 共享目录不再作为两项目的桥（云服务器读不到本地路径）。
@@ -52,15 +56,44 @@ DEFAULT_UNIVERSE = [
 
 @dataclass
 class ScreenerConfig:
-    """选票（选股）参数"""
+    """选票（选股）参数
+
+    因子权重（w_*）在运行时按"活跃因子"归一化求和，因此无需硬性等于 1。
+    默认权重合计 = 1.0，偏向风险调整动量 + 趋势 + 估值，技术确认(RSI/MACD)
+    与流动性/规模为辅。quality(质量) 默认 0：仅在行情快照提供 ROE/股息率时启用。
+
+    行业分散约束（max_per_sector）：打分排序后做贪心选取，单一行业最多入选
+    max_per_sector 只，避免一次选出 top_n 只同属一个板块。约束生效后实际入选
+    数可能少于 top_n；设 >= top_n 即关闭约束。行业取自 quote["sector"]，
+    缺失时回退 data.sectors 静态映射（默认覆盖蓝筹池）。
+    """
     top_n: int = 8                      # 选出标的数量
+    max_per_sector: int = 2             # 行业分散约束：单行业最多入选数量（>=top_n 即不约束）
     momentum_window: int = 20           # 动量回看窗口（交易日）
-    w_momentum: float = 0.50            # 因子权重：动量
-    w_value: float = 0.30               # 因子权重：估值（盈利收益率）
-    w_liquidity: float = 0.20           # 因子权重：流动性（换手率）
+    # —— 因子权重（运行时归一化）——
+    w_momentum: float = 0.30            # 风险调整动量（收益 ÷ 年化波动）
+    w_value: float = 0.18               # 估值复合（1/PE 与 1/PB 各半）
+    w_liquidity: float = 0.08           # 流动性（换手率）
+    w_rsi: float = 0.12                 # RSI(14)：强势但未超买
+    w_macd: float = 0.12                # MACD 动能（柱为正且放大）
+    w_trend: float = 0.16               # 趋势强度（价 vs 长期均线）
+    w_size: float = 0.04                # 规模（总市值对数，越大越稳）
+    w_quality: float = 0.06             # 质量（ROE + 股息率；data.fundamentals 接入后自动启用）
+    # —— 因子计算参数 ——
+    rsi_window: int = 14                # RSI 周期
+    macd_fast: int = 12                 # MACD 快线
+    macd_slow: int = 26                 # MACD 慢线
+    macd_signal: int = 9                # MACD 信号线
+    vol_window: int = 20                # 年化波动率回看窗口
+    # —— 硬性过滤 ——
     min_turnover_pct: float = 0.15      # 换手率下限，过低剔除（流动性过滤）
     max_pe_ttm: float = 200.0           # PE(TTM) 上限，过高剔除
     max_pb: float = 20.0                # PB 上限，过高剔除
+    # —— 前置条件过滤（板块 / ST / 流通市值）——
+    boards: list = field(default_factory=lambda: ["main", "cyb", "kc", "bj"])  # 允许的板块
+    st_filter: str = "exclude_st"        # "all" | "include_st" | "exclude_st"
+    mcap_min: float = 0.0               # 流通市值下限（亿元），0=不限制
+    mcap_max: float = 10000.0           # 流通市值上限（亿元），0=不限制
 
 
 @dataclass
@@ -72,6 +105,29 @@ class SignalConfig:
     breakout_window: int = 20           # 突破窗口
     stop_loss_pct: float = -0.08        # 止损比例（基于买入价）
     max_positions: int = 8              # 最大持仓数（与选股 top_n 对齐）
+
+
+@dataclass
+class MarketStateConfig:
+    """市场状态（风控前置）参数
+
+    用宽基指数日线判断牛/中性/熊，给出仓位系数 position_factor：
+      bull→1.0（满仓）、neutral→0.5（半仓）、bear→0.0（空仓）。
+    选股阶段按 position_factor 缩放实际选股数（熊市可降至 0=空仓）。
+    判定：价格站在 MA(ma_window) 上方且中期动量≥bull_mom → 牛市；
+          价格跌破 MA 且中期动量≤bear_mom → 熊市；其余中性。
+    """
+    enable: bool = True
+    index_code: str = "000300"          # 宽基指数代码（沪深300；fetch_kline 复用）
+    ma_window: int = 120                # 长期均线窗口（约半年）
+    mom_window: int = 60                # 中期动量窗口（约一季）
+    bull_ma_gap: float = 0.0            # 价格≥MA*(1+bull_ma_gap) 视为站上长均线
+    bear_ma_gap: float = -0.03          # 价格≤MA*(1+bear_ma_gap) 视为跌破长均线
+    bull_mom: float = 0.08              # 中期动量≥此值视为上行
+    bear_mom: float = -0.05             # 中期动量≤此值视为下行
+    position: dict = field(default_factory=lambda: {
+        "bull": 1.0, "neutral": 0.5, "bear": 0.0,
+    })
 
 
 @dataclass
@@ -127,9 +183,151 @@ class AppConfig:
     beg: str = "20250101"               # 行情起始
     end: str = "20500101"               # 行情结束
     screener: ScreenerConfig = field(default_factory=ScreenerConfig)
+    market: MarketStateConfig = field(default_factory=MarketStateConfig)
     signal: SignalConfig = field(default_factory=SignalConfig)
     backtest: BacktestConfig = field(default_factory=BacktestConfig)
     optim: OptimConfig = field(default_factory=OptimConfig)
     notifier: str = "local"             # local（默认）| email
     push: PushConfig = field(default_factory=PushConfig)
     connectors: ConnectorsConfig = field(default_factory=ConnectorsConfig)
+
+
+# ============================================================
+# strategy_config.yaml 加载（零依赖；优先 pyyaml，回退内置子集解析器）
+# ============================================================
+def _strip_comment(line: str) -> str:
+    """去掉行内注释；保留引号内的 #。"""
+    out: list[str] = []
+    in_q = False
+    q = ""
+    for i, c in enumerate(line):
+        if in_q:
+            out.append(c)
+            if c == q:
+                in_q = False
+        elif c in ('"', "'"):
+            in_q = True
+            q = c
+            out.append(c)
+        elif c == "#" and (i == 0 or line[i - 1] in (" ", "\t")):
+            break
+        else:
+            out.append(c)
+    return "".join(out)
+
+
+def _parse_scalar(s: str):
+    s = s.strip()
+    if s == "":
+        return None
+    if (s.startswith('"') and s.endswith('"')) or (s.startswith("'") and s.endswith("'")):
+        return s[1:-1]
+    low = s.lower()
+    if low in ("true", "false"):
+        return low == "true"
+    if low in ("null", "none", "~"):
+        return None
+    # 内联列表 [a, b, c]
+    if s.startswith("[") and s.endswith("]"):
+        inner = s[1:-1].strip()
+        if not inner:
+            return []
+        return [_parse_scalar(x.strip()) for x in inner.split(",")]
+    # 数字
+    try:
+        if "." in s or "e" in s.lower():
+            return float(s)
+        return int(s)
+    except ValueError:
+        return s
+
+
+def _mini_yaml_load(text: str) -> dict:
+    """极简 YAML 子集解析：仅支持嵌套映射 + 内联列表 + 标量（不含块序列）。
+
+    足以覆盖 strategy_config.yaml 的结构；若环境装了 pyyaml 则优先用 yaml.safe_load。
+    """
+    root: dict = {}
+    stack: list[tuple[int, dict]] = [(-1, root)]
+    for raw in text.splitlines():
+        stripped = _strip_comment(raw)
+        if not stripped.strip():
+            continue
+        indent = len(stripped) - len(stripped.lstrip(" "))
+        content = stripped.strip()
+        while stack and stack[-1][0] >= indent:
+            stack.pop()
+        parent = stack[-1][1]
+        if ":" not in content:
+            continue
+        key, _, val = content.partition(":")
+        key = key.strip()
+        val = val.strip()
+        if val == "":
+            child: dict = {}
+            parent[key] = child
+            stack.append((indent, child))
+        else:
+            parent[key] = _parse_scalar(val)
+    return root
+
+
+def load_strategy_yaml(path: str | None = None) -> dict:
+    """读取 strategy_config.yaml，返回嵌套 dict（文件缺失返回 {}）。"""
+    p = path or STRATEGY_CONFIG_PATH
+    if not os.path.exists(p):
+        return {}
+    try:
+        import yaml  # type: ignore
+
+        with open(p, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+    except ImportError:
+        with open(p, "r", encoding="utf-8") as f:
+            data = _mini_yaml_load(f.read()) or {}
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
+# 各 section 的字段名 → 摊平后交给 run_hub.apply_config 的键
+_FLAT_MAP = {
+    "screener": [
+        "top_n", "max_per_sector", "momentum_window", "w_momentum", "w_value",
+        "w_liquidity", "w_rsi", "w_macd", "w_trend", "w_size", "w_quality",
+        "rsi_window", "macd_fast", "macd_slow", "macd_signal", "vol_window",
+        "min_turnover_pct", "max_pe_ttm", "max_pb", "boards", "st_filter",
+        "mcap_min", "mcap_max",
+    ],
+    "market": {
+        "enable": "market_enable", "index_code": "index_code", "ma_window": "ma_window",
+        "mom_window": "mom_window", "bull_ma_gap": "bull_ma_gap", "bear_ma_gap": "bear_ma_gap",
+        "bull_mom": "bull_mom", "bear_mom": "bear_mom",
+    },
+    "signal": [
+        "fast_ma", "slow_ma", "use_breakout_filter", "breakout_window",
+        "stop_loss_pct", "max_positions",
+    ],
+    "optim": {"enabled": "optim_enabled"},
+}
+
+
+def flatten_config(data: dict) -> dict:
+    """把嵌套 YAML 摊平成 run_hub.apply_config 兼容的扁平键集合。"""
+    out: dict = {}
+    for section, mapping in _FLAT_MAP.items():
+        sec = data.get(section) or {}
+        if isinstance(mapping, list):
+            for k in mapping:
+                if k in sec:
+                    out[k] = sec[k]
+        else:
+            for src, dst in mapping.items():
+                if src in sec:
+                    out[dst] = sec[src]
+    return out
+
+
+def load_strategy_config() -> dict:
+    """返回摊平后的策略配置（供 run_hub / 前端读取）。"""
+    return flatten_config(load_strategy_yaml())

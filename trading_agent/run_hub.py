@@ -37,6 +37,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import config
 from data.provider import StaticProvider
 from hub import run as hub_run, _build_signals
+from strategy import presets
 
 
 def _norm_bar(b: dict) -> dict:
@@ -71,6 +72,10 @@ def _norm_quote(q: dict, code: str) -> dict:
         "pb": float(g("pb", "pb_ratio") or 0),
         "turnover_pct": float(g("turnover_pct", "turnover_rate") or 0),
         "change_pct": float(g("change_pct", "change_percent") or 0),
+        "mcap_yi": float(g("mcap_yi", "float_mcap_yi", "total_mv", "market_cap") or 0),
+        # 质量因子（ROE / 股息率）；缺省为 None，screener 据此判断是否启用质量因子
+        "roe": (float(g("roe")) if g("roe") not in (None, "") else None),
+        "dividend_yield": (float(g("dividend_yield", "dividendYield")) if g("dividend_yield", "dividendYield") not in (None, "") else None),
     }
 
 
@@ -78,7 +83,14 @@ def load_prefetched(path: str):
     with open(path, "r", encoding="utf-8") as f:
         raw = json.load(f)
     klines = {c: [_norm_bar(b) for b in bars] for c, bars in raw.get("klines", {}).items()}
-    quotes = {c: _norm_quote(q, c) for c, q in raw.get("quotes", {}).items()}
+    # 合并基本面（ROE / 股息率）：中枢可取数后写入 prefetched["fundamentals"]
+    raw_quotes = raw.get("quotes", {})
+    fundamentals = raw.get("fundamentals") or {}
+    for c, f in fundamentals.items():
+        if c in raw_quotes and f:
+            raw_quotes[c]["roe"] = f.get("roe")
+            raw_quotes[c]["dividend_yield"] = f.get("dividend_yield")
+    quotes = {c: _norm_quote(q, c) for c, q in raw_quotes.items()}
     hot = raw.get("hot", [])
     codes = raw.get("universe") or list(klines.keys())
     return klines, quotes, hot, codes, raw.get("config", {})
@@ -88,6 +100,8 @@ def apply_config(cfg: config.AppConfig, ov: dict):
     sc = cfg.screener
     if "top_n" in ov:
         sc.top_n = int(ov["top_n"])
+    if "max_per_sector" in ov:
+        sc.max_per_sector = int(ov["max_per_sector"])
     if "momentum_window" in ov:
         sc.momentum_window = int(ov["momentum_window"])
     if "min_turnover_pct" in ov:
@@ -102,6 +116,26 @@ def apply_config(cfg: config.AppConfig, ov: dict):
         sc.w_value = float(ov["w_value"])
     if "w_liquidity" in ov:
         sc.w_liquidity = float(ov["w_liquidity"])
+    if "w_rsi" in ov:
+        sc.w_rsi = float(ov["w_rsi"])
+    if "w_macd" in ov:
+        sc.w_macd = float(ov["w_macd"])
+    if "w_trend" in ov:
+        sc.w_trend = float(ov["w_trend"])
+    if "w_size" in ov:
+        sc.w_size = float(ov["w_size"])
+    if "w_quality" in ov:
+        sc.w_quality = float(ov["w_quality"])
+    if "rsi_window" in ov:
+        sc.rsi_window = int(ov["rsi_window"])
+    if "macd_fast" in ov:
+        sc.macd_fast = int(ov["macd_fast"])
+    if "macd_slow" in ov:
+        sc.macd_slow = int(ov["macd_slow"])
+    if "macd_signal" in ov:
+        sc.macd_signal = int(ov["macd_signal"])
+    if "vol_window" in ov:
+        sc.vol_window = int(ov["vol_window"])
     if "fast_ma" in ov:
         cfg.signal.fast_ma = int(ov["fast_ma"])
     if "slow_ma" in ov:
@@ -112,6 +146,20 @@ def apply_config(cfg: config.AppConfig, ov: dict):
         cfg.optim.enabled = bool(ov["optim_enabled"])
     if "stop_loss_pct" in ov:
         cfg.signal.stop_loss_pct = float(ov["stop_loss_pct"])
+    # 市场状态（风控前置）
+    if "market_enable" in ov:
+        cfg.market.enable = bool(ov["market_enable"])
+    if "index_code" in ov:
+        cfg.market.index_code = str(ov["index_code"])
+    # 前置条件过滤（板块 / ST / 流通市值）
+    if "boards" in ov:
+        cfg.screener.boards = list(ov["boards"])
+    if "st_filter" in ov:
+        cfg.screener.st_filter = str(ov["st_filter"])
+    if "mcap_min" in ov:
+        cfg.screener.mcap_min = float(ov["mcap_min"])
+    if "mcap_max" in ov:
+        cfg.screener.mcap_max = float(ov["mcap_max"])
 
 
 def push_writeback(url: str, token: str, payload: dict) -> bool:
@@ -263,19 +311,44 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--prefetched", required=True)
     ap.add_argument("--out-dir", default=os.path.dirname(os.path.abspath(__file__)))
+    ap.add_argument("--overrides", default=None,
+                    help="JSON 字符串，含 screener/signal/market/optim 覆盖参数（优先级高于 prefetched.config）")
     ap.add_argument("--scan-url", default=os.environ.get("CLOUD_SCAN_URL") or "")
     ap.add_argument("--scan-token", default=os.environ.get("CLOUD_SCAN_TOKEN") or "")
     ap.add_argument("--push-url", default=os.environ.get("CLOUD_WRITEBACK_URL") or "")
     ap.add_argument("--push-token", default=os.environ.get("CLOUD_SCAN_TOKEN") or "")
     args = ap.parse_args()
 
-    klines, quotes, hot, codes, ov = load_prefetched(args.prefetched)
+    klines, quotes, hot, codes, prefetched_cfg = load_prefetched(args.prefetched)
     if not codes:
         print("prefetched.json 中没有可用标的，退出。")
         sys.exit(1)
 
+    # CLI overrides（用户显式意图，优先级最高）
+    cli_ov: dict = {}
+    if args.overrides:
+        try:
+            parsed = json.loads(args.overrides)
+            if isinstance(parsed, dict):
+                cli_ov = parsed
+                print(f"已解析 CLI overrides: {list(cli_ov.keys())}")
+        except json.JSONDecodeError as e:
+            print(f"--overrides JSON 解析失败: {e}，忽略")
+
+    # 解析策略预设：preset 作为「配方基线」，显式字段（prefetched/CLI）覆盖预设
+    merged = presets.resolve_preset(cli_ov)
+    if cli_ov.get("preset"):
+        print(f"已套用策略预设: {cli_ov.get('preset')}")
+    # 最终优先级：prefetched 内嵌 config < 预设基线 < 显式覆盖
+    ov = {**prefetched_cfg, **merged}
+
     cfg = config.AppConfig()
     cfg.universe = codes
+    # 持久默认：strategy_config.yaml（优先级低于 prefetched/preset/显式 overrides）
+    yaml_ov = config.load_strategy_config()
+    if yaml_ov:
+        apply_config(cfg, yaml_ov)
+        print(f"已套用 strategy_config.yaml: {list(yaml_ov.keys())}")
     apply_config(cfg, ov)
 
     def data_fetcher():
