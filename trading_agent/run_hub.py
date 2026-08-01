@@ -34,6 +34,26 @@ from urllib.error import URLError, HTTPError
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+
+def _load_dotenv():
+    """加载项目根目录 .env 到 os.environ（若存在），使本地直接运行也能读到
+    CLOUD_BASE_URL / CLOUD_CFG_USER 等，无需手动 export。"""
+    here = os.path.dirname(os.path.abspath(__file__))
+    for cand in (os.path.join(here, "..", ".env"), os.path.join(here, ".env")):
+        if os.path.isfile(cand):
+            with open(cand, encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    k, v = line.split("=", 1)
+                    k, v = k.strip(), v.strip().strip('"').strip("'")
+                    os.environ.setdefault(k, v)
+            break
+
+
+_load_dotenv()
+
 import config
 from data.provider import StaticProvider
 from hub import run as hub_run, _build_signals
@@ -94,6 +114,30 @@ def load_prefetched(path: str):
     hot = raw.get("hot", [])
     codes = raw.get("universe") or list(klines.keys())
     return klines, quotes, hot, codes, raw.get("config", {})
+
+
+def pull_cloud_overrides(url: str, user: str, password: str) -> dict:
+    """登录云端并拉取策略扫描配置，摊平为 run_hub.apply_config 兼容的 overrides。
+
+    云端不执行引擎、只维护配置；本地程序（含 WorkBuddy 中枢调用的 run_hub）
+    以此先拉取云端配置再执行。网络/鉴权失败则返回 {}，不阻断本地流程
+    （回退到 strategy_config.yaml / prefetched）。
+    """
+    if not url or not user or not password:
+        print("（未提供完整云端凭据，跳过云端配置拉取）")
+        return {}
+    try:
+        import pull_cloud_config as pcc
+    except Exception as e:  # noqa: BLE001
+        print(f"导入 pull_cloud_config 失败，跳过云端配置: {e}")
+        return {}
+    cookie = pcc.login(url, user, password)
+    if not cookie:
+        return {}
+    nested = pcc.fetch_cloud_config(url, cookie)
+    if not nested:
+        return {}
+    return pcc.to_overrides(nested)
 
 
 def apply_config(cfg: config.AppConfig, ov: dict):
@@ -317,6 +361,14 @@ def main():
     ap.add_argument("--scan-token", default=os.environ.get("CLOUD_SCAN_TOKEN") or "")
     ap.add_argument("--push-url", default=os.environ.get("CLOUD_WRITEBACK_URL") or "")
     ap.add_argument("--push-token", default=os.environ.get("CLOUD_SCAN_TOKEN") or "")
+    # —— 云端配置拉取（云端只配不跑，本地拉取后执行）——
+    ap.add_argument("--cloud-config-url",
+                    default=os.environ.get("CLOUD_BASE_URL")
+                            or os.environ.get("CLOUD_CFG_URL")
+                            or os.environ.get("CLOUD_SCAN_URL", "").replace("/api/strategy-scan", "").rstrip("/"),
+                    help="云端基地址，如 http://<服务器IP>:9003；提供则启动时先拉取云端配置作为 overrides")
+    ap.add_argument("--cloud-user", default=os.environ.get("CLOUD_CFG_USER") or "")
+    ap.add_argument("--cloud-pass", default=os.environ.get("CLOUD_CFG_PASS") or "")
     args = ap.parse_args()
 
     klines, quotes, hot, codes, prefetched_cfg = load_prefetched(args.prefetched)
@@ -349,6 +401,17 @@ def main():
     if yaml_ov:
         apply_config(cfg, yaml_ov)
         print(f"已套用 strategy_config.yaml: {list(yaml_ov.keys())}")
+
+    # 云端配置拉取（云端只配不跑，本地拉取后执行）：
+    # 优先级介于 strategy_config.yaml 与 prefetched/CLI 之间，
+    # 即「云端条件可用，本地 prefetched/CLI 仍可覆盖」。
+    if args.cloud_config_url:
+        cloud_ov = pull_cloud_overrides(
+            args.cloud_config_url, args.cloud_user, args.cloud_pass)
+        if cloud_ov:
+            apply_config(cfg, cloud_ov)
+            print(f"已套用云端配置({args.cloud_config_url}): {list(cloud_ov.keys())}")
+
     apply_config(cfg, ov)
 
     # 防止宽基指数代码混入选股候选池：

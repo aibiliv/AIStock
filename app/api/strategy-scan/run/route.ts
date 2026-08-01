@@ -4,7 +4,6 @@ import { readFileSync } from "fs";
 import {
   SUPPORTS_EXEC,
   resolvePython,
-  forwardToDaemon,
   isExecNotImplemented,
 } from "../../../../lib/pythonExec";
 import path from "path";
@@ -108,9 +107,18 @@ export async function POST(req: Request) {
       });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      // Miniflare 等「伪 Node」：execSync 存在但调用即报错 -> 退化为守护进程转发
+      // 沙箱禁 child_process / exec 不可用：云端不执行引擎，返回明确提示。
+      // 真正的选股由本地程序拉取云端配置（GET /api/strategy-scan/config）后运行。
       if (isExecNotImplemented(msg)) {
-        return forwardToDaemon("/run", { method: "POST", body: overridesStr });
+        return Response.json(
+          {
+            ok: false,
+            code: "CLOUD_ENGINE_DISABLED",
+            error:
+              "云端环境不执行选股引擎。请在本地程序中使用「拉取云端配置」后运行；或于本地部署时启用本地引擎。",
+          },
+          { status: 400 },
+        );
       }
       console.error("[strategy-scan/run] error:", msg);
       return Response.json(
@@ -120,6 +128,14 @@ export async function POST(req: Request) {
     }
   }
 
-  // 路径 B：Workers / 边缘运行时 -> 转发到本机真实 Node 守护进程
-  return forwardToDaemon("/run", { method: "POST", body: overridesStr });
+  // 路径 B：Workers / 边缘运行时（沙箱）-> 云端不执行引擎，返回明确提示
+  return Response.json(
+    {
+      ok: false,
+      code: "CLOUD_ENGINE_DISABLED",
+      error:
+        "云端环境不执行选股引擎。请在本地程序中使用「拉取云端配置」后运行；或于本地部署时启用本地引擎。",
+    },
+    { status: 400 },
+  );
 }
