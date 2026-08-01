@@ -1,68 +1,127 @@
-"""桥接层（对应架构「WorkBuddy 中枢 · 桥接连接器」）
+"""桥接层（对应架构图「WorkBuddy 中枢 · 桥接连接器」）
 
-把上层策略与底层数据源解耦：上层只调用 ConnectorHub.request_kline / request_quote，
-由 Hub 路由到最优可用连接器。当前已落地腾讯 / 东财直连；通达信(westock)、
-腾讯自选股(westock-mcp) 连接器在对应连接器接入后可即插即用。
+把上层策略与底层数据源/执行通道解耦：
+- 数据请求（K线/估值）路由到 westock / tdx / 腾讯·东财直连（按可用性）。
+- 执行回写（下单）与提醒推送统一从这里下发到已启用的连接器。
+
+连接器是否启用完全由 config.connectors 决定：填了端点即为真，留空退回直连。
 """
 from __future__ import annotations
 
 import config
 from data import provider
+from connectors import WestockConnector, TdxConnector, WeComPusher
 
 
-class TencentConnector:
-    """实时估值（PE/PB/市值/换手率）。不封 IP。"""
-
-    name = "tencent"
-
-    def request_quote(self, code: str) -> dict:
-        return provider.fetch_quote(code)
-
-
-class EastMoneyConnector:
-    """前复权日线 K 线。低风控。"""
-
-    name = "eastmoney"
-
-    def request_kline(self, code: str, beg: str, end: str) -> list[dict]:
-        return provider.fetch_kline(code, beg, end)
-
-
-class TdxConnector:
-    """架构预留：接入 tdx-connector 后启用（行情/深度/选股）。"""
-
-    name = "tdx"
-    available = False
-
-    def request_kline(self, code: str, beg: str, end: str):
-        raise NotImplementedError("tdx-connector 未连接。请在连接器面板连接 tdx-connector。")
-
-
-class WestockConnector:
-    """架构预留：接入 westock-mcp 后启用（行情/自选/模拟交易）。"""
-
-    name = "westock"
-    available = False
-
-    def request_quote(self, code: str):
-        raise NotImplementedError("westock-mcp 未连接。请在连接器面板连接 westock-mcp。")
+def build_connectors(cfg: config.AppConfig):
+    """依据配置构建连接器集合（留空端点即不启用）。"""
+    cc = cfg.connectors
+    westock = WestockConnector(
+        endpoint=cc.westock_url, token=cc.westock_token, enabled=bool(cc.westock_url)
+    )
+    tdx = TdxConnector(
+        endpoint=cc.tdx_url, api_key=cc.tdx_api_key, enabled=bool(cc.tdx_url)
+    )
+    push = WeComPusher(webhook_url=cc.wecom_webhook)
+    return westock, tdx, push
 
 
 class ConnectorHub:
-    """连接器中枢：路由数据请求到可用源。"""
+    """连接器中枢：路由数据请求到可用源，并下发执行/推送。"""
 
-    def __init__(self):
-        self.tencent = TencentConnector()
-        self.eastmoney = EastMoneyConnector()
-        self.tdx = TdxConnector()
-        self.westock = WestockConnector()
+    def __init__(self, cfg: config.AppConfig):
+        self.cfg = cfg
+        self.westock, self.tdx, self.push = build_connectors(cfg)
 
+    # ---------- 数据路由 ----------
     def request_kline(self, code: str, beg: str, end: str) -> list[dict]:
-        if self.tdx.available:
-            return self.tdx.request_kline(code, beg, end)
-        return self.eastmoney.request_kline(code, beg, end)
+        if self.tdx.enabled and self.tdx.has_tool("stock_kline"):
+            try:
+                # tdx 需要 market(0=深,1=沪) + 纯数字代码；解析失败则回退直连
+                market = 1 if code.startswith(("6", "9")) else 0
+                raw = self.tdx.stock_kline(market=market, code=code, period=4)
+                parsed = self._try_parse_kline(raw)
+                if parsed:
+                    return parsed
+            except Exception as e:  # noqa: BLE001
+                print(f"[bridge] tdx kline 失败，回退直连: {e}")
+        if self.westock.enabled and self.westock.has_tool("get_kline"):
+            try:
+                raw = self.westock.get_kline(code)
+                parsed = self._try_parse_kline(raw)
+                if parsed:
+                    return parsed
+            except Exception as e:  # noqa: BLE001
+                print(f"[bridge] westock kline 失败，回退直连: {e}")
+        return provider.fetch_kline(code, beg, end)
 
     def request_quote(self, code: str) -> dict:
-        if self.westock.available:
-            return self.westock.request_quote(code)
-        return self.tencent.request_quote(code)
+        if self.westock.enabled and self.westock.has_tool("get_quote"):
+            try:
+                raw = self.westock.get_quote(code)
+                parsed = self._try_parse_quote(raw)
+                if parsed:
+                    return parsed
+            except Exception as e:  # noqa: BLE001
+                print(f"[bridge] westock quote 失败，回退直连: {e}")
+        return provider.fetch_quote(code)
+
+    # ---------- 执行回写（交易接口） ----------
+    def writeback_signals(self, signals: list[dict], dry_run: bool = True) -> list[dict]:
+        """把信号列表写回通达信。仅 tdx 连接器提供交易接口。
+
+        signals: [{"code","side","price","quantity"}]
+        返回每笔的执行回执（含 dry_run 标记）。
+        """
+        if not self.tdx.enabled or not self.tdx.has_tool("place_order"):
+            print("[bridge] 无可用 tdx 交易接口，跳过回写")
+            return []
+        receipts = []
+        for s in signals:
+            try:
+                r = self.tdx.place_order(
+                    code=s["code"], side=s["side"],
+                    price=float(s["price"]), quantity=int(s["quantity"]),
+                    dry_run=dry_run,
+                )
+                receipts.append({"code": s["code"], "side": s["side"], "receipt": r})
+            except Exception as e:  # noqa: BLE001
+                receipts.append({"code": s["code"], "side": s["side"], "error": str(e)})
+        return receipts
+
+    # ---------- 提醒推送 ----------
+    def notify(self, scan_result: dict) -> dict:
+        if not self.push.enabled:
+            print("[bridge] 未配置企业微信 webhook，跳过推送")
+            return {"errcode": -2, "errmsg": "webhook 未配置"}
+        return self.push.notify_scan(scan_result)
+
+    # ---------- 解析辅助 ----------
+    @staticmethod
+    def _try_parse_kline(raw: str) -> list:
+        if not raw:
+            return []
+        try:
+            obj = __import__("json").loads(raw)
+            # 兼容 {"kline": [...]} 或 [..., ...]
+            if isinstance(obj, list):
+                return obj
+            if isinstance(obj, dict):
+                for key in ("kline", "data", "bars", "list"):
+                    if isinstance(obj.get(key), list):
+                        return obj[key]
+        except Exception:  # noqa: BLE001
+            return []
+        return []
+
+    @staticmethod
+    def _try_parse_quote(raw: str) -> dict:
+        if not raw:
+            return {}
+        try:
+            obj = __import__("json").loads(raw)
+            if isinstance(obj, dict):
+                return obj
+        except Exception:  # noqa: BLE001
+            return {}
+        return {}

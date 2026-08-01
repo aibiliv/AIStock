@@ -30,8 +30,11 @@
 ├───────────────────────────────────────────────────────────┤
 │  中枢层（WorkBuddy 中枢）                                   │
 │   core/loop.py              闭环编排（四步流水线）          │
-│   bridge.py                 ConnectorHub（数据源路由）      │
-│   notify.py                 执行回写 + 推送                 │
+│   bridge.py                 ConnectorHub（数据源路由+回写+推送）│
+│   connectors/               westock / tdx / push 连接器实现  │
+│   feedback_store.py         用户反馈存储（反馈闭环）        │
+│   agent_server.py           HTTP 调度入口（可被 WorkBuddy 调用）│
+│   notify.py                 本地报告通知                    │
 │   reports/report.py         本地报告 / 扫描 JSON 产出        │
 ├───────────────────────────────────────────────────────────┤
 │  数据底座                                                    │
@@ -41,9 +44,13 @@
 │  触达层                                                      │
 │   本地报告（Markdown / CSV / JSON）                          │
 │   云端推送 cloud.py → POST AIStock /api/strategy-scan        │
-│   邮件 / 微信（架构预留，需连接对应连接器）                  │
+│   企业微信 Webhook 推送（微信/App 提醒，可配置）            │
 └───────────────────────────────────────────────────────────┘
 ```
+
+> 连接器接入后，本模块的「桥接 / 执行回写 / 推送 / 反馈闭环 / Agent 调度」全部打通，
+> 完整对应架构图「WorkBuddy 中枢 · 桥接连接器 · 策略计算 Agent · 执行回写 + 推送提醒」。
+> 未配置连接器时自动退回腾讯/东财直连，保持零连接可跑。
 
 ---
 
@@ -86,17 +93,42 @@
 3. （若 `optim.enabled`）`optimizer.optimize` 网格搜索，挑出最优信号与回测。
 4. 用最终信号重算信号条数与最终回测，组装 `result` 字典（含 `meta` / `selected` / `base` / `optimized` / `final`）。
 
-### 4.2 桥接连接器 — `bridge.py`
-`ConnectorHub` 把上层策略与底层数据源解耦：
+### 4.2 桥接连接器 — `bridge.py` + `connectors/`
 
-- `request_kline`：优先 `TdxConnector`（架构预留，未连接），否则 `EastMoneyConnector`（东财前复权日线）。
-- `request_quote`：优先 `WestockConnector`（架构预留，未连接），否则 `TencentConnector`（腾讯估值）。
+`ConnectorHub` 把上层策略与底层数据源 / 执行通道解耦，连接器是否启用完全由 `config.ConnectorsConfig` 决定（填了端点即启用，留空退回直连）：
 
-`TdxConnector` / `WestockConnector` 当前 `available = False`，接入对应连接器后可即插即用。
+- **数据路由**：`request_kline` 优先 `TdxConnector`，备选 `WestockConnector`，再回退 `EastMoneyConnector` 直连；`request_quote` 优先 `WestockConnector`，再回退 `TencentConnector` 直连。
+- **执行回写**：`writeback_signals(signals, dry_run=True)` 把信号经 `TdxConnector` 的下单接口写回通达信（默认 dry-run 安全，配置 `enable_writeback=True` 且 `dry_run=False` 才发真实委托）。
+- **提醒推送**：`notify(scan_result)` 经 `WeComPusher`（企业微信 Webhook）推送选股结果。
 
-### 4.3 推送给触达层 — `notify.py` + `reports/report.py`
+连接器实现位于 `connectors/`：
+- `connectors/mcp.py`：MCP over Streamable HTTP 通用客户端（`MCPHTTPClient` + `MCPConnector` 基类），自动 `tools/list` 发现、按 `tool_map` 映射工具名，本地端点 bypass 代理。
+- `connectors/westock.py`：`WestockConnector`（腾讯自选股 westock-mcp，数据查询为主）。
+- `connectors/tdx.py`：`TdxConnector`（通达信 tdx-connector，行情 + 条件选股 + 交易接口/执行回写）。
+- `connectors/push.py`：`WeComPusher`（企业微信群机器人 Markdown 推送）。
+
+### 4.3 用户反馈闭环 — `feedback_store.py` + `app/api/feedback`
+
+对应架构图「用户 → 本项目 → 优化策略」：
+
+1. 前端「策略扫描」页对每只标的点「有效 / 无效」→ `POST /api/feedback`（云端 AIStock 存 `strategy_feedback` 表）。
+2. trading_agent 本地亦可通过 `POST /feedback`（Agent 服务）或 `feedback_store.save_feedback` 落盘 `feedback.jsonl`。
+3. `optimization/optimizer.py` 的 `apply_feedback_adjustment` 读取反馈汇总，正面占比高则上调动量权重、放宽止损；占比低则偏价值/流动性、收紧止损。**形成「用户反馈 → 优化策略」闭环。**
+
+### 4.4 Agent 调度入口 — `agent_server.py`
+
+trading_agent 可作为被 WorkBuddy / 复盘应用调度的 Agent（对应架构图「本项目 ↔ WorkBuddy」控制流）：
+
+- `GET /health` 健康检查；`GET /status` 最近一次运行摘要。
+- `POST /run` 运行闭环，body 可覆盖 `top_n` / `beg` / `end` / `fast_ma` / `slow_ma` / `no_optim` / `no_writeback`。
+- `POST /feedback` 接收用户反馈。
+
+启动：`python main.py --serve [--port 8080]`（或设环境变量 `AGENT_BIND_HOST` / `AGENT_BIND_PORT`）。
+
+### 4.5 触达层 — `notify.py` + `reports/report.py`
 - `reports/report.py`：写本地报告（Markdown / CSV / JSON），同时 `write_scan_json` 产出与云端同一份 payload；`prune_reports` 轮转（默认保留最近 20 次，可用 `REPORT_KEEP` 调整）。
-- `notify.py`：`get_notifier(cfg)` 返回 `local`（默认，仅本地文件）或 `email`（架构预留）。
+- `notify.py`：`get_notifier(cfg)` 返回 `local`（默认，仅本地文件）或 `email`（架构预留，需连接 agent-mail）。
+- 微信 / App 提醒通过 `connectors/push.py` 的企业微信 Webhook 实现（配置 `WECOM_WEBHOOK_URL` 后生效）。
 
 ---
 
@@ -154,7 +186,8 @@ python main.py
 | `BacktestConfig` | `initial_cash` / `fee_rate` / `slippage` | 回测成本 |
 | `OptimConfig` | `enabled` / `fast_ma_grid` / `slow_ma_grid` / `metric` / `rounds` | 网格优化 |
 | `PushConfig` | `url` / `token` | 云端推送目标与鉴权 |
-| `AppConfig` | `universe` / `use_hot_universe` / `beg` / `end` / `notifier` | 顶层配置 |
+| `ConnectorsConfig` | `westock_url` / `westock_token` / `tdx_url` / `tdx_api_key` / `wecom_webhook` / `enable_writeback` / `enable_notify` | 连接器（westock-mcp / tdx-connector / 企业微信推送） |
+| `AppConfig` | `universe` / `use_hot_universe` / `beg` / `end` / `notifier` / `connectors` | 顶层配置 |
 
 ### 8.2 命令行覆盖（`main.py`）
 
@@ -168,14 +201,34 @@ python main.py --fast-ma 5 --slow-ma 20
 python main.py --beg 20250101 --end 20250630
 python main.py --notifier email     # local | email
 python main.py --no-push            # 跳过云端推送
+python main.py --no-connectors      # 强制直连（不使用任何连接器）
+python main.py --no-writeback       # 跳过把信号写回通达信
+python main.py --serve --port 8080  # 以 HTTP 调度服务方式运行
 ```
 
-环境变量：`CLOUD_SCAN_URL` / `CLOUD_SCAN_TOKEN`（云端推送）、`STRATEGY_SCAN_DIR`（本地扫描 JSON 目录）、`REPORT_KEEP`（报告保留份数）。
+环境变量（连接器接入时填写，留空即不启用）：
+
+```bash
+# 腾讯自选股 westock-mcp（行情/估值/K线查询）
+WESTOCK_MCP_URL=https://<host>/mcp
+WESTOCK_MCP_TOKEN=<token>
+# 通达信 tdx-connector（行情 + 条件选股 + 交易接口/执行回写）
+TDX_MCP_URL=https://mcp.tdx.com.cn:3001/mcp
+TDX_API_KEY=TDX:xxxxxx
+# 企业微信机器人（微信/App 提醒推送）
+WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxxx
+# 真实回写开关（默认 dry-run 安全，谨慎开启）
+TDX_ENABLE_WRITEBACK=1
+# Agent 调度服务端口
+AGENT_BIND_PORT=8080
+```
+
+另保留原有云端推送环境变量：`CLOUD_SCAN_URL` / `CLOUD_SCAN_TOKEN`（云端推送）、`STRATEGY_SCAN_DIR`（本地扫描 JSON 目录）、`REPORT_KEEP`（报告保留份数）。
 
 ---
 
 ## 9. 已知边界
 
-- 结果为历史数据分析 / 回测 / 模拟，不构成投资建议，不做真实下单。
-- `TdxConnector`（通达信）、`WestockConnector`（腾讯自选股）连接器当前未连接；`bridge.py` 已预留接口，连接后可即插即用切换数据源与模拟交易。
-- 触达层当前为本地报告；邮件推送需连接 `agent-mail`，微信 / App 推送需连接 westock / 微信连接器（架构预留）。
+- 结果为历史数据分析 / 回测 / 模拟，不构成投资建议。**执行回写默认 dry-run 安全**，真实下单需显式开启 `enable_writeback` 且 `dry_run=False`。
+- `WestockConnector` / `TdxConnector` 已实现，连接后由 `config.ConnectorsConfig` 启用；未配置则自动退回腾讯/东财直连，保持零连接可跑。
+- 微信 / App 提醒通过企业微信 Webhook（`WECOM_WEBHOOK_URL`）实现；如需推送到腾讯自选股 App 本身，需另行接入其官方推送通道。

@@ -19,14 +19,18 @@ def _minmax(vals: list[float]):
     return lambda x: (x - lo) / (hi - lo)
 
 
-def screen(cfg: config.AppConfig, codes: list[str]) -> list[dict]:
-    """返回按综合得分降序排列的候选标的列表（含因子明细）。"""
+def screen(cfg: config.AppConfig, codes: list[str], dp=None) -> list[dict]:
+    """返回按综合得分降序排列的候选标的列表（含因子明细）。
+
+    dp: DataProvider（可注入）。None 时回退默认数据源（腾讯/东财直连）。
+    """
     sc = cfg.screener
+    dp = dp or provider.default_provider()
     rows = []
     for code in codes:
         try:
-            kline = provider.fetch_kline(code, cfg.beg, cfg.end)
-            quote = provider.fetch_quote(code)
+            kline = dp.fetch_kline(code, cfg.beg, cfg.end)
+            quote = dp.fetch_quote(code)
         except Exception:
             continue
         if not kline or len(kline) < sc.momentum_window + 2:
