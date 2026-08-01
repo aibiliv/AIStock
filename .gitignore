@@ -51,6 +51,7 @@ Thumbs.db
 # ---- personal IDE / agent data (不共享的个人开发数据) ----
 .codebuddy/
 .workbuddy/
+.openai/
 /docs/
 
 # ---- local runtime data ----
@@ -65,6 +66,9 @@ Thumbs.db
 *.bak
 *.bak.*
 *.tmp
+
+# ---- local scripts (含测试凭证的本地调试脚本) ----
+/scripts/repro.mjs
 
 # ---- deploy marker (deploy.sh 记录上次构建的源码 commit) ----
 .last_build_commit
