@@ -7,7 +7,7 @@
  * 可用数据源（在 Cloudflare Workers 运行时均可用，仅需 fetch）：
  *   1) 东方财富 push2 / push2his —— 主源（个股实时、历史K线、PE/PB、市值、概念板块、资金流）
  *   2) 腾讯证券 / 新浪财经 —— 东方财富的后备（实时行情与K线）
- *   3) Yahoo Finance —— 深度兜底（K线；以及 PE/PB/ROE/行业等基本面）
+ *   3) 麦蕊（可选增强层，仅配置 token）—— ROE/净利/行业/简介等基本面深度字段
  *
  * 关于描述中另两家数据源在「本项目实际运行时」的可行性：
  *   - AKShare（_em 分支）：它本身不是数据源，只是抓取东方财富/新浪/交易所官网的公开网页接口。
@@ -59,16 +59,6 @@ function num(value: unknown): number | null {
 function eastmoneySecid(code: string): string {
   if (/^(5|6|9)/.test(code)) return `1.${code}`;
   return `0.${code}`;
-}
-
-/** 6 位代码 → Yahoo 符号（如 600000→600000.SS） */
-export function yahooSymbol(code: string): string {
-  if (/^\d{6}\.(SS|SZ|SH|BJ)$/i.test(code)) return code.toUpperCase();
-  if (/^\d{6}$/.test(code)) {
-    const p = code.startsWith("6") ? "SS" : code.startsWith("8") || code.startsWith("4") ? "BJ" : "SZ";
-    return `${code}.${p}`;
-  }
-  return code;
 }
 
 /** 6 位代码 → 腾讯符号（如 600000→sh600000） */
@@ -250,26 +240,8 @@ export async function getRealtime(code: string): Promise<RealtimeQuote | null> {
 }
 
 // ---------------------------------------------------------------------------
-// 历史 K 线：东方财富 → 腾讯 → Yahoo
+// 历史 K 线：东方财富 → 腾讯
 // ---------------------------------------------------------------------------
-
-type YahooChart = {
-  chart?: {
-    result?: Array<{
-      meta?: { regularMarketPrice?: number; regularMarketTime?: number; chartPreviousClose?: number };
-      timestamp?: number[];
-      indicators?: {
-        quote?: Array<{
-          open?: (number | null)[];
-          high?: (number | null)[];
-          low?: (number | null)[];
-          close?: (number | null)[];
-          volume?: (number | null)[];
-        }>;
-      };
-    }>;
-  };
-};
 
 async function eastmoneyKlines(code: string): Promise<KlineResult> {
   const secid = eastmoneySecid(code);
@@ -309,32 +281,10 @@ async function tencentKlines(code: string): Promise<KlineResult> {
   return { rows, sourceName: "腾讯证券历史K线", sourceUrl: `https://gu.qq.com/${ts}` };
 }
 
-async function yahooKlines(code: string): Promise<KlineResult> {
-  const symbol = yahooSymbol(code);
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?range=3y&interval=1d`;
-  const data = await fetchJson<YahooChart>(url);
-  const result = data.chart?.result?.[0];
-  const quote = result?.indicators?.quote?.[0];
-  const rows = (result?.timestamp ?? []).flatMap((ts, i) => {
-    const close = quote?.close?.[i];
-    if (!Number.isFinite(close)) return [];
-    return [{
-      date: new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date(ts * 1000)),
-      open: Number(quote?.open?.[i] ?? close),
-      high: Number(quote?.high?.[i] ?? close),
-      low: Number(quote?.low?.[i] ?? close),
-      close: Number(close),
-      volume: Number(quote?.volume?.[i] ?? 0),
-    }];
-  });
-  if (!result || rows.length < 20) throw new Error("YahooK线不足");
-  return { rows, sourceName: "Yahoo历史K线", sourceUrl: `https://finance.yahoo.com/quote/${symbol}` };
-}
-
 /** 历史日K，多级降级；全部失败抛错。 */
 export async function getKlines(code: string): Promise<KlineResult> {
   let lastError: unknown;
-  for (const provider of [eastmoneyKlines, tencentKlines, yahooKlines]) {
+  for (const provider of [eastmoneyKlines, tencentKlines]) {
     try {
       return await provider(code);
     } catch (error) {
@@ -345,7 +295,7 @@ export async function getKlines(code: string): Promise<KlineResult> {
 }
 
 // ---------------------------------------------------------------------------
-// 基本面：东方财富(名称/市值/PE/PB) + Yahoo(ROE/毛利率/净利率/行业/简介)
+// 基本面：东方财富(名称/市值/PE/PB) + 麦蕊(可选,ROE/净利/行业/简介) + 东财f100(行业/简介兜底)
 // ---------------------------------------------------------------------------
 
 async function eastmoneyProfile(code: string): Promise<Partial<StockProfile>> {
@@ -372,69 +322,55 @@ async function eastmoneyProfile(code: string): Promise<Partial<StockProfile>> {
   }
 }
 
-async function yahooProfile(code: string): Promise<StockProfile> {
-  const empty: StockProfile = {
-    name: null, marketCap: null, pe: null, pb: null, roe: null,
-    grossMargin: null, profitMargin: null, operatingCashflow: null,
-    sector: null, industry: null, businessSummary: null,
-  };
-  const symbol = yahooSymbol(code);
-  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=price,defaultKeyStatistics,financialData,assetProfile`;
+/** 东方财富「基本资料」(f100) 兜底：在国内环境稳定可用，提供行业与主营业务简介，
+ * 作为麦蕊未配置时的行业/简介兜底。 */
+async function eastmoneyF100Profile(code: string): Promise<Partial<StockProfile>> {
+  const secid = eastmoneySecid(code);
+  const url = `https://emweb.securities.eastmoney.com/PC_HSF10/BusinessAnalysis/PageAjax?code=${secid}`;
   try {
-    const res = await fetch(url, { headers: { "user-agent": UA }, signal: AbortSignal.timeout(15_000) });
-    if (!res.ok) return empty;
+    const res = await fetch(url, { headers: { "user-agent": UA, Referer: "https://emweb.securities.eastmoney.com/" }, signal: AbortSignal.timeout(TIMEOUT) });
+    if (!res.ok) return {};
     const data = await res.json() as {
-      quoteSummary?: {
-        result?: Array<{
-          price?: { marketCap?: { raw?: number }; trailingPE?: { raw?: number }; priceToBook?: { raw?: number }; shortName?: string; longName?: string };
-          financialData?: { returnOnEquity?: { raw?: number }; grossMargins?: { raw?: number }; profitMargins?: { raw?: number }; operatingCashflow?: { raw?: number } };
-          assetProfile?: { industry?: string; sector?: string; longBusinessSummary?: string };
-        }> | null;
-      };
+      MainBusiness?: Array<{ MAINOP_TYPE_NAME?: string; MAINOP_BUSINESS?: string }>;
     };
-    const result = data.quoteSummary?.result?.[0];
-    if (!result) return empty;
-    const nump = (v?: { raw?: number }) => (typeof v?.raw === "number" ? v.raw : null);
-    return {
-      name: result.price?.longName || result.price?.shortName || null,
-      marketCap: nump(result.price?.marketCap),
-      pe: nump(result.price?.trailingPE),
-      pb: nump(result.price?.priceToBook),
-      roe: nump(result.financialData?.returnOnEquity),
-      grossMargin: nump(result.financialData?.grossMargins),
-      profitMargin: nump(result.financialData?.profitMargins),
-      operatingCashflow: nump(result.financialData?.operatingCashflow),
-      sector: result.assetProfile?.sector ?? null,
-      industry: result.assetProfile?.industry ?? null,
-      businessSummary: result.assetProfile?.longBusinessSummary ?? null,
-    };
+    const main = data.MainBusiness ?? [];
+    const industry = main.find((item) => item.MAINOP_TYPE_NAME === "行业")?.MAINOP_BUSINESS?.trim() || null;
+    const businessSummary = main
+      .map((item) => `${item.MAINOP_TYPE_NAME ?? ""}:${item.MAINOP_BUSINESS ?? ""}`)
+      .slice(0, 4)
+      .join("；") || null;
+    return { industry, businessSummary };
   } catch {
-    return empty;
+    return {};
   }
 }
 
 /** 基本面资料。
  * 东方财富对 A 股的名称/总市值/PE/PB 更可靠优先；
- * roe/profitMargin/businessSummary/industry 优先用麦蕊（仅配置 token 时），否则 Yahoo 兜底。 */
+ * roe/profitMargin/businessSummary/industry 优先用麦蕊（仅配置 token 时），否则回退东方财富 f100。
+ * （历史上 Yahoo 也参与兜底，但其在 Cloudflare Workers 国内环境基本不可达、且会拖慢请求，已移除。） */
 export async function getProfile(code: string): Promise<StockProfile> {
   const mairuiEnabled = await isMairuiEnabled();
-  const [em, yh, mairui] = await Promise.all([
+  const [em, mairui, emF100] = await Promise.all([
     eastmoneyProfile(code),
-    yahooProfile(code),
     mairuiEnabled ? getMairuiFundamentals(code) : Promise.resolve(null),
+    eastmoneyF100Profile(code),
   ]);
   return {
-    name: em.name ?? yh.name,
-    marketCap: em.marketCap ?? yh.marketCap,
-    pe: em.pe ?? yh.pe,
-    pb: em.pb ?? yh.pb,
-    roe: mairui?.roe ?? yh.roe,
-    grossMargin: yh.grossMargin,
-    profitMargin: mairui?.profitMargin ?? yh.profitMargin,
-    operatingCashflow: yh.operatingCashflow,
-    sector: yh.sector,
-    industry: mairui?.industry ?? yh.industry,
-    businessSummary: mairui?.businessSummary ?? yh.businessSummary,
+    name: em.name,
+    marketCap: em.marketCap,
+    pe: em.pe,
+    pb: em.pb,
+    // 麦蕊(配置 token 时)提供 roe/profitMargin；grossMargin/operatingCashflow/sector
+    // 原由 Yahoo 提供，移除 Yahoo 后免费链路无稳定源，退化为 null（有 token 时麦蕊仍覆盖 roe/净利率）。
+    roe: mairui?.roe ?? null,
+    grossMargin: null,
+    profitMargin: mairui?.profitMargin ?? null,
+    operatingCashflow: null,
+    sector: null,
+    // 行业/简介：麦蕊优先 → 东方财富 f100 兜底（国内稳定）
+    industry: mairui?.industry ?? emF100.industry ?? null,
+    businessSummary: mairui?.businessSummary ?? emF100.businessSummary ?? null,
   };
 }
 

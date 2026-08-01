@@ -4,6 +4,7 @@ import { getDb, ensureSchema } from "../../../db";
 import { requireApiUser } from "../../../lib/auth";
 import { tradingPreferences } from "../../../db/schema";
 import { normalizePreferences, type TradingPreferences } from "../../../lib/preferences";
+import { shanghaiIso } from "../../../lib/time";
 
 export async function GET() {
   const unauthorized = await requireApiUser();
@@ -31,7 +32,7 @@ export async function PUT(request: NextRequest) {
     const next = normalizePreferences(body ?? {});
     await ensureSchema();
     const db = getDb();
-    const updatedAt = new Date().toISOString();
+    const updatedAt = shanghaiIso();
     await db
       .insert(tradingPreferences)
       .values({ id: 1, ...next, updatedAt })

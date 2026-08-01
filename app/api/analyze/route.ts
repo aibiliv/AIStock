@@ -6,6 +6,7 @@ import { requireApiUser } from "../../../lib/auth";
 import { DEFAULT_PREFERENCES, fetchPreferences } from "../../../lib/preferences";
 import { isValidContext, type AssistantContext } from "../../../lib/assistant";
 import { generateStrategy } from "../../../lib/trading-strategy";
+import { shanghaiIso } from "../../../lib/time";
 
 type DeepSeekResponse = {
   choices?: Array<{ message?: { content?: string } }>;
@@ -234,6 +235,7 @@ export async function POST(request: Request) {
           mode: analysis.mode,
           summary: analysis.explanation.summary,
           reportJson: JSON.stringify(result),
+          createdAt: shanghaiIso(),
         });
       } catch {
         return Response.json({ ...result, historyWarning: "分析结果正常，但本次历史记录未保存。" });

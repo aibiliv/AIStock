@@ -3,6 +3,7 @@ import { ensureSchema, getDb } from "../../../db";
 import { reviews, tradeRecords } from "../../../db/schema";
 import { buildTradeCycles, isStockCode } from "../../../lib/domain";
 import { requireApiUser } from "../../../lib/auth";
+import { shanghaiIso } from "../../../lib/time";
 
 export function parseReviewTags(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
@@ -83,6 +84,7 @@ export async function POST(request: Request) {
       tags: JSON.stringify(tags),
       deviationReason,
       resultCents: cycle.realizedCents,
+      createdAt: shanghaiIso(),
     }).returning();
     return Response.json({ review: { ...review, tags } }, { status: 201 });
   } catch {

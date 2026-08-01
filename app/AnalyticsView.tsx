@@ -8,6 +8,7 @@ import { EquityCurveChart } from "./equity-chart";
 import { calculateTradeStatistics } from "../lib/trade-statistics";
 import type { CapitalFlow, Trade } from "../lib/domain";
 import type { PortfolioInsights } from "../lib/portfolio-insights";
+import { shanghaiDate } from "../lib/time";
 
 export type AnalyticsReview = {
   cycleEndTradeId: number | null;
@@ -35,7 +36,7 @@ function pct(value: number): string {
 }
 
 function todayStamp(): string {
-  return new Date().toISOString().slice(0, 10);
+  return shanghaiDate();
 }
 
 export function AnalyticsView({

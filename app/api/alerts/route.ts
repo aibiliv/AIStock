@@ -2,6 +2,7 @@ import { desc, eq } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { alertRules } from "../../../db/schema";
 import { isStockCode, toMillis } from "../../../lib/domain";
+import { shanghaiIso } from "../../../lib/time";
 import { canonicalStockName } from "../../../lib/stocks";
 import { requireApiUser } from "../../../lib/auth";
 
@@ -62,8 +63,8 @@ export async function PATCH(request: Request) {
     const values = payload.action === "disable"
       ? { enabled: false }
       : payload.action === "acknowledge"
-        ? { acknowledgedAt: new Date().toISOString() }
-        : { triggeredAt: new Date().toISOString() };
+        ? { acknowledgedAt: shanghaiIso() }
+        : { triggeredAt: shanghaiIso() };
     const [alert] = await getDb().update(alertRules).set(values).where(eq(alertRules.id, id)).returning();
     return alert
       ? Response.json({ alert })

@@ -13,6 +13,7 @@ import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as schema from "../db/schema";
 import { ensureSchema, getDb } from "../db";
 import { getRealtime } from "./market-data";
+import { shanghaiIso } from "./time";
 
 type NotifyEnv = {
   NOTIFY_WEBHOOK_URLS?: string;
@@ -98,7 +99,7 @@ export async function checkAndNotifyAlerts(
     errors.push(...(await sendNotify(env, title, message)));
     await db
       .update(schema.alertRules)
-      .set({ triggeredAt: new Date().toISOString() })
+      .set({ triggeredAt: shanghaiIso() })
       .where(eq(schema.alertRules.id, rule.id));
     notified += 1;
   }

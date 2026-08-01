@@ -136,8 +136,8 @@ export async function getMairuiRealtime(code: string): Promise<MairuiRealtime | 
 
 // ---------------------------------------------------------------------------
 // 财务与资料增强层（cwzb 财务指标 / gsjj 公司简介 / zg 概念树提取行业）。
-// 用于覆盖 / 补充 Yahoo 独供字段（roe / profitMargin / businessSummary /
-// industry）。Yahoo 在国内常被限流，麦蕊作为原生 A 股数据源更稳定。
+// 补充 MarketDataProvider 免费链路不覆盖的 roe / profitMargin / businessSummary /
+// industry 字段；麦蕊作为原生 A 股数据源，比已移除的 Yahoo 兜底更稳定。
 //
 // 字段真相（已用真实接口核对）：
 //   cwzb.jzsy = 净资产收益率(%)、cwzb.xsjl = 销售净利率(%) —— 均为百分比数值，
