@@ -2043,18 +2043,24 @@ function FloatingAssistantLauncher(
                     <option value="">{linked ? "切换关联股票…" : "关联股票提问…"}</option>
                     {watchlist.length > 0 && (
                       <optgroup label="自选股">
-                        {watchlist.map((item) => (
-                          <option key={item.id} value={item.symbol}>{item.name}（{item.symbol}）</option>
-                        ))}
+                        {watchlist.map((item) => {
+                          const label = item.name && item.name !== item.symbol
+                            ? `${item.name}（${item.symbol}）`
+                            : item.symbol;
+                          return <option key={item.id} value={item.symbol}>{label}</option>;
+                        })}
                       </optgroup>
                     )}
                     {recentAnalyses.length > 0 && (
                       <optgroup label="最近分析">
                         {recentAnalyses
                           .filter((item) => !watchlist.some((w) => w.symbol === item.stock.code))
-                          .map((item) => (
-                            <option key={item.stock.code} value={item.stock.code}>{item.stock.name}（{item.stock.code}）</option>
-                          ))}
+                          .map((item) => {
+                            const label = item.stock.name && item.stock.name !== item.stock.code
+                              ? `${item.stock.name}（${item.stock.code}）`
+                              : item.stock.code;
+                            return <option key={item.stock.code} value={item.stock.code}>{label}</option>;
+                          })}
                       </optgroup>
                     )}
                   </select>
