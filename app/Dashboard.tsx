@@ -10,7 +10,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useSearchParams, usePathname } from "next/navigation";
 import { SectionHeader, Badge, Stat, Button, IconButton, Field, Input, Select, Textarea, Banner, Hint } from "./components";
 import { AnalyticsView } from "./AnalyticsView";
 import { ImportPanel } from "./ImportPanel";
@@ -300,7 +300,6 @@ async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
 
 export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string }) {
   const [view, setView] = useState<View>("home");
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const VALID_VIEWS: View[] = ["home", "analysis", "watchlist", "trades", "settings", "analytics", "scan"];
@@ -338,15 +337,22 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
 
   function navigate(nextView: View, symbolOverride?: string) {
     setView(nextView);
+    // 仅更新地址栏 URL，不触发 Next.js 路由/服务端重渲染，
+    // 否则 force-dynamic 的 page.tsx 会重新执行并让 Dashboard 重新挂载，
+    // 导致 view 先重置为 home 再被 URL 恢复，表现为“先闪首页再跳转”。
+    const params = new URLSearchParams(searchParams.toString());
     if (nextView === "home") {
-      router.replace(pathname);
-      return;
+      params.delete("view");
+      params.delete("symbol");
+    } else {
+      params.set("view", nextView);
+      const symbol = symbolOverride?.trim() || query.trim();
+      if (nextView === "analysis" && symbol) params.set("symbol", symbol);
+      else params.delete("symbol");
     }
-    const params = new URLSearchParams();
-    params.set("view", nextView);
-    const symbol = symbolOverride?.trim() || query.trim();
-    if (nextView === "analysis" && symbol) params.set("symbol", symbol);
-    router.replace(`${pathname}?${params.toString()}`);
+    const queryString = params.toString();
+    const url = queryString ? `${pathname}?${queryString}` : pathname;
+    window.history.replaceState(window.history.state, "", url);
   }
 
   const portfolio = useMemo(() => calculatePortfolio(trades), [trades]);
