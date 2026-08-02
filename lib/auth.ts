@@ -7,13 +7,10 @@ import { users } from "../db/schema";
 import {
   createSessionToken,
   verifyToken,
-  signToken,
   safeEqual,
   generateSalt,
   hashPassword,
-  bytesToBase64Url,
   SESSION_SECONDS,
-  type SessionUser,
 } from "./crypto";
 
 export type AuthenticatedUser = {
@@ -25,7 +22,6 @@ export type AuthenticatedUser = {
 };
 
 const COOKIE_NAME = "stock_assistant_session";
-const SESSION_SECONDS = 60 * 60 * 24 * 30;
 
 type AuthConfig = {
   secret: string;
@@ -38,6 +34,14 @@ export function isAuthConfigured(): boolean {
 }
 
 export async function getAuthenticatedUser(): Promise<AuthenticatedUser | null> {
+  // 任何鉴权请求都先确保 schema 就绪（建表 + 初始化超级管理员 + 老数据归属）。
+  // 这样首次部署后无需先走登录接口也能建表，避免未登录请求提前返回 401 导致表永不创建。
+  try {
+    await ensureSchema();
+  } catch {
+    // 建表失败不应阻断鉴权流程，交由后续逻辑处理
+  }
+
   const config = getAuthConfig();
   if (!config) return null;
 

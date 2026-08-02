@@ -1,26 +1,19 @@
 /**
- * 一次性维护脚本：将指定用户升级为超级管理员（role = 'super_admin'）。
+ * 一次性维护脚本：重置指定用户的登录密码（与 lib/crypto.ts 的 pbkdf2Hash 保持一致的算法）。
  *
  * 适用场景：
- *  - 老库（已部署服务器）从单用户迁移到多用户隔离架构后，登录账号 role 仍是 'user'，
- *    导致设置页看不到「用户管理」模块。
- *  - 也适用于修复 init 逻辑在「库非空但无 super_admin」时的静默回退问题。
+ *  - APP_PASSWORD 明文曾泄露，需要为 admin 重设一个更安全的密码；
+ *  - 忘记密码后强制重置。
  *
  * 用法（在服务器宿主机执行，直接操作 miniflare 的 D1 sqlite 文件）：
- *   npx tsx scripts/make-admin.ts <username> [--db <path-to.sqlite>]
+ *   npx tsx scripts/reset-password.ts <username> <newPassword> [--db <path-to.sqlite>]
  *
- * 参数：
- *   username  要升级为超级管理员的登录用户名（如 admin）
- *   --db      指定 D1 sqlite 文件路径；不传则自动在 data/ 下扫描第一个 *.sqlite
- *
- * 注意：
- *  - miniflare 的 D1 文件可能处于 WAL 模式，脚本会先执行 wal_checkpoint(FULL) 再改，
- *    确保读到的数据是最新的、且改动能落盘。
- *  - 修改前会自动打印当前 users 表，便于确认。
+ * 算法：PBKDF2(SHA-256, salt=16字节随机, iterations=100_000)，salt/hash 以 base64url 存入。
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { webcrypto } from "node:crypto";
 
 function fail(message: string): never {
   console.error(`\n[错误] ${message}`);
@@ -74,60 +67,64 @@ function sqlite(db: string, sql: string): string {
   return execFileSync("sqlite3", [db, sql], { encoding: "utf8" }).trim();
 }
 
-function main(): void {
+function bytesToBase64Url(bytes: Uint8Array): string {
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return Buffer.from(bin, "binary").toString("base64url");
+}
+
+async function pbkdf2Hash(password: string, salt: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const keyMaterial = await webcrypto.subtle.importKey(
+    "raw",
+    encoder.encode(password),
+    { name: "PBKDF2" },
+    false,
+    ["deriveBits"],
+  );
+  const bits = await webcrypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: encoder.encode(salt), iterations: 100_000, hash: "SHA-256" },
+    keyMaterial,
+    256,
+  );
+  return bytesToBase64Url(new Uint8Array(bits));
+}
+
+async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const positional = args.filter((a) => !a.startsWith("--"));
   const flagDb = args.find((a) => a.startsWith("--db="))?.split("=")[1];
-  const dbFlagIdx = args.findIndex((a) => a.startsWith("--db"));
-  if (dbFlagIdx >= 0 && !flagDb && args[dbFlagIdx + 1]) {
-    // 兼容 --db <path> 写法
-  }
 
   const username = positional[0];
-  if (!username) {
-    fail("缺少用户名参数。用法：npx tsx scripts/make-admin.ts <username> [--db <path>]");
+  const newPassword = positional[1];
+  if (!username || !newPassword) {
+    fail("缺少参数。用法：npx tsx scripts/reset-password.ts <username> <newPassword> [--db <path>]");
+  }
+  if (newPassword.length < 12) {
+    fail("新密码至少 12 位（与 APP_PASSWORD 校验规则一致）。");
   }
 
   let db = flagDb;
-  if (!db && dbFlagIdx >= 0 && args[dbFlagIdx + 1]) {
-    db = args[dbFlagIdx + 1];
-  }
-  if (!db) {
-    db = findDbPath() ?? undefined;
-  }
+  if (!db) db = findDbPath() ?? undefined;
   if (!db || !existsSync(db)) {
-    fail(
-      `找不到 D1 sqlite 文件。请显式指定：--db <path>\n` +
-        `  例如：npx tsx scripts/make-admin.ts ${username} --db data/v3/d1/miniflare-D1DatabaseObject/xxxx.sqlite`,
-    );
+    fail("找不到含 users 表的 D1 sqlite 文件。请显式指定：--db <path>");
   }
   console.log(`[信息] 使用数据库：${db}`);
 
-  // 检查 sqlite3 CLI 是否可用
   try {
     execFileSync("sqlite3", ["--version"], { encoding: "utf8" });
   } catch {
     fail("未检测到 sqlite3 CLI。请先安装：sudo apt-get install -y sqlite3");
   }
 
-  // 1) WAL 落盘
+  // WAL 落盘
   try {
     sqlite(db, "PRAGMA wal_checkpoint(FULL);");
-    console.log("[信息] 已执行 wal_checkpoint(FULL)，WAL 数据已合并。");
   } catch (e) {
     console.warn(`[警告] wal_checkpoint 失败（可忽略）：${(e as Error).message}`);
   }
 
-  // 2) 打印当前用户表
-  console.log("\n[当前 users 表]");
-  try {
-    const rows = sqlite(db, "SELECT id, username, role, disabled FROM users ORDER BY id ASC;");
-    console.log(rows || "(空)");
-  } catch (e) {
-    fail(`读取 users 表失败：${(e as Error).message}`);
-  }
-
-  // 3) 校验目标用户存在
+  // 确认用户存在
   let targetId: number | null = null;
   try {
     const row = sqlite(db, `SELECT id FROM users WHERE username = '${username.replace(/'/g, "''")}';`);
@@ -139,20 +136,22 @@ function main(): void {
     fail(`用户 "${username}" 不存在于 users 表。`);
   }
 
-  // 4) 升级为 super_admin
+  // 生成 salt + hash
+  const saltBytes = webcrypto.getRandomValues(new Uint8Array(16));
+  const salt = bytesToBase64Url(saltBytes);
+  const hash = await pbkdf2Hash(newPassword, salt);
+
   try {
-    sqlite(db, `UPDATE users SET role = 'super_admin' WHERE id = ${targetId};`);
+    sqlite(
+      db,
+      `UPDATE users SET passwordSalt = '${salt}', passwordHash = '${hash}', disabled = 0 WHERE id = ${targetId};`,
+    );
   } catch (e) {
-    fail(`升级失败：${(e as Error).message}`);
+    fail(`更新密码失败：${(e as Error).message}`);
   }
 
-  // 5) 校验结果
-  const after = sqlite(db, `SELECT id, username, role FROM users WHERE id = ${targetId};`);
-  console.log(`\n[成功] 已将用户升级为超级管理员：\n${after}`);
-  console.log("\n下一步：");
-  console.log("  1. 重新构建部署（REBUILD=1 ./deploy.sh），让 ensureSchema 的新逻辑 + 加列生效。");
-  console.log("  2. 退出当前会话，用该账号重新登录（session token 重新签发才会携带 role=super_admin）。");
-  console.log("  3. 设置页将出现「用户管理」模块。");
+  console.log(`\n[成功] 已为账号 "${username}" (id=${targetId}) 重置密码并启用。`);
+  console.log("下一步：用新密码重新登录。旧 session 仍可登录，但建议重新登录以获取最新角色信息。");
 }
 
 main();
