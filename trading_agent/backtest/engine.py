@@ -56,7 +56,15 @@ def backtest(code_klines: dict, code_signals: dict, cfg: config.AppConfig) -> di
     for d in common:
         vals = []
         for c in per_code.values():
-            vals.append(c["d2e"].get(d, c["d2e"].get(max((x for x in c["dates"] if x <= d), default=common[0]))))
+            v = c["d2e"].get(d)
+            if v is None:
+                earlier = [x for x in c["dates"] if x <= d]
+                if earlier:
+                    v = c["d2e"].get(max(earlier))
+                else:
+                    # d 早于该标的首个交易日（次新股等）：沿用起始净值（carry-forward）
+                    v = c["equity"][0] if c["equity"] else 0.0
+            vals.append(v)
         portfolio.append(sum(vals) / n_codes)
 
     total_trades = sum(c["trades"] for c in per_code.values())

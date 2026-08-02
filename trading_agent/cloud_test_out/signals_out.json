@@ -1,0 +1,72 @@
+[
+  {
+    "code": "603696",
+    "name": "安记食品",
+    "side": "BUY",
+    "price": 13.44,
+    "quantity": 100
+  },
+  {
+    "code": "002279",
+    "name": "久其软件",
+    "side": "BUY",
+    "price": 6.9,
+    "quantity": 100
+  },
+  {
+    "code": "600693",
+    "name": "东百集团",
+    "side": "BUY",
+    "price": 9.44,
+    "quantity": 100
+  },
+  {
+    "code": "002703",
+    "name": "浙江世宝",
+    "side": "BUY",
+    "price": 14.57,
+    "quantity": 100
+  },
+  {
+    "code": "001258",
+    "name": "立新能源",
+    "side": "BUY",
+    "price": 12.34,
+    "quantity": 100
+  },
+  {
+    "code": "000533",
+    "name": "顺钠股份",
+    "side": "BUY",
+    "price": 10.41,
+    "quantity": 100
+  },
+  {
+    "code": "002400",
+    "name": "省广集团",
+    "side": "BUY",
+    "price": 6.8,
+    "quantity": 100
+  },
+  {
+    "code": "002580",
+    "name": "圣阳股份",
+    "side": "BUY",
+    "price": 19.47,
+    "quantity": 100
+  },
+  {
+    "code": "603580",
+    "name": "艾艾精工",
+    "side": "BUY",
+    "price": 52.9,
+    "quantity": 100
+  },
+  {
+    "code": "002612",
+    "name": "朗姿股份",
+    "side": "BUY",
+    "price": 14.79,
+    "quantity": 100
+  }
+]
