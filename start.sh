@@ -31,5 +31,5 @@ node --input-type=module -e '
 
 exec npx wrangler dev --local \
   --config wrangler.json --no-bundle \
-  --ip 0.0.0.0 --port 8787 \
+  --ip 0.0.0.0 --port 9003 \
   --persist-to /data --show-interactive-dev-session=false
