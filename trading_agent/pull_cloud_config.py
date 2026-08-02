@@ -105,14 +105,24 @@ def login(base: str, user: str, password: str) -> str | None:
     return None
 
 
-def fetch_cloud_config_raw(base: str, cookie: str):
-    """登录态下 GET /api/strategy-scan/config，返回 (status, obj, raw)。
+def fetch_cloud_config_raw(base: str, cookie: str, token: str | None = None):
+    """登录态下（或凭推送令牌）GET /api/strategy-scan/config，返回 (status, obj, raw)。
 
-    raw 为接口原始响应文本，供调用方计算内容指纹（SHA-256）以做云端溯源证明。
+    - 优先使用会话 Cookie（浏览器登录态）；若为空，自动读取环境变量
+      CLOUD_SCAN_TOKEN 作为 x-push-token 头下发，使本地程序/自动化在无浏览器
+      会话时也能拉取配置（多用户改造后接口要求登录，令牌与扫描/回写推送同源）。
+    - raw 为接口原始响应文本，供调用方计算内容指纹（SHA-256）以做云端溯源证明。
     """
+    if not token:
+        token = os.environ.get("CLOUD_SCAN_TOKEN") or ""
     url = base.rstrip("/") + "/api/strategy-scan/config"
+    headers: dict = {}
+    if cookie:
+        headers["Cookie"] = cookie
+    if token:
+        headers["x-push-token"] = token
     try:
-        req = Request(url, method="GET", headers={"Cookie": cookie})
+        req = Request(url, method="GET", headers=headers)
         with urlopen(req, timeout=20) as resp:
             raw = resp.read().decode("utf-8", "replace")
             status = resp.status

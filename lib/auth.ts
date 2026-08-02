@@ -66,6 +66,38 @@ export async function requireApiUser(): Promise<Response | null> {
   return Response.json({ error: "请先登录后再使用" }, { status: 401 });
 }
 
+/** 推送令牌（与扫描/回写推送同源）：STRATEGY_PUSH_TOKEN，未设置时回退 CRON_SECRET。 */
+export function pushSharedSecret(): string | undefined {
+  const runtimeEnv = env as unknown as {
+    STRATEGY_PUSH_TOKEN?: string;
+    CRON_SECRET?: string;
+  };
+  return runtimeEnv.STRATEGY_PUSH_TOKEN || runtimeEnv.CRON_SECRET || undefined;
+}
+
+/**
+ * 登录会话「或」推送令牌任一通过即可（用于读取类接口，如策略配置 GET）。
+ *
+ * 设计意图：多用户改造后所有 API 都要求登录会话（requireApiUser）。
+ * 但本地程序 / 自动化（run_hub / pull_cloud_config）是无浏览器会话的机器调用，
+ * 靠 admin 密码登录容易因云端管理员密码变更而失败。允许复用已验证可用的
+ * 推送令牌（x-push-token）拉取配置，避免「多用户」登录态导致云端配置拉取失败。
+ * 写入类接口（如保存配置 POST）仍保持 requireApiUser，不开放令牌写入。
+ */
+export async function requireApiUserOrPushToken(
+  req: Request,
+): Promise<Response | null> {
+  const user = await getAuthenticatedUser();
+  if (user) return null;
+  const secret = pushSharedSecret();
+  const provided =
+    req.headers.get("x-push-token") ||
+    req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||
+    undefined;
+  if (secret && provided === secret) return null;
+  return Response.json({ error: "请先登录后再使用" }, { status: 401 });
+}
+
 /** 当前登录用户，未登录抛 401 Response（供需要 userId 的路由快速取用）。 */
 export async function getCurrentUser(): Promise<AuthenticatedUser> {
   const user = await getAuthenticatedUser();

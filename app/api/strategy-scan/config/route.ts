@@ -1,4 +1,4 @@
-import { requireApiUser } from "../../../../lib/auth";
+import { requireApiUser, requireApiUserOrPushToken } from "../../../../lib/auth";
 import { execFileSync } from "child_process";
 import type { NextRequest } from "next/server";
 import {
@@ -114,8 +114,8 @@ const FALLBACK_CONFIG = {
   },
 };
 
-export async function GET() {
-  const unauthorized = await requireApiUser();
+export async function GET(req: Request) {
+  const unauthorized = await requireApiUserOrPushToken(req);
   if (unauthorized) return unauthorized;
 
   // 优先返回前端已保存的云端配置；读不到才走 exec / 回退默认。
