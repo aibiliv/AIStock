@@ -348,6 +348,8 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
   const [error, setError] = useState("");
   const notified = useRef(new Set<number>());
   const pendingQuotes = useRef(new Set<string>());
+  /** 选股榜单点击"分析"时暂存的行数据，fetchAnalysis 消费后清空 */
+  const pendingScreenerContext = useRef<import("./StrategyScanView").ScanSelected | null>(null);
 
   function navigate(nextView: View, symbolOverride?: string) {
     setView(nextView);
@@ -443,11 +445,19 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
       setError("");
       setAnalysis(null);
     }
+    // 取出并清空选股榜单上下文（一次性消费）
+    const screenerCtx = pendingScreenerContext.current;
+    pendingScreenerContext.current = null;
     try {
       const result = await jsonRequest<Analysis>("/api/analyze", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ query: stockQuery, saveHistory: showResult, explain: showResult }),
+        body: JSON.stringify({
+          query: stockQuery,
+          saveHistory: showResult,
+          explain: showResult,
+          ...(screenerCtx ? { screenerContext: screenerCtx } : {}),
+        }),
       });
       setQuotes((current) => ({ ...current, [result.stock.code]: result }));
       if (showResult) {
@@ -545,8 +555,10 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
     await fetchAnalysis(query);
   }
 
-  async function analyzeAndOpen(symbol: string) {
+  async function analyzeAndOpen(symbol: string, screenerContext?: import("./StrategyScanView").ScanSelected) {
     setQuery(symbol);
+    // 将选股榜单行数据暂存，供 fetchAnalysis 携带至 AI 分析接口
+    pendingScreenerContext.current = screenerContext ?? null;
     navigate("analysis", symbol);
   }
 

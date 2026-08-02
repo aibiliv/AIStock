@@ -98,7 +98,11 @@ function slimFactsForPrompt(facts: Awaited<ReturnType<typeof analyzeStockData>>)
   };
 }
 
-async function getDeepSeekExplanation(facts: Awaited<ReturnType<typeof analyzeStockData>>, userId: number) {
+async function getDeepSeekExplanation(
+  facts: Awaited<ReturnType<typeof analyzeStockData>>,
+  userId: number,
+  screenerContext?: { code: string; name: string; score: number; momentum: number; peTtm: number; pb: number; turnover: number; signals: number; rsi?: number; riskAdjMomentum?: number; trend?: number; factors?: Record<string, number>; sector?: string },
+) {
   const fallback = automaticExplanation(facts);
   const ai = getAiConfig();
   if (!ai.configured) {
@@ -150,6 +154,36 @@ async function getDeepSeekExplanation(facts: Awaited<ReturnType<typeof analyzeSt
               `enforce_stop_loss=${prefs.enforceStopLoss ? "是" : "否"}`,
               `discipline_note=${prefs.disciplineNote || "（未填写）"}`,
               "解读时可结合上述风险偏好做个性化表述（例如当前波动是否明显大于其单笔可亏阈值、该股是否可能触及单股集中度上限），但只做提示、不给买卖建议，且不得编造任何数字。",
+              ...(screenerContext ? [
+                "",
+                "【选股榜单上下文（多因子打分结果）】",
+                "以下数据来自用户使用的选股策略扫描结果，代表该股在候选池中的量化表现。你必须在 summary 中结合这些因子数据给出针对性解读，但不得据此给出买卖建议。字段含义与单位：",
+                "- screenerScore: 综合选股得分（0~1，越高越优，按策略权重加权各归一化因子得出）",
+                "- momentum20d: 20 日动量，小数形式（0.05 表示 20 日涨 5%，可为负）",
+                "- rsi: RSI 指标（0~100，>70 超买，<30 超卖）",
+                "- riskAdjMomentum: 风险调整动量（0~1，剔除高波动后的动量强度）",
+                "- trend: 趋势强度（0~1，越高趋势越明确向上）",
+                "- peTtm: 动态市盈率（倍）",
+                "- pb: 市净率（倍）",
+                "- turnoverPct: 换手率（百分比数值，如 3.5 表示 3.5%）",
+                "- signalCount: 该技术策略触发的买卖信号数量（0 表示无信号）",
+                "- sector: 所属行业",
+                "- factors: 各因子归一化得分字典（0~1，键含 momentum/rsi/macd/trend/value/liquidity/size/quality，值越高代表该因子表现越强）",
+                "原始数据：",
+                JSON.stringify({
+                  screenerScore: screenerContext.score,
+                  momentum20d: screenerContext.momentum,
+                  rsi: screenerContext.rsi ?? null,
+                  riskAdjMomentum: screenerContext.riskAdjMomentum ?? null,
+                  trend: screenerContext.trend ?? null,
+                  peTtm: screenerContext.peTtm,
+                  pb: screenerContext.pb,
+                  turnoverPct: screenerContext.turnover,
+                  signalCount: screenerContext.signals,
+                  sector: screenerContext.sector ?? null,
+                  factors: screenerContext.factors ?? null,
+                }),
+              ] : []),
             ].join("\n"),
           },
           {
@@ -191,6 +225,13 @@ export async function POST(request: Request) {
       explain?: boolean;
       strategy?: boolean;
       context?: unknown;
+      /** 选股榜单行数据（点击"分析"时传入的因子打分上下文） */
+      screenerContext?: {
+        code: string; name: string; score: number; momentum: number;
+        peTtm: number; pb: number; turnover: number; signals: number;
+        rsi?: number; riskAdjMomentum?: number; trend?: number;
+        factors?: Record<string, number>; sector?: string;
+      };
     };
     const query = payload.query?.trim() ?? "";
     if (!query || query.length > 30) {
@@ -200,7 +241,7 @@ export async function POST(request: Request) {
     const facts = await analyzeStockData(query);
     const analysis = payload.explain === false || facts.stock.instrumentType === "etf"
       ? { mode: "automatic" as const, explanation: automaticExplanation(facts) }
-      : await getDeepSeekExplanation(facts, user.id);
+      : await getDeepSeekExplanation(facts, user.id, payload.screenerContext);
     const result = { ...facts, ...analysis };
 
     if (payload.strategy) {

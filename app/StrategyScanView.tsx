@@ -184,8 +184,8 @@ export function StrategyScanView({
   watchlistItems?: { symbol: string }[];
   /** 加入关注回调 */
   onAddWatch?: (code: string, name: string) => Promise<void>;
-  /** 查看分析回调（跳转到分析页） */
-  onAnalyze?: (symbol: string) => void;
+  /** 查看分析回调（跳转到分析页，可选传入选股榜单行数据作为 AI 分析上下文） */
+  onAnalyze?: (symbol: string, screenerContext?: ScanSelected) => void;
 }) {
   const [scan, setScan] = useState<Scan | null>(initialData?.ok ? initialData.scan ?? null : null);
   // 若顶层已预取数据，则直接进入“已加载”状态，避免进入时骨架屏闪烁一次
@@ -479,7 +479,7 @@ export function StrategyScanView({
                         <button
                           type="button"
                           className="scan-action-btn scan-action-btn--analyze"
-                          onClick={() => onAnalyze(s.code)}
+                          onClick={() => onAnalyze?.(s.code, s)}
                           title="查看分析"
                         >
                           分析
