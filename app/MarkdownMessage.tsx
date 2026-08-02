@@ -12,11 +12,12 @@ import remarkBreaks from "remark-breaks";
 
 type MarkdownMessageProps = {
   content: string;
+  className?: string;
 };
 
-export const MarkdownMessage = memo(function MarkdownMessage({ content }: MarkdownMessageProps) {
+export const MarkdownMessage = memo(function MarkdownMessage({ content, className = "" }: MarkdownMessageProps) {
   return (
-    <div className="markdown-body">
+    <div className={`markdown-body ${className}`.trim()}>
       <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{content}</ReactMarkdown>
     </div>
   );

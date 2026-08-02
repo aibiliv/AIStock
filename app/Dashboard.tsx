@@ -41,7 +41,13 @@ import {
   Bot,
   Sparkles,
   ShieldCheck,
+  ShieldAlert,
+  RefreshCw,
   LogOut,
+  Target,
+  ClipboardCheck,
+  Scale,
+  ArrowRightCircle,
   Star,
   Trash2,
   Wallet,
@@ -1792,6 +1798,47 @@ function buildAnalysisContext(
   };
 }
 
+const STRATEGY_BLOCK_META: Record<string, { icon: React.ReactNode; cls: string; label: string }> = {
+  结论: { icon: <Target size={15} />, cls: "strategy-block--verdict", label: "结论" },
+  依据: { icon: <ClipboardCheck size={15} />, cls: "strategy-block--basis", label: "依据" },
+  建议仓位: { icon: <Scale size={15} />, cls: "strategy-block--position", label: "建议仓位" },
+  仓位与止损: { icon: <Scale size={15} />, cls: "strategy-block--position", label: "仓位与止损" },
+  风险与缺口: { icon: <ShieldAlert size={15} />, cls: "strategy-block--risk", label: "风险与缺口" },
+  下一步: { icon: <ArrowRightCircle size={15} />, cls: "strategy-block--next", label: "下一步" },
+};
+
+function StrategyBlocks({ content }: { content: string }) {
+  const lines = content.split("\n").map((line) => line.trim()).filter(Boolean);
+  return (
+    <div className="strategy-blocks">
+      {lines.map((line, index) => {
+        const match = line.match(/^([：:])\s*(.*)$/);
+        const label = match ? line.slice(0, line.indexOf(match[2])) : "";
+        const body = match ? match[2] : line;
+        const meta = label ? STRATEGY_BLOCK_META[label] : undefined;
+        if (!meta) {
+          return (
+            <div key={index} className="strategy-block strategy-block--plain">
+              <p>{line}</p>
+            </div>
+          );
+        }
+        return (
+          <div key={index} className={`strategy-block ${meta.cls}`}>
+            <div className="strategy-block__head">
+              <span className="strategy-block__icon">{meta.icon}</span>
+              <span className="strategy-block__label">{meta.label}</span>
+            </div>
+            <div className="strategy-block__body strategy-table-wrap">
+              <MarkdownMessage content={body} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function StrategyCard({ analysis, position, portfolioInsights }: {
   analysis: Analysis;
   position: Position | null;
@@ -1821,29 +1868,76 @@ function StrategyCard({ analysis, position, portfolioInsights }: {
     }
   }
 
+  const modeLabel = strategy
+    ? strategy.mode === "deepseek" ? "AI 生成" : strategy.mode === "openai" ? "AI 生成" : "规则兜底"
+    : undefined;
+
   return (
     <section className="panel strategy-card">
       <SectionHeader
         eyebrow="操盘手视角 · 结合我的账户"
         title="当前交易策略"
-        actions={strategy ? <Badge tone="accent">{strategy.mode === "deepseek" ? "AI" : "算"}</Badge> : undefined}
+        subtitle={strategy ? "基于你的持仓、账户资金与交易纪律生成" : "结合持仓成本与交易纪律，给出可执行建议"}
+        actions={modeLabel ? <Badge tone="accent">{modeLabel}</Badge> : undefined}
       />
       {!strategy && !error && (
-        <Button variant="primary" block disabled={loading} onClick={() => void generate()}>
-          {loading ? "正在生成…" : "结合我的持仓生成策略"}
-        </Button>
-      )}
-      {loading && <p className="strategy-loading">正在结合你的持仓、账户资金与交易纪律生成策略…</p>}
-      {error && <p className="strategy-error">{error}</p>}
-      {!loading && !error && strategy && (
-        <>
-          <MarkdownMessage content={strategy.content} />
-          <Button variant="ghost" block disabled={loading} onClick={() => void generate()}>
-            重新生成
+        <div className="strategy-empty">
+          <div className="strategy-empty__icon">
+            <Sparkles size={28} />
+          </div>
+          <div className="strategy-empty__text">
+            <p>结合你的账户资金、持仓成本与交易纪律，生成个性化买卖策略。</p>
+            <span className="strategy-empty__hint">策略会给出是否买入/加仓/持有/减仓/清仓、建议仓位与止损位。</span>
+          </div>
+          <Button
+            variant="primary"
+            block
+            disabled={loading}
+            onClick={() => void generate()}
+            iconLeft={<Sparkles size={16} />}
+          >
+            {loading ? "正在生成…" : "结合我的持仓生成策略"}
           </Button>
-        </>
+        </div>
       )}
-      <small className="assistant-disclaimer">策略仅基于当前页面数据、个人记录与交易纪律生成，不构成投资建议，最终由你确认执行。</small>
+      {loading && (
+        <div className="strategy-loading">
+          <span className="strategy-loading__dot" />
+          <span>正在结合你的持仓、账户资金与交易纪律生成策略…</span>
+        </div>
+      )}
+      {error && (
+        <div className="strategy-error">
+          <ShieldAlert size={18} />
+          <span>{error}</span>
+        </div>
+      )}
+      {!loading && !error && strategy && (
+        <div className="strategy-content">
+          <StrategyBlocks content={strategy.content} />
+          <div className="strategy-footer">
+            <p className="strategy-disclaimer">
+              <ShieldCheck size={14} />
+              策略仅基于当前页面数据、个人记录与交易纪律生成，不构成投资建议，最终由你确认执行。
+            </p>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={loading}
+              onClick={() => void generate()}
+              iconLeft={<RefreshCw size={14} />}
+            >
+              重新生成
+            </Button>
+          </div>
+        </div>
+      )}
+      {!strategy && (
+        <p className="strategy-disclaimer strategy-disclaimer--bottom">
+          <ShieldCheck size={14} />
+          策略仅基于当前页面数据、个人记录与交易纪律生成，不构成投资建议，最终由你确认执行。
+        </p>
+      )}
     </section>
   );
 }
