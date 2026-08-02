@@ -28,6 +28,8 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
+import subprocess
 import sys
 from datetime import datetime
 from urllib.request import Request, urlopen
@@ -403,6 +405,259 @@ def push_wechat(payload: dict, signals: list[dict]) -> bool:
     return False
 
 
+def render_wecom_markdown(payload: dict, signals: list[dict], receipt: dict | None) -> str:
+    """把选股结果渲染成企业微信群机器人 webhook 用的 Markdown 正文。"""
+    sel = payload.get("selected", [])
+    bm = payload.get("backtest", {}).get("baseMetrics", {})
+    ms = payload.get("marketState", {}) or {}
+    date = datetime.now().strftime("%Y-%m-%d")
+    lines: list[str] = []
+    lines.append(f"# 盘前选股 {date}")
+    lines.append("")
+    state = ms.get("state", "unknown")
+    detail = ms.get("detail", "")
+    lines.append(f"**牛熊判定**：{state}（仓位系数 {ms.get('positionFactor', 1.0)}）")
+    if detail:
+        lines.append(f"> {detail}")
+    lines.append("")
+    lines.append(f"**入选 {payload.get('selectedCount', len(sel))} 只**（候选池 {payload.get('universeSize', 0)} 只）")
+    if sel:
+        for r in sel:
+            lines.append(
+                f"- {r['code']} {r.get('name','')}｜得分 {r.get('score',0):.2f}"
+                f"｜PE {r.get('peTtm')}｜PB {r.get('pb')}｜动量 {r.get('momentum',0)*100:.1f}%"
+                f"｜RSI {r.get('rsi')}"
+            )
+    else:
+        lines.append("- （今日无入选）")
+    lines.append("")
+    lines.append(
+        f"**基准回测**｜交易 {bm.get('trades')}｜总收益 {bm.get('totalReturn')}｜夏普 {bm.get('sharpe')}"
+    )
+    if signals:
+        lines.append("")
+        lines.append(f"**候选回写（模拟 dry-run）** {len(signals)} 笔")
+        for s in signals:
+            lines.append(f"- BUY {s['code']} {s['name']} @ {s['price']} × {s['quantity']}")
+        lines.append("")
+        lines.append("> 回写为模拟：当前 tdx-connector 无 place_order，待接入下单能力券商后切真。")
+    if receipt:
+        lines.append("")
+        lines.append("**策略溯源**")
+        lines.append(f"- 来源：{receipt.get('source')}")
+        sha = receipt.get("config_sha256", "")[:8]
+        if sha:
+            lines.append(f"- 策略SHA：{sha}")
+        note = receipt.get("note", "")
+        if note:
+            lines.append(f"- 备注：{note}")
+    return "\n".join(lines)
+
+
+def push_wecom_webhook(url: str, markdown: str) -> bool:
+    """把 Markdown 正文经企业微信群机器人 webhook 推送（自动按 4096 字节切片）。
+
+    依赖环境变量 WECOM_WEBHOOK_URL。群机器人 webhook 支持 text/markdown/
+    news/image/file，这里用 markdown；单条上限 4096 字节，超限按行切片多头发。
+    """
+    if not url:
+        return False
+    chunks: list[str] = []
+    cur: list[str] = []
+    cur_len = 0
+    for ln in markdown.split("\n"):
+        b = len(ln.encode("utf-8")) + 1
+        if cur_len + b > 4000 and cur:
+            chunks.append("\n".join(cur))
+            cur = []
+            cur_len = 0
+        cur.append(ln)
+        cur_len += b
+    if cur:
+        chunks.append("\n".join(cur))
+    ok_all = True
+    for i, chunk in enumerate(chunks, 1):
+        data = json.dumps(
+            {"msgtype": "markdown", "markdown": {"content": chunk}},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        req = Request(
+            url,
+            data=data,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urlopen(req, timeout=15) as resp:
+                txt = resp.read().decode("utf-8", "replace")
+                ok = resp.status == 200
+                try:
+                    obj = json.loads(txt)
+                    ok = ok and (obj.get("errcode", -1) == 0)
+                except Exception:
+                    pass
+                print(f"企业微信 webhook 推送 {'成功' if ok else '失败'} (HTTP {resp.status}, 第{i}段/{len(chunks)}段)")
+                ok_all = ok_all and ok
+        except HTTPError as e:
+            print(f"企业微信 webhook 被拒绝 (HTTP {e.code}): {e.read().decode('utf-8','replace')[:200]}")
+            ok_all = False
+        except URLError as e:
+            print(f"企业微信 webhook 失败（网络/地址错误）: {e.reason}")
+            ok_all = False
+        except Exception as e:  # noqa: BLE001
+            print(f"企业微信 webhook 异常: {e}")
+            ok_all = False
+    return ok_all
+
+
+def render_wecom_text(payload: dict, signals: list[dict], receipt: dict | None) -> str:
+    """纯文本版渲染（wecom-cli 私聊只支持 text，不支持 markdown）。"""
+    sel = payload.get("selected", [])
+    bm = payload.get("backtest", {}).get("baseMetrics", {})
+    ms = payload.get("marketState", {}) or {}
+    date = datetime.now().strftime("%Y-%m-%d")
+    lines: list[str] = []
+    lines.append(f"【盘前选股 {date}】")
+    state = ms.get("state", "unknown")
+    lines.append(f"牛熊判定：{state}（仓位系数 {ms.get('positionFactor', 1.0)}）")
+    detail = ms.get("detail", "")
+    if detail:
+        lines.append(f"  {detail}")
+    lines.append("")
+    lines.append(f"入选 {payload.get('selectedCount', len(sel))} 只（候选池 {payload.get('universeSize', 0)} 只）")
+    if sel:
+        for r in sel:
+            lines.append(
+                f"- {r['code']} {r.get('name','')} 得分 {r.get('score',0):.2f} "
+                f"PE {r.get('peTtm')} PB {r.get('pb')} 动量 {r.get('momentum',0)*100:.1f}% RSI {r.get('rsi')}"
+            )
+    else:
+        lines.append("- （今日无入选）")
+    lines.append("")
+    lines.append(f"基准回测：交易 {bm.get('trades')} 总收益 {bm.get('totalReturn')} 夏普 {bm.get('sharpe')}")
+    if signals:
+        lines.append("")
+        lines.append(f"候选回写（模拟 dry-run） {len(signals)} 笔")
+        for s in signals:
+            lines.append(f"- BUY {s['code']} {s['name']} @ {s['price']} × {s['quantity']}")
+        lines.append("")
+        lines.append("回写为模拟：当前 tdx-connector 无 place_order，待接入下单能力券商后切真。")
+    if receipt:
+        lines.append("")
+        lines.append("策略溯源")
+        lines.append(f"- 来源：{receipt.get('source')}")
+        sha = receipt.get("config_sha256", "")[:8]
+        if sha:
+            lines.append(f"- 策略SHA：{sha}")
+        note = receipt.get("note", "")
+        if note:
+            lines.append(f"- 备注：{note}")
+    return "\n".join(lines)
+
+
+def find_wecom_cli():
+    """定位 wecom-cli 的 node 解释器与入口脚本，返回 (node_exe, wecom_js)；找不到返回 (None, None)。
+
+    wecom-cli 是 node 程序，直接调用其启动器在部分 shell 下会因路径转换出错；
+    这里改为直接用 node 运行入口脚本 wecom.js，最稳。
+    """
+    node = shutil.which("node")
+    if not node:
+        home = os.path.expanduser("~")
+        for cand in (
+            os.path.join(home, ".workbuddy", "binaries", "node", "versions", "22.22.2", "node.exe"),
+            os.path.join(home, ".workbuddy", "binaries", "node", "versions", "22.22.2", "node"),
+        ):
+            if os.path.exists(cand):
+                node = cand
+                break
+    cli = shutil.which("wecom-cli")
+    candidates: list[str] = []
+    if cli:
+        base = os.path.dirname(os.path.abspath(cli))
+        candidates.append(os.path.join(base, "node_modules", "@wecom", "cli", "bin", "wecom.js"))
+    home = os.path.expanduser("~")
+    candidates.append(
+        os.path.join(home, ".workbuddy", "binaries", "node", "cli-connector-packages",
+                     "node_modules", "@wecom", "cli", "bin", "wecom.js")
+    )
+    for js in candidates:
+        if node and os.path.exists(js):
+            return node, js
+    return None, None
+
+
+def push_wecom_cli(userid: str, text: str) -> bool:
+    """经 wecom-cli 向指定 userid 发送企业微信私聊纯文本（无人值守自动推送）。
+
+    依赖环境变量 WECOM_USERID。注意：
+    - wecom-cli 私聊仅支持纯文本（不支持 markdown），故传入纯文本。
+    - 单条文本上限约 2048 字节，超限按行切片多头发。
+    - 找不到 wecom-cli 时打印提示并返回 False，不中断主流程。
+    """
+    if not userid:
+        return False
+    node, js = find_wecom_cli()
+    if not node or not js:
+        print("（未找到 wecom-cli，跳过企微私聊推送；如需启用请确认企业微信连接器已登录且 node 可用）")
+        return False
+    # 按 1900 字节切片（预留 JSON 包装余量）
+    chunks: list[str] = []
+    cur: list[str] = []
+    cur_len = 0
+    for ln in text.split("\n"):
+        b = len(ln.encode("utf-8")) + 1
+        if cur_len + b > 1900 and cur:
+            chunks.append("\n".join(cur))
+            cur = []
+            cur_len = 0
+        cur.append(ln)
+        cur_len += b
+    if cur:
+        chunks.append("\n".join(cur))
+    ok_all = True
+    for i, chunk in enumerate(chunks, 1):
+        cmd = json.dumps(
+            {"chat_type": 1, "chatid": userid, "msgtype": "text", "text": {"content": chunk}},
+            ensure_ascii=False,
+        )
+        try:
+            proc = subprocess.run(
+                [node, js, "msg", "send_message", cmd],
+                capture_output=True, text=True, timeout=30,
+            )
+            out = (proc.stdout + proc.stderr).strip()
+            ok = proc.returncode == 0
+            # wecom-cli 以 JSON-RPC 返回：result.isError 或内层 errcode!=0 视为失败
+            if ok and out:
+                try:
+                    obj = json.loads(out)
+                    res = obj.get("result", {})
+                    if res.get("isError"):
+                        ok = False
+                    else:
+                        inner = (res.get("content") or [{}])[0].get("text", "")
+                        try:
+                            inner_obj = json.loads(inner)
+                            if inner_obj.get("errcode", 0) != 0:
+                                ok = False
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+            print(f"企业微信私聊推送 {'成功' if ok else '失败'} (返回码 {proc.returncode}, 第{i}段/{len(chunks)}段)")
+            if out:
+                print(f"  wecom-cli: {out[:400]}")
+            ok_all = ok_all and ok
+        except subprocess.TimeoutExpired:
+            print("企业微信私聊推送超时")
+            ok_all = False
+        except Exception as e:  # noqa: BLE001
+            print(f"企业微信私聊推送异常: {e}")
+            ok_all = False
+    return ok_all
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--prefetched", default=None,
@@ -577,6 +832,19 @@ def main():
         push_wechat(payload, signals)
     else:
         print("（未配置 WX_PUSH_DRIVER，跳过微信推送；如需微信接收，在 .env 设置 WX_PUSH_DRIVER + 对应 Key）")
+
+    # 可选：把选股结果推送到企业微信
+    # 优先级：WECOM_USERID 私聊（落点=本人企微）> WECOM_WEBHOOK_URL 群机器人（落点=群）
+    wecom_userid = os.environ.get("WECOM_USERID") or ""
+    wecom_url = os.environ.get("WECOM_WEBHOOK_URL") or ""
+    if wecom_userid:
+        _wecom_txt = render_wecom_text(payload, signals, cloud_receipt)
+        push_wecom_cli(wecom_userid, _wecom_txt)
+    elif wecom_url:
+        _wecom_md = render_wecom_markdown(payload, signals, cloud_receipt)
+        push_wecom_webhook(wecom_url, _wecom_md)
+    else:
+        print("（未配置企业微信推送：WECOM_USERID / WECOM_WEBHOOK_URL 均未设置，跳过企微推送）")
 
 
 if __name__ == "__main__":
