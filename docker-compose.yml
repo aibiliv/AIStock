@@ -14,8 +14,11 @@ services:
     # 永不从 registry 拉取，强制使用本地镜像（配合 local-build.ps1 预构建推送）
     pull_policy: never
 
-    ports:
-      - "9003:8787"
+    # 使用宿主网络模式：workerd 在默认 bridge 网络下出站访问 push2.eastmoney.com
+    # 等国内数据源会 "Network connection lost"。host 模式让容器直接复用宿主网络栈，
+    # 国内直连东财/腾讯/新浪，PE/PB 等行情数据正常获取。
+    # 注意：启用后服务直接监听宿主 8787 端口（见 start.sh），不再做端口映射。
+    network_mode: host
 
     volumes:
       # D1 数据持久化（本地 SQLite），容器重建不丢
@@ -25,12 +28,6 @@ services:
       - ./cloud-config:/app/trading_agent/cloud_config
 
     restart: unless-stopped
-
-    # 显式指定国内 DNS，避免容器内 workerd 不读取宿主 /etc/resolv.conf
-    # 导致 push2.eastmoney.com 等数据源 "Network connection lost"。
-    dns:
-      - 223.5.5.5
-      - 119.29.29.29
 
     # 资源限制（Ubuntu 24 默认 cgroup v2，自动生效）
     deploy:
