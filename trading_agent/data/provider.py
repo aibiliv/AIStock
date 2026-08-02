@@ -82,9 +82,41 @@ def market_prefix(code: str) -> str:
     return "sz"
 
 
+def _index_route(code: str):
+    """指数代码路由（相对个股前缀不同）。
+
+    注意冲突：沪市「主板个股」也以 000 开头（如 000001 平安银行），不能整段判指数。
+    安全规则：
+      - 880/999 段：沪市指数/板块专用，不与个股冲突 -> sh / 1.
+      - 399 段：深市指数专用，不与个股冲突 -> sz / 0.
+      - 000 段：仅放行「纯指数、无对应个股」的代码（排除 000001 等个股冲突码）。
+    返回 (sina_prefix, emarket) 或 None（非指数，走个股逻辑）。
+    """
+    if code.startswith(("880", "999")):
+        return "sh", "1."
+    if code.startswith("399"):
+        return "sz", "0."
+    # 000 段需白名单，避免误伤深市主板个股（000001=平安银行等）。
+    _PURE_INDEX_000 = {
+        "000016",  # 上证50
+        "000300",  # 沪深300
+        "000688",  # 科创50
+        "000905",  # 中证500
+        "000010",  # 上证180
+        "000009",  # 上证380
+        "000013",  # 上证180等权
+    }
+    if code in _PURE_INDEX_000:
+        return "sh", "1."
+    return None
+
+
 def _sina_kline(code: str) -> list[dict]:
     """新浪日 K 线（免 key、稳定）。scale=240 为日线。返回原始记录列表。"""
-    prefix = "sh" if code.startswith(("6", "9")) else ("bj" if code.startswith("8") else "sz")
+    route = _index_route(code)
+    prefix = route[0] if route else (
+        "sh" if code.startswith(("6", "9")) else ("bj" if code.startswith("8") else "sz")
+    )
     url = "https://money.finance.sina.com.cn/quotes_service/api/json_v2.php/CN_MarketData.getKLineData"
     params = {"symbol": f"{prefix}{code}", "scale": "240", "ma": "no", "datalen": "400"}
     d = json.loads(_http_get(url, params))
@@ -93,7 +125,8 @@ def _sina_kline(code: str) -> list[dict]:
 
 def _em_kline(code: str, beg: str, end: str) -> list[dict]:
     """东财 push2his 日 K 线（兜底源，前复权）。"""
-    secid = ("1." if code.startswith("6") else "0.") + code
+    route = _index_route(code)
+    secid = (route[1] if route else ("1." if code.startswith("6") else "0.")) + code
     url = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
     params = {
         "secid": secid,

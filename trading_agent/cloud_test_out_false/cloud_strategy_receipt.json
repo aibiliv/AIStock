@@ -2,7 +2,7 @@
   "source": "cloud",
   "base_url": "http://120.48.87.170:9003",
   "endpoint": "/api/strategy-scan/config",
-  "fetched_at": "2026-08-02 11:49:55 +0800",
+  "fetched_at": "2026-08-02 11:51:53 +0800",
   "http_status": 200,
   "login_ok": true,
   "config_sha256": "248cfd7930bb805a60cb69f49cc9c39dcbfb97783ca75ca27cd0119bb6b644df",
