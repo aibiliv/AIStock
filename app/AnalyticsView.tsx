@@ -1,6 +1,5 @@
 "use client";
 
-import "./analytics.css";
 import { useMemo, useRef, useState } from "react";
 import { Badge, SectionHeader, Stat, Button, Card, CardHeader } from "./components";
 import { BarList, DonutChart } from "./charts";

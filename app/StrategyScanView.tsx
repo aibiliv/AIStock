@@ -87,10 +87,20 @@ function pct(x: number): string {
   return `${x >= 0 ? "+" : ""}${(x * 100).toFixed(2)}%`;
 }
 
-const SCAN_LINE = "var(--accent)";
-const SCAN_TEXT = "var(--text-muted)";
-const SCAN_BORDER = "var(--line-strong)";
-const SCAN_GRID = "var(--line)";
+/**
+ * lightweight-charts 在 canvas 上渲染，无法解析 CSS 变量（var(--x)），
+ * 必须在运行时把设计令牌解析成真实颜色字符串。
+ */
+function cssVar(name: string, fallback: string): string {
+  if (typeof window === "undefined") return fallback;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
+
+const SCAN_LINE = () => cssVar("--accent", "#3a5a78");
+const SCAN_TEXT = () => cssVar("--text-muted", "#8c8c83");
+const SCAN_BORDER = () => cssVar("--line-strong", "#d8d8d0");
+const SCAN_GRID = () => cssVar("--line", "#e8e8e1");
 
 /* --------------------------- 净值曲线组件 --------------------------- */
 function StrategyCurveChart({ points }: { points: Array<{ date: string; value: number }> }) {
@@ -103,22 +113,22 @@ function StrategyCurveChart({ points }: { points: Array<{ date: string; value: n
       width: container.clientWidth || 600,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: SCAN_TEXT,
+        textColor: SCAN_TEXT(),
         fontFamily: "inherit",
         attributionLogo: false,
       },
       grid: {
-        vertLines: { color: SCAN_GRID },
-        horzLines: { color: SCAN_GRID },
+        vertLines: { color: SCAN_GRID() },
+        horzLines: { color: SCAN_GRID() },
       },
-      rightPriceScale: { borderColor: SCAN_BORDER },
-      timeScale: { borderColor: SCAN_BORDER, timeVisible: false, secondsVisible: false },
+      rightPriceScale: { borderColor: SCAN_BORDER() },
+      timeScale: { borderColor: SCAN_BORDER(), timeVisible: false, secondsVisible: false },
       crosshair: { mode: 0 },
       handleScale: false,
       handleScroll: false,
     });
     const series = chart.addSeries(LineSeries, {
-      color: SCAN_LINE,
+      color: SCAN_LINE(),
       lineWidth: 2,
       priceFormat: { type: "custom", minMove: 0.0001, formatter: (p: number) => p.toFixed(4) },
     });

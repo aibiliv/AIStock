@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./analytics.css";
 
 export const metadata: Metadata = {
   title: "我的复盘助手｜看懂、记录、复盘",

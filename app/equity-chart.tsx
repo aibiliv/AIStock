@@ -15,6 +15,17 @@ type EquityCurveChartProps = {
   height?: number;
 };
 
+/**
+ * lightweight-charts 在 canvas 上渲染，无法解析 CSS 变量（var(--x)），
+ * 必须在运行时把设计令牌解析成真实颜色字符串。主题切换（明/暗）时
+ * 重渲染图表即可重新读取当前生效的值。
+ */
+function cssVar(name: string, fallback: string): string {
+  if (typeof window === "undefined") return fallback;
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
+
 function toTimestamp(date: string): number {
   const parsed = Date.parse(`${date}T00:00:00Z`);
   return Number.isFinite(parsed) ? Math.floor(parsed / 1000) : 0;
@@ -37,24 +48,24 @@ export function EquityCurveChart({ title, points, height = 220 }: EquityCurveCha
       width: container.clientWidth || 600,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "var(--text-faint)",
+        textColor: cssVar("--text-faint", "#a6a69d"),
         fontFamily: "inherit",
         attributionLogo: false,
       },
       grid: {
-        vertLines: { color: "var(--line)" },
-        horzLines: { color: "var(--line)" },
+        vertLines: { color: cssVar("--line", "#e8e8e1") },
+        horzLines: { color: cssVar("--line", "#e8e8e1") },
       },
-      rightPriceScale: { borderColor: "var(--line-strong)" },
-      timeScale: { borderColor: "var(--line-strong)", timeVisible: false, secondsVisible: false },
+      rightPriceScale: { borderColor: cssVar("--line-strong", "#d8d8d0") },
+      timeScale: { borderColor: cssVar("--line-strong", "#d8d8d0"), timeVisible: false, secondsVisible: false },
       crosshair: { mode: 0 },
       handleScale: false,
       handleScroll: false,
     });
 
     const series = chart.addSeries(AreaSeries, {
-      lineColor: "var(--accent)",
-      topColor: "var(--accent-soft)",
+      lineColor: cssVar("--accent", "#3a5a78"),
+      topColor: cssVar("--accent-soft", "#eceff2"),
       bottomColor: "transparent",
       lineWidth: 2,
       priceFormat: {
