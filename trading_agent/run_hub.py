@@ -25,6 +25,7 @@ prefetched.json schema：
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -55,7 +56,7 @@ def _load_dotenv():
 _load_dotenv()
 
 import config
-from data.provider import StaticProvider
+from data.provider import StaticProvider, default_provider
 from hub import run as hub_run, _build_signals
 from strategy import presets
 
@@ -116,28 +117,79 @@ def load_prefetched(path: str):
     return klines, quotes, hot, codes, raw.get("config", {})
 
 
-def pull_cloud_overrides(url: str, user: str, password: str) -> dict:
-    """登录云端并拉取策略扫描配置，摊平为 run_hub.apply_config 兼容的 overrides。
+def pull_cloud_overrides(url: str, user: str, password: str):
+    """登录云端并拉取策略扫描配置，摊平为 overrides；同时返回溯源凭证 receipt。
 
-    云端不执行引擎、只维护配置；本地程序（含 WorkBuddy 中枢调用的 run_hub）
-    以此先拉取云端配置再执行。网络/鉴权失败则返回 {}，不阻断本地流程
-    （回退到 strategy_config.yaml / prefetched）。
+    返回 (overrides: dict, receipt: dict)。云端不执行引擎、只维护配置；
+    本地程序（含 WorkBuddy 中枢调用的 run_hub）以此先拉取云端配置再执行。
+    网络/鉴权失败则返回 ({}, receipt)，receipt.source="local-fallback"，不阻断本地流程。
+
+    receipt 关键字段（供邮件溯源与独立复算）：
+      source        : "cloud" | "local-fallback"
+      base_url      : 云端基地址
+      endpoint      : "/api/strategy-scan/config"
+      fetched_at    : 拉取时间（本地时区，含偏移）
+      http_status   : HTTP 状态码（失败为 None/0）
+      login_ok      : 是否拿到 session
+      config_sha256 : 原始返回 JSON 的 SHA-256（用户可独立复算比对）
+      config_keys   : 摊平后的配置键列表
+      note          : 人类可读说明（含回退原因）
     """
+    receipt = {
+        "source": "local-fallback",
+        "base_url": url or "",
+        "endpoint": "/api/strategy-scan/config",
+        "fetched_at": datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %z"),
+        "http_status": None,
+        "login_ok": False,
+        "config_sha256": "",
+        "config_keys": [],
+        "note": "",
+    }
     if not url or not user or not password:
-        print("（未提供完整云端凭据，跳过云端配置拉取）")
-        return {}
+        receipt["note"] = "未提供完整云端凭据，跳过云端配置拉取（回退本地 strategy_config.yaml）"
+        return {}, receipt
     try:
         import pull_cloud_config as pcc
     except Exception as e:  # noqa: BLE001
-        print(f"导入 pull_cloud_config 失败，跳过云端配置: {e}")
-        return {}
+        receipt["note"] = f"导入 pull_cloud_config 失败，跳过云端配置: {e}"
+        return {}, receipt
     cookie = pcc.login(url, user, password)
     if not cookie:
-        return {}
-    nested = pcc.fetch_cloud_config(url, cookie)
-    if not nested:
-        return {}
-    return pcc.to_overrides(nested)
+        receipt["note"] = "云端登录失败（凭据/网络不可达），已回退本地 strategy_config.yaml"
+        return {}, receipt
+    receipt["login_ok"] = True
+    try:
+        status, obj, raw = pcc.fetch_cloud_config_raw(url, cookie)
+    except Exception as e:  # noqa: BLE001
+        receipt["note"] = f"获取云端配置异常: {e}，已回退本地"
+        return {}, receipt
+    receipt["http_status"] = status
+    if not obj:
+        receipt["note"] = f"云端返回异常（HTTP {status}），已回退本地 strategy_config.yaml"
+        return {}, receipt
+    nested = obj.get("config") or {}
+    try:
+        receipt["config_sha256"] = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    except Exception:  # noqa: BLE001
+        receipt["config_sha256"] = ""
+    overrides = pcc.to_overrides(nested)
+    receipt["config_keys"] = sorted(overrides.keys())
+    receipt["source"] = "cloud"
+    receipt["note"] = "策略配置已从云端拉取并应用"
+    return overrides, receipt
+
+
+def _write_cloud_receipt(receipt: dict, out_dir: str):
+    """写出云端策略溯源凭证，供中枢/邮件取证与独立复算。"""
+    try:
+        os.makedirs(out_dir, exist_ok=True)
+        path = os.path.join(out_dir, "cloud_strategy_receipt.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(receipt, f, ensure_ascii=False, indent=2)
+        print(f"已写出云端策略溯源凭证: {path}")
+    except Exception as e:  # noqa: BLE001
+        print(f"写出溯源凭证失败: {e}")
 
 
 def apply_config(cfg: config.AppConfig, ov: dict):
@@ -353,7 +405,9 @@ def push_wechat(payload: dict, signals: list[dict]) -> bool:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--prefetched", required=True)
+    ap.add_argument("--prefetched", default=None,
+                    help="预取数据文件(prefetched.json)，含 klines/quotes/universe；"
+                         "与 --live 二选一（不指定则视为需 --live）")
     ap.add_argument("--out-dir", default=os.path.dirname(os.path.abspath(__file__)))
     ap.add_argument("--overrides", default=None,
                     help="JSON 字符串，含 screener/signal/market/optim 覆盖参数（优先级高于 prefetched.config）")
@@ -369,12 +423,48 @@ def main():
                     help="云端基地址，如 http://<服务器IP>:9003；提供则启动时先拉取云端配置作为 overrides")
     ap.add_argument("--cloud-user", default=os.environ.get("CLOUD_CFG_USER") or "")
     ap.add_argument("--cloud-pass", default=os.environ.get("CLOUD_CFG_PASS") or "")
+    # —— 全市场实时扫描模式（候选池由中枢经 tdx_screener 构建，K线/行情走实时数据源）——
+    ap.add_argument("--live", action="store_true",
+                    help="实时数据模式：仅从 --universe-file 读取候选代码，"
+                         "K线/行情由引擎实时数据源(腾讯/东财直连)获取；"
+                         "用于「按云端板块全市场选股」。配合 --universe-file 使用。")
+    ap.add_argument("--universe-file", default=None,
+                    help="与 --live 配合：JSON 文件，含 {\"universe\": [code,...]}")
     args = ap.parse_args()
 
-    klines, quotes, hot, codes, prefetched_cfg = load_prefetched(args.prefetched)
-    if not codes:
-        print("prefetched.json 中没有可用标的，退出。")
-        sys.exit(1)
+    if args.live:
+        # 全市场实时扫描：候选池来自中枢经 tdx_screener 构建的 universe 文件，
+        # K线/行情由引擎实时数据源(腾讯/东财直连)获取；云端板块/市值/PE/PB 已在
+        # tdx_screener 查询与下方 screener 硬性过滤中双重生效。
+        if not args.universe_file:
+            print("--live 需要配合 --universe-file")
+            sys.exit(1)
+        try:
+            with open(args.universe_file, encoding="utf-8") as _f:
+                _udata = json.load(_f)
+        except Exception as e:  # noqa: BLE001
+            print(f"读取 universe-file 失败: {e}")
+            sys.exit(1)
+        codes = [str(c).strip() for c in _udata.get("universe", []) if str(c).strip()]
+        klines = quotes = None
+        hot = []
+        prefetched_cfg = {}
+        data_fetcher = None  # 实时数据源（腾讯/东财直连）
+        if not codes:
+            print("universe-file 中没有可用标的，退出。")
+            sys.exit(1)
+        print(f"[LIVE 全市场模式] 候选池来自 {args.universe_file}：{len(codes)} 只（实时行情）")
+    else:
+        if not args.prefetched:
+            print("未指定 --prefetched 也未启用 --live，退出。")
+            sys.exit(1)
+        klines, quotes, hot, codes, prefetched_cfg = load_prefetched(args.prefetched)
+        if not codes:
+            print("prefetched.json 中没有可用标的，退出。")
+            sys.exit(1)
+
+        def data_fetcher():
+            return klines, quotes, hot
 
     # CLI overrides（用户显式意图，优先级最高）
     cli_ov: dict = {}
@@ -405,12 +495,28 @@ def main():
     # 云端配置拉取（云端只配不跑，本地拉取后执行）：
     # 优先级介于 strategy_config.yaml 与 prefetched/CLI 之间，
     # 即「云端条件可用，本地 prefetched/CLI 仍可覆盖」。
+    cloud_receipt = None
     if args.cloud_config_url:
-        cloud_ov = pull_cloud_overrides(
+        cloud_ov, cloud_receipt = pull_cloud_overrides(
             args.cloud_config_url, args.cloud_user, args.cloud_pass)
         if cloud_ov:
             apply_config(cfg, cloud_ov)
             print(f"已套用云端配置({args.cloud_config_url}): {list(cloud_ov.keys())}")
+        else:
+            print(f"[云端配置] 来源={cloud_receipt['source']} | {cloud_receipt.get('note','')}")
+    if cloud_receipt is None:
+        cloud_receipt = {
+            "source": "local-fallback",
+            "base_url": args.cloud_config_url or "",
+            "endpoint": "/api/strategy-scan/config",
+            "fetched_at": datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S %z"),
+            "http_status": None,
+            "login_ok": False,
+            "config_sha256": "",
+            "config_keys": [],
+            "note": "未提供云端基地址（--cloud-config-url 为空），未从云端拉取策略，使用本地默认/配置",
+        }
+    _write_cloud_receipt(cloud_receipt, args.out_dir)
 
     apply_config(cfg, ov)
 
@@ -420,12 +526,17 @@ def main():
     if _idx and _idx in cfg.universe:
         cfg.universe = [c for c in cfg.universe if c != _idx]
 
-    def data_fetcher():
-        return klines, quotes, hot
-
     # 纯引擎运行（回写/推送由枢纽负责，这里不传）
+    # data_fetcher: live 模式为 None（走引擎实时数据源），否则为返回预取数据的函数。
     payload = hub_run(cfg, data_fetcher=data_fetcher)
-    signals = _build_signals(payload, klines)
+    if args.live:
+        # 实时模式：用实时数据源取入选标的的最新收盘价作委托价
+        _dp = default_provider()
+        _sel = [r["code"] for r in payload.get("selected", [])]
+        _kl = {c: _dp.fetch_kline(c, cfg.beg, cfg.end) for c in _sel}
+        signals = _build_signals(payload, _kl)
+    else:
+        signals = _build_signals(payload, klines)
 
     out_dir = args.out_dir
     os.makedirs(out_dir, exist_ok=True)

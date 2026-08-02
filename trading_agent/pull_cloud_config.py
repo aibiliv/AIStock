@@ -105,22 +105,41 @@ def login(base: str, user: str, password: str) -> str | None:
     return None
 
 
-def fetch_cloud_config(base: str, cookie: str) -> dict | None:
+def fetch_cloud_config_raw(base: str, cookie: str):
+    """登录态下 GET /api/strategy-scan/config，返回 (status, obj, raw)。
+
+    raw 为接口原始响应文本，供调用方计算内容指纹（SHA-256）以做云端溯源证明。
+    """
     url = base.rstrip("/") + "/api/strategy-scan/config"
     try:
-        st, obj = _http_json(url, headers={"Cookie": cookie})
+        req = Request(url, method="GET", headers={"Cookie": cookie})
+        with urlopen(req, timeout=20) as resp:
+            raw = resp.read().decode("utf-8", "replace")
+            status = resp.status
     except HTTPError as e:
-        print(f"获取配置被拒绝 (HTTP {e.code})。", file=sys.stderr)
-        return None
+        raw = e.read().decode("utf-8", "replace") if e.fp else ""
+        status = e.code
+        return status, {}, raw
     except URLError as e:
         print(f"获取配置失败（网络/地址错误）: {e.reason}", file=sys.stderr)
-        return None
+        return 0, {}, ""
     except Exception as e:  # noqa: BLE001
         print(f"获取配置异常: {e}", file=sys.stderr)
-        return None
-
+        return 0, {}, ""
+    try:
+        obj = json.loads(raw) if raw else {}
+    except json.JSONDecodeError:
+        obj = {}
     if not isinstance(obj, dict) or not obj.get("ok"):
         print(f"云端返回异常: {obj}", file=sys.stderr)
+        return status, {}, raw
+    return status, obj, raw
+
+
+def fetch_cloud_config(base: str, cookie: str) -> dict | None:
+    """原有接口（向后兼容）：仅返回 config 嵌套字典。"""
+    _, obj, _ = fetch_cloud_config_raw(base, cookie)
+    if not obj:
         return None
     return obj.get("config") or {}
 
