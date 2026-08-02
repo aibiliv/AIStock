@@ -4,10 +4,12 @@
  * 设计目标：把"从哪取数"收敛到一处，对外只暴露 getRealtime / getKlines /
  * getProfile 等稳定接口；内部按优先级依次尝试多个【免费公开】数据源，任一成功即返回。
  *
- * 可用数据源（在 Cloudflare Workers 运行时均可用，仅需 fetch）：
- *   1) 东方财富 push2 / push2his —— 主源（个股实时、历史K线、PE/PB、市值、概念板块、资金流）
- *   2) 腾讯证券 / 新浪财经 —— 东方财富的后备（实时行情与K线）
- *   3) 麦蕊（可选增强层，仅配置 token）—— ROE/净利/行业/简介等基本面深度字段
+ * 可用数据源（国内网络稳定可达者优先）：
+ *   1) 腾讯证券 qt.gtimg.cn —— 主源（个股实时、PE/PB、指数；push2 被掐后的可靠替代）
+ *   2) 东方财富 emweb / datacenter —— 财务主指标(ROE/毛利/净利)、行业/简介（域可达）
+ *   3) 新浪财经 —— 实时行情后备
+ *   4) 东方财富 push2 / push2his —— 兜底（部分网络环境被掐，TLS 建连后 HTTP 超时）
+ *   5) 麦蕊（可选增强层，仅配置 token）—— ROE/净利/行业/简介等基本面深度字段
  *
  * 关于描述中另两家数据源在「本项目实际运行时」的可行性：
  *   - AKShare（_em 分支）：它本身不是数据源，只是抓取东方财富/新浪/交易所官网的公开网页接口。
@@ -209,8 +211,44 @@ async function sinaRealtime(code: string): Promise<RealtimeQuote> {
   };
 }
 
+/**
+ * 腾讯证券「个股资料」接口（qt.gtimg.cn）附带市盈率/市净率。
+ * 该接口在国内网络稳定可达（与实时行情同源），作为 push2.eastmoney.com
+ * （部分网络环境被掐、TLS 建连后 HTTP 超时）取 PE/PB 的可靠主源。
+ *
+ * 字段（~ 分隔，索引从 0 起，公开稳定格式）：
+ *   1  = 名称
+ *   3  = 当前价
+ *   39 = 市盈率(PE, 真实值，如 79.33)
+ *   44/45 = 市净率(PB, 不同版本位置有小差异，真实值如 5.49)
+ *
+ * 兼容处理：PE 取 parts[39]；PB 在 parts[44]/parts[45] 两个候选位中，
+ * 选「落在 (0,50] 且不大于 PE」的更合理值，以避免版本差异取错列。
+ */
+async function tencentProfile(code: string): Promise<Partial<StockProfile>> {
+  const ts = tencentSymbol(code);
+  const text = await fetchText(`https://qt.gtimg.cn/q=${ts}`);
+  const m = text.match(/="([^"]*)"/);
+  if (!m) return { profileError: `腾讯基本面解析失败 (${ts})` };
+  const parts = m[1].split("~");
+  const pe = num(parts[39]);
+  // PB 候选位：取合理值（市净率通常 < 50，且不大于市盈率）
+  const pbCandidates = [num(parts[44]), num(parts[45])].filter(
+    (v): v is number => v !== null && v > 0 && v <= 50 && (pe === null || v <= pe),
+  );
+  const pb = pbCandidates.length ? pbCandidates[0] : num(parts[44]) ?? num(parts[45]);
+  const name = parts[1] || null;
+  if (pe === null && pb === null) return { profileError: `腾讯基本面字段缺失 (${ts})` };
+  return {
+    name: name || null,
+    pe,
+    pb,
+  };
+}
+
 /** 实时行情，多级降级；全部失败返回 null（调用方应回退到历史K线推算值）。
- * 优先级：麦蕊（仅配置 MAIRUI_TOKEN 时）→ 东方财富 → 腾讯 → 新浪。 */
+ * 优先级：麦蕊（仅配置 MAIRUI_TOKEN 时）→ 腾讯 → 新浪 → 东方财富（兜底）。
+ * 注：push2.eastmoney.com 在部分网络环境被掐，放在最后作兜底，避免拖慢首屏。 */
 async function fetchRealtime(code: string): Promise<RealtimeQuote | null> {
   if (await isMairuiEnabled()) {
     try {
@@ -233,7 +271,7 @@ async function fetchRealtime(code: string): Promise<RealtimeQuote | null> {
       // 麦蕊异常：降级到免费源
     }
   }
-  for (const provider of [eastmoneyRealtime, tencentRealtime, sinaRealtime]) {
+  for (const provider of [tencentRealtime, sinaRealtime, eastmoneyRealtime]) {
     try {
       return await provider(code);
     } catch {
@@ -309,10 +347,11 @@ async function tencentKlines(code: string): Promise<KlineResult> {
   return { rows, sourceName: "腾讯证券历史K线", sourceUrl: `https://gu.qq.com/${ts}` };
 }
 
-/** 历史日K，多级降级；全部失败抛错。 */
+/** 历史日K，多级降级；全部失败抛错。
+ * 优先级：腾讯（稳定可达）→ 东方财富 push2his（兜底，部分网络被掐）。 */
 export async function getKlines(code: string): Promise<KlineResult> {
   let lastError: unknown;
-  for (const provider of [eastmoneyKlines, tencentKlines]) {
+  for (const provider of [tencentKlines, eastmoneyKlines]) {
     try {
       return await provider(code);
     } catch (error) {
@@ -423,17 +462,25 @@ async function eastmoneyFundamentals(code: string): Promise<EmFundamentals> {
  * grossMargin/operatingCashflow/sector 由东方财富「财务主指标」免费接口补充（国内稳定可达）。 */
 export async function getProfile(code: string): Promise<StockProfile> {
   const mairuiEnabled = await isMairuiEnabled();
-  const [em, mairui, emF100, emFund] = await Promise.all([
+  const [em, tencent, mairui, emF100, emFund] = await Promise.all([
     eastmoneyProfile(code),
+    tencentProfile(code),
     mairuiEnabled ? getMairuiFundamentals(code) : Promise.resolve(null),
     eastmoneyF100Profile(code),
     eastmoneyFundamentals(code),
   ]);
+  // PE/PB 优先用腾讯（国内网络稳定可达）；push2 东财在部分网络环境被掐时静默降级。
+  const pe = tencent.pe ?? em.pe ?? null;
+  const pb = tencent.pb ?? em.pb ?? null;
+  const profileError =
+    pe == null || pb == null
+      ? tencent.profileError ?? em.profileError ?? null
+      : null;
   return {
-    name: em.name ?? null,
+    name: tencent.name ?? em.name ?? null,
     marketCap: em.marketCap ?? null,
-    pe: em.pe ?? null,
-    pb: em.pb ?? null,
+    pe,
+    pb,
     // 麦蕊(配置 token 时)优先，否则东方财富财务主指标兜底（无 token 也能填）。
     roe: mairui?.roe ?? emFund.roe ?? null,
     // 东方财富财务主指标免费接口兜底（无 token 也可用）。
@@ -444,7 +491,7 @@ export async function getProfile(code: string): Promise<StockProfile> {
     // 行业/简介：麦蕊优先 → 东方财富 f100 兜底（国内稳定）
     industry: mairui?.industry ?? emF100.industry ?? null,
     businessSummary: mairui?.businessSummary ?? emF100.businessSummary ?? null,
-    profileError: em.profileError ?? null,
+    profileError,
   };
 }
 
