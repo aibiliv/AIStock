@@ -6,7 +6,7 @@
 
 ## 主要功能
 
-- 单用户账号登录（Cookie session）：登录页为独立的 `app/login/page.tsx`，主应用 `app/page.tsx` 在服务端校验登录后才渲染 `Dashboard`，数据接口均受保护
+- 账号体系（Cookie session，多用户 + 超级管理员）：登录页为独立的 `app/login/page.tsx`，主应用 `app/page.tsx` 在服务端校验登录后才渲染 `Dashboard`。首次启动时用 `APP_USERNAME`/`APP_PASSWORD` 自动 seed 一个超级管理员，管理员可在「设置 → 用户」中增删用户、设置角色（`super_admin`/`user`）与禁用账号，数据接口均按登录会话鉴权
 - 公开渠道行情、财务和题材信息整理（东财 / 腾讯 / Yahoo 等免费接口，可选麦蕊智数增强）
 - DeepSeek 或任意 OpenAI 兼容模型解释（也支持 Ollama / OpenRouter / GitHub Models 等免费源）
 - 关注股票、买卖记录、持仓与盈亏计算
@@ -33,13 +33,15 @@ npm run dev      # 实际执行 vinext dev
 访问终端显示的本地地址。登录与 AI 配置放在不会提交到 Git 的 `.env` 中（完整字段说明见 `.env.example`）：
 
 ```dotenv
-# 必填
+# 必填（首次启动用以下两项自动创建超级管理员）
 APP_USERNAME=owner
 APP_PASSWORD=至少12位密码
 APP_AUTH_SECRET=至少32位随机字符
 
 DEEPSEEK_API_KEY=sk-xxxx
 ```
+
+首次启动后，可用该超级管理员账号登录，在「设置 → 用户」中新建普通用户、指定角色或禁用账号。
 
 不配置 AI 密钥时应用进入「自动解释」模式（无 AI 分析，其余功能正常）。
 
@@ -127,12 +129,12 @@ git pull origin main
 
 ### 环境变量
 
-完整配置项见 `.env.example`（模板，不含真实密钥）或 `.env`（本地实际值）。必填项：
+完整配置项见 `.env.example`（模板，不含真实密钥）或 `.env`（本地实际值）。必填项（首次启动用 `APP_USERNAME`/`APP_PASSWORD` 自动初始化一个超级管理员，`APP_PASSWORD` 需 ≥12 位）：
 
 | 变量 | 说明 |
 |------|------|
-| `APP_USERNAME` | 登录用户名 |
-| `APP_PASSWORD` | 登录密码（≥12 位） |
+| `APP_USERNAME` | 首次启动 seed 的超级管理员用户名（留空默认 `admin`） |
+| `APP_PASSWORD` | 超级管理员密码（≥12 位，必填；首次启动校验） |
 | `APP_AUTH_SECRET` | Session 签名密钥（≥32 位随机字符，生产用 `openssl rand -hex 32` 生成） |
 | `DEEPSEEK_API_KEY` | DeepSeek API 密钥（不填则无 AI 分析） |
 
@@ -156,7 +158,9 @@ git pull origin main
 
 | 路由 | 方法 | 说明 |
 |------|------|------|
-| `/api/auth/login` `/api/auth/logout` | POST | 单用户登录 / 登出（Cookie session） |
+| `/api/auth/login` `/api/auth/logout` | POST | 登录 / 登出（Cookie session） |
+| `/api/me` | GET | 当前登录用户信息（含 `role`） |
+| `/api/users` | GET / POST | 用户管理（超级管理员）：列出全部用户 / 新建用户（可指定 `super_admin` 或 `user` 角色） |
 | `/api/trades` | GET / POST | 交易记录（POST 买入带 `maxLoss` 时自动建止损提醒） |
 | `/api/watchlist` | GET / POST / PATCH / DELETE | 关注股票 |
 | `/api/alerts` | GET / POST / PATCH | 提醒规则（`PATCH action`: `disable`/`acknowledge`/`trigger`） |
@@ -172,7 +176,10 @@ git pull origin main
 | `/api/indices` `/api/sector-heatmap` | GET | 指数与板块热力图 |
 | `/api/preferences` | GET / PUT | 用户偏好设置 |
 | `/api/strategy-scan` | GET / POST | 策略扫描结果读取（GET）/ 本地 trading_agent 推送（POST，需 `x-push-token`） |
+| `/api/strategy-scan/config` | GET / POST | 读取 / 保存选股默认配置（与 `strategy_config.yaml` 共用，前端「策略扫描」面板初始化表单） |
+| `/api/strategy-scan/run` | POST | 按前端传入的配置覆盖参数重新跑引擎（调用 `trading_agent/run_hub.py`），支持本地 / 守护进程 / 云端沙箱三种运行环境 |
 | `/api/writeback-signals` | GET / POST | 回写信号读取（GET）/ 本地 trading_agent 推送（POST，需 `x-push-token`） |
+| `/api/feedback` | GET / POST | 策略反馈闭环：用户在前端对信号给出有效/无效评价（按用户隔离），用于优化策略权重 |
 | `/api/cron/check-alerts` | POST | 定时器入口：拉取实时价判断是否触发提醒并推送（需 `Authorization: Bearer <CRON_SECRET>`） |
 | `/api/status` | GET | 运行状态 |
 
@@ -236,7 +243,7 @@ npm run engine                  # 实际执行 node trading_agent/local_engine_s
 ## 前端与组件
 
 - 单页应用：登录页 `app/login/page.tsx`（视觉化卡片，提交到 `/api/auth/login`）；主应用 `app/page.tsx`（服务端校验登录后渲染 `app/Dashboard.tsx`）。
-- 视图状态机 `view ∈ home | analysis | watchlist | trades | settings | analytics | strategyScan | writeback`；分析页由 `app/AnalyticsView.tsx` 渲染，回写结果页由 `app/WritebackView.tsx` 渲染。
+- 视图状态机 `view ∈ home | analysis | watchlist | trades | settings | analytics | strategyScan | writeback`；分析页由 `app/AnalyticsView.tsx` 渲染，回写结果页由 `app/WritebackView.tsx` 渲染。`settings` 含 `account`/`alerts`/`users` 等分区，用户管理（`UsersAdmin`）仅超级管理员可见。
 - 全局浮窗 AI 助手 `FloatingAssistantLauncher`：右下角浮动按钮，展开后支持绑定股票分析、组合持仓查询，选股下拉框自动合并关注列表与最近分析历史。
 - 对话式复盘助手 `SmartAssistant`：分析页内嵌使用，调用 `/api/assistant`，支持分析上下文自动注入。
 - 组件库统一封装在 `app/components.tsx`，样式由 `app/globals.css` 的语义化 class + CSS 变量驱动。
