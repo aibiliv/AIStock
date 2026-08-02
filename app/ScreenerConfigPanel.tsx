@@ -556,7 +556,7 @@ export function ScreenerConfigPanel({
           </button>
           <button
             type="button"
-            className="screener-btn screener-btn--success"
+            className="screener-btn screener-btn--primary"
             disabled={saving}
             onClick={saveConfig}
           >

@@ -824,7 +824,28 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 onImported={loadData}
               />
             )}
-            {view === "scan" && <div className="page-content inner-page"><StrategyScanView initialData={strategyScan} /></div>}
+            {view === "scan" && (
+              <div className="page-content inner-page">
+                <StrategyScanView
+                  initialData={strategyScan}
+                  watchlistItems={watchlist}
+                  onAddWatch={async (code, name) => {
+                    try {
+                      await jsonRequest("/api/watchlist", {
+                        method: "POST",
+                        headers: { "content-type": "application/json" },
+                        body: JSON.stringify({ symbol: code, name, note: "选股榜单加入" }),
+                      });
+                      flash(`已将 ${name}(${code}) 加入关注`);
+                      await loadData();
+                    } catch (e) {
+                      flash(`加入关注失败: ${e instanceof Error ? e.message : String(e)}`);
+                    }
+                  }}
+                  onAnalyze={(symbol) => void analyzeAndOpen(symbol)}
+                />
+              </div>
+            )}
             {view === "writeback" && <div className="page-content inner-page"><WritebackView /></div>}
           </>
         )}

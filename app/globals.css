@@ -1713,6 +1713,46 @@ svg { display: block; }
   color: var(--down);
 }
 
+/* 选股榜单操作列 */
+.scan-actions {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.scan-action-btn {
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--fs-xs);
+  padding: 3px 10px;
+  transition: background var(--dur-fast) var(--ease-standard), border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard), opacity var(--dur-fast) var(--ease-standard);
+  white-space: nowrap;
+}
+
+.scan-action-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.scan-action-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.scan-action-btn--watch.is-watched {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  opacity: 0.7;
+}
+
+.scan-action-btn--analyze:hover:not(:disabled) {
+  background: var(--accent-soft);
+}
+
 .scan-inline-loading {
   align-items: center;
   display: inline-flex;
@@ -1901,7 +1941,7 @@ svg { display: block; }
   font-size: var(--fs-xs);
 }
 
-.screener-savemsg.is-ok { color: var(--up); }
+.screener-savemsg.is-ok { color: var(--accent); }
 .screener-savemsg.is-error { color: var(--down); }
 
 .screener-tags {

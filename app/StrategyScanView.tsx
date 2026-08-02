@@ -175,8 +175,17 @@ export type StrategyScanResponse = { ok: boolean; scan?: Scan; error?: string };
 
 export function StrategyScanView({
   initialData,
+  watchlistItems = [],
+  onAddWatch,
+  onAnalyze,
 }: {
   initialData?: StrategyScanResponse | null;
+  /** 当前关注列表，用于判断是否已关注 */
+  watchlistItems?: { symbol: string }[];
+  /** 加入关注回调 */
+  onAddWatch?: (code: string, name: string) => Promise<void>;
+  /** 查看分析回调（跳转到分析页） */
+  onAnalyze?: (symbol: string) => void;
 }) {
   const [scan, setScan] = useState<Scan | null>(initialData?.ok ? initialData.scan ?? null : null);
   // 若顶层已预取数据，则直接进入“已加载”状态，避免进入时骨架屏闪烁一次
@@ -400,10 +409,13 @@ export function StrategyScanView({
               <th>换手%</th>
               <th>信号数</th>
               <th>反馈</th>
+              {(onAddWatch || onAnalyze) && <th>操作</th>}
             </tr>
           </thead>
           <tbody>
-            {scan.selected.map((s) => (
+            {scan.selected.map((s) => {
+              const isWatched = watchlistItems.some((w) => w.symbol === s.code);
+              return (
               <tr key={s.code}>
                 <td>{s.code}</td>
                 <td>{s.name}</td>
@@ -445,8 +457,36 @@ export function StrategyScanView({
                     </button>
                   </span>
                 </td>
+                {(onAddWatch || onAnalyze) && (
+                  <td>
+                    <span className="scan-actions">
+                      {onAddWatch && (
+                        <button
+                          type="button"
+                          className={`scan-action-btn scan-action-btn--watch ${isWatched ? "is-watched" : ""}`}
+                          disabled={isWatched}
+                          onClick={() => void onAddWatch(s.code, s.name)}
+                          title={isWatched ? "已在关注列表" : "加入关注"}
+                        >
+                          {isWatched ? "已关注" : "关注"}
+                        </button>
+                      )}
+                      {onAnalyze && (
+                        <button
+                          type="button"
+                          className="scan-action-btn scan-action-btn--analyze"
+                          onClick={() => onAnalyze(s.code)}
+                          title="查看分析"
+                        >
+                          分析
+                        </button>
+                      )}
+                    </span>
+                  </td>
+                )}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
         </div>
