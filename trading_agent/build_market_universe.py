@@ -1,20 +1,25 @@
-"""把云端策略配置翻译成 tdx_screener 的自然语言查询，用于「按勾选板块全市场选股」。
+"""把云端策略配置翻译成「多连接器」的全市场选股查询，用于「按勾选板块全市场选股」。
 
 用法:
     python build_market_universe.py
-输出(打印到 stdout):
+输出(打印到 stdout, 机器可解析):
     TDEX_QUERY=<自然语言查询，直接作为 tdx_screener 的 message>
+    WESTOCK_FILTER_PRESET=<腾讯自选股 tool_filter 的 preset，如 low_pe>
+    WESTOCK_FILTER_MAX_PE=<preset 的 max_pe 参数，对应云端 max_pe_ttm>
     BOARDS=<云端 boards>
     ST_FILTER=<云端 st_filter>
 并打印云端 screener 配置原文，便于核对。
 
 说明:
-    - 本脚本只负责「翻译 + 打印」，不调用 tdx(MCP 工具由中枢/WorkBuddy 调用)。
+    - 本脚本只负责「翻译 + 打印」，不调用任何连接器(MCP 工具由中枢/WorkBuddy 调用)。
+    - 双连接器候选源:
+        * 通达信 tdx_screener: 自然语言组合(板块/非ST/换手/市值/PE/PB)。
+        * 腾讯自选股 tool_filter: preset=low_pe + max_pe(对应云端 PE 上限)，
+          与 tdx 结果合并去重，扩大候选覆盖。
+      (注: tool_filter 的 INTERSECT 复合语法服务端报错，故用 preset 单维度，
+       其余门槛(换手/PB/市值)由引擎硬过滤或 tdx 查询覆盖。)
     - 板块映射: main→主板, cyb→创业板, kc→科创板, bj→北交所。
     - 市值单位为「亿」，与 tdx_screener 的「流通市值大于X亿」一致。
-    - 为避免候选池过大(主板全市场数千只)，本查询忠实翻译云端配置；
-      若云端 min_turnover_pct / mcap 过松导致命中过多，请在上调整云端的
-      流动性/市值门槛，或在中枢分页收集时设置上限(见自动化 prompt)。
 """
 from __future__ import annotations
 
@@ -112,7 +117,14 @@ def main():
 
     query = " ".join(parts)
 
+    # 腾讯自选股 tool_filter 参数: 用 low_pe preset 覆盖云端 PE 上限
+    # (INTERSECT 复合语法服务端报错，故用单维度 preset，其余门槛引擎硬过滤)
+    westock_preset = "low_pe"
+    max_pe = pe if (pe and pe < 500) else 500
+
     print(f"TDEX_QUERY={query}")
+    print(f"WESTOCK_FILTER_PRESET={westock_preset}")
+    print(f"WESTOCK_FILTER_MAX_PE={max_pe}")
     print(f"BOARDS={','.join(boards)}")
     print(f"ST_FILTER={st}")
     print("--- 云端 screener 配置原文 ---")

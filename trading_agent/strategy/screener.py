@@ -180,11 +180,17 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
             except (TypeError, ValueError):
                 quality_raw = None
 
+        # 行业：优先行情快照提供的 sector，缺失回退静态映射（覆盖蓝筹池）。
+        # 注意：静态表只覆盖有限蓝筹池，全市场扫描时大量个股回退为 '其他'，
+        # 若直接归桶会让 max_per_sector 把所有"其他"票当成同一行业一刀切。
+        # 因此未知行业(code 级)各自独立，只让"真实行业"受分散约束。
+        _sector_raw = quote.get("sector") or sectors.industry_of(code)
+        _sector = code if (_sector_raw in (None, "", "其他")) else _sector_raw
+
         rows.append({
             "code": code,
             "name": quote.get("name", code),
-            # 行业：优先行情快照提供的 sector，缺失回退静态映射（覆盖蓝筹池）
-            "sector": quote.get("sector") or sectors.industry_of(code),
+            "sector": _sector,
             "momentum": mom,
             "risk_adj_momentum": risk_adj_mom,
             "rsi": rsi_val,
