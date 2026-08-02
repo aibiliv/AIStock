@@ -116,6 +116,8 @@ export type StockProfile = {
   sector: string | null;
   industry: string | null;
   businessSummary: string | null;
+  /** 诊断字段：基本面资料取数失败时的具体原因（如东财接口超时/被限流），用于排查线上 PE/PB 缺失。 */
+  profileError?: string | null;
 };
 
 export type FundFlow = {
@@ -330,21 +332,26 @@ async function eastmoneyProfile(code: string): Promise<Partial<StockProfile>> {
   const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=${fields}&invt=2&_=${Date.now()}`;
   try {
     const res = await fetch(url, { headers: { "user-agent": UA }, signal: AbortSignal.timeout(TIMEOUT) });
-    if (!res.ok) return {};
+    if (!res.ok) {
+      return { profileError: `东财基本面接口返回 HTTP ${res.status} (secid=${secid})` };
+    }
     const data = await res.json() as { data?: Record<string, string | null> };
     const d = data.data;
-    if (!d) return {};
+    if (!d) {
+      return { profileError: `东财基本面接口返回空 data (secid=${secid})` };
+    }
     const peRaw = num(d.f162);
     const pbRaw = num(d.f167);
     return {
       name: typeof d.f58 === "string" && d.f58 ? d.f58 : null,
       marketCap: num(d.f116),
-      // 东财 push2 的市盈率/市净率字段为「百分之一」单位（真实值 ×100），需还原。
+      // 东财 push2 的市盈率/市净率字段（f162/f167）为「真实值 ×100」的整数原始值，需 /100 还原。
       pe: peRaw !== null ? peRaw / 100 : null,
       pb: pbRaw !== null ? pbRaw / 100 : null,
     };
-  } catch {
-    return {};
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    return { profileError: `东财基本面接口请求失败：${reason} (secid=${secid})` };
   }
 }
 
@@ -437,6 +444,7 @@ export async function getProfile(code: string): Promise<StockProfile> {
     // 行业/简介：麦蕊优先 → 东方财富 f100 兜底（国内稳定）
     industry: mairui?.industry ?? emF100.industry ?? null,
     businessSummary: mairui?.businessSummary ?? emF100.businessSummary ?? null,
+    profileError: em.profileError ?? null,
   };
 }
 

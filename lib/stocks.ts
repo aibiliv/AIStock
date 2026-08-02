@@ -415,6 +415,8 @@ export async function analyzeStockData(query: string) {
       profitMargin: profile.profitMargin,
       operatingCashflow: profile.operatingCashflow,
       series: fundamentals,
+      // 诊断：PE/PB 取数失败原因（如东财接口超时/被限流），便于线上排查。
+      profileError: profile.profileError ?? null,
     },
     history: history.slice(-800),
     volume: analyzeVolume(history),

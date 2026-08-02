@@ -1639,6 +1639,9 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
                 <Metric label="市盈率" value={financials.pe} suffix="" help="股价相对公司利润的倍数" />
                 <Metric label="市净率" value={financials.pb} suffix="" help="股价相对净资产的倍数" />
               </div>
+              {financials.pe == null && financials.profileError ? (
+                <div className="profile-error">市盈率/市净率获取失败：{financials.profileError}</div>
+              ) : null}
               <div className="metric-row">
                 <Metric label="ROE" value={financials.roe} percentValue help="公司使用股东资金赚钱的能力" />
                 <Metric label="毛利率" value={financials.grossMargin} percentValue />

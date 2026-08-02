@@ -5427,6 +5427,18 @@ svg { display: block; }
 .hint--warn { color: color-mix(in srgb, var(--warn) 60%, var(--ink)); }
 .hint--danger { color: color-mix(in srgb, var(--down) 65%, var(--ink)); }
 
+/* 基本面取数失败诊断提示（如东财 PE/PB 接口超时/被限流） */
+.profile-error {
+  margin: 6px 0 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--down-soft, #fdecec);
+  color: color-mix(in srgb, var(--down) 70%, var(--ink));
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+  border: 1px solid color-mix(in srgb, var(--down) 30%, var(--line));
+}
+
 /* ---------------- 行内箭头链接 ---------------- */
 .link-arrow {
   align-items: center;
