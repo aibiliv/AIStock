@@ -2,11 +2,11 @@
 
 面向个人使用的 A 股记录与复盘工具。它负责整理公开行情、记录交易、触发价格提醒并辅助复盘，不提供荐股或自动交易。
 
-技术栈：Next.js（App Router，前端页面与 API 路由都在 `app/`）+ Cloudflare Workers（边缘入口在 `worker/`，拉起 Next 构建产物）+ Cloudflare D1（SQLite）+ drizzle ORM。架构是「纯前端 + 边缘函数 + SQLite」，无独立后端单体服务。仓库内也包含 `Dockerfile`/`docker-compose.yml`（方便自托管）与 `trading_agent/`（Python 量化脚本，详见下文）。
+技术栈：Next.js 16（App Router，前端页面与 API 路由都在 `app/`）+ Cloudflare Workers（边缘入口在 `worker/`，拉起 Next 构建产物）+ Cloudflare D1（SQLite）+ drizzle ORM。构建使用 `vinext`（Cloudflare 适配的 Next 构建工具，非原生 `next`）。架构是「纯前端 + 边缘函数 + SQLite」，无独立后端单体服务。仓库内也包含 `Dockerfile`/`docker-compose.yml`（方便自托管）与 `trading_agent/`（Python 量化脚本，详见下文）。
 
 ## 主要功能
 
-- 单用户账号登录（Cookie session），页面和数据接口均受保护
+- 单用户账号登录（Cookie session）：登录页为独立的 `app/login/page.tsx`，主应用 `app/page.tsx` 在服务端校验登录后才渲染 `Dashboard`，数据接口均受保护
 - 公开渠道行情、财务和题材信息整理（东财 / 腾讯 / Yahoo 等免费接口，可选麦蕊智数增强）
 - DeepSeek 或任意 OpenAI 兼容模型解释（也支持 Ollama / OpenRouter / GitHub Models 等免费源）
 - 关注股票、买卖记录、持仓与盈亏计算
@@ -198,6 +198,19 @@ python run_hub.py               # 一次跑完整流程，推送结果到云端
 python cloud_emulator.py        # 启动本地 HTTP 模拟（端口 8899）
 ```
 
+### 本地引擎守护进程（前端「应用并扫描」联调）
+
+`vinext dev` 的 API 路由跑在 Cloudflare Workers / Miniflare 沙箱中，无法直接执行 `child_process` 调起 Python，因此前端的「应用并扫描」按钮在本地开发时无法在沙箱内跑引擎。为此提供真实 Node 守护进程作为桥接：
+
+```bash
+# 另开一个终端，在项目根目录启动本地引擎守护进程
+npm run engine                  # 实际执行 node trading_agent/local_engine_server.js
+```
+
+守护进程监听 `127.0.0.1:8787`（可用 `LOCAL_ENGINE_PORT` / `LOCAL_ENGINE_HOST` 覆盖），收到请求后用真实 Node 调起 `python run_hub.py` 跑引擎，再把 `scan_payload.json` 回传。前端 `POST /api/strategy-scan/run` 检测到处于沙箱环境时，会自动把请求转发到该守护进程。
+
+> 在原生 `node` 部署（非沙箱）时，`SUPPORTS_EXEC` 为真，API 直接 `exec` Python，无需启动守护进程。云端 Workers 环境则直接返回 `CLOUD_ENGINE_DISABLED`，选股改由本地程序拉取云端配置后运行。
+
 ### 数据流向
 
 ```
@@ -222,7 +235,7 @@ python cloud_emulator.py        # 启动本地 HTTP 模拟（端口 8899）
 
 ## 前端与组件
 
-- 单页应用：主入口 `app/page.tsx`（服务端校验登录后渲染 `app/Dashboard.tsx`）。
+- 单页应用：登录页 `app/login/page.tsx`（视觉化卡片，提交到 `/api/auth/login`）；主应用 `app/page.tsx`（服务端校验登录后渲染 `app/Dashboard.tsx`）。
 - 视图状态机 `view ∈ home | analysis | watchlist | trades | settings | analytics | strategyScan | writeback`；分析页由 `app/AnalyticsView.tsx` 渲染，回写结果页由 `app/WritebackView.tsx` 渲染。
 - 全局浮窗 AI 助手 `FloatingAssistantLauncher`：右下角浮动按钮，展开后支持绑定股票分析、组合持仓查询，选股下拉框自动合并关注列表与最近分析历史。
 - 对话式复盘助手 `SmartAssistant`：分析页内嵌使用，调用 `/api/assistant`，支持分析上下文自动注入。
