@@ -5,13 +5,13 @@ from __future__ import annotations
 import json
 import os
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+# 本脚本位于 dev/，运行产物与本机数据放在 trading_agent 根
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PREFETCHED = os.path.join(BASE, "prefetched.json")
-INDEX_FILE = (
-    r"C:\Users\xilasuo\.workbuddy\projects\d-code-AICode-AIStock"
-    r"\253b6445-e005-4edc-b925-24f99709e0ca\tool-results"
-    r"\mcp-connector-proxy-tdx-connector_tdx_kline-1785589574309-5073d0.txt"
-)
+# 本地 MCP 落盘的指数 K 线文本（本机专用，从环境变量 INDEX_KLINE_FILE 传入）
+INDEX_FILE = os.environ.get("INDEX_KLINE_FILE") or ""
+if not INDEX_FILE:
+    raise SystemExit("请设置环境变量 INDEX_KLINE_FILE 指向本地索引 K 线 tool-result 文件")
 OUT = os.path.join(BASE, "prefetched_verify.json")
 
 # 本次 westock 真实估值快照 (2026-07-31 收盘)

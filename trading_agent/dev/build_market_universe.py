@@ -1,7 +1,7 @@
 """把云端策略配置翻译成「多连接器」的全市场选股查询，用于「按勾选板块全市场选股」。
 
 用法:
-    python build_market_universe.py
+    python dev/build_market_universe.py
 输出(打印到 stdout, 机器可解析):
     TDEX_QUERY=<自然语言查询，直接作为 tdx_screener 的 message>
     WESTOCK_FILTER_PRESET=<腾讯自选股 tool_filter 的 preset，如 low_pe>
@@ -28,7 +28,10 @@ import re
 import sys
 import json
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# dev/ 脚本需要引用 trading_agent 根目录的 config / pull_cloud_config 等
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
 import pull_cloud_config as pcc
 

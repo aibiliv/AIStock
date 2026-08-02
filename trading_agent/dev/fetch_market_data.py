@@ -24,7 +24,10 @@ import json
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# dev/ 脚本需要引用 trading_agent 根目录的 data / config 等
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 from data import provider  # 复用「连接器同底层」的取数实现
 import config
 

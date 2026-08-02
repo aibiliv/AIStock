@@ -10,10 +10,10 @@ import json
 import os
 import glob
 
-TOOL_RESULTS = (
-    r"C:\Users\xilasuo\.workbuddy\projects\d-code-AICode-AIStock"
-    r"\3774701f-ff9f-4781-b5ac-5e1a448d9b96\tool-results"
-)
+# 本地 MCP 落盘的 tool-results 目录（本机专用，请从环境变量 WORKBUDDY_TOOL_RESULTS 传入）
+TOOL_RESULTS = os.environ.get("WORKBUDDY_TOOL_RESULTS") or ""
+if not TOOL_RESULTS:
+    raise SystemExit("请设置环境变量 WORKBUDDY_TOOL_RESULTS 指向本地 MCP tool-results 目录")
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prefetched.json")
 
 # westock 批量快照（2026-07-31 收盘）: code -> (price, pe_ttm, pb, change_pct)

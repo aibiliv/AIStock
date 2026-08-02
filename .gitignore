@@ -99,6 +99,35 @@ trading_agent/scan_payload.json
 trading_agent/signals_out.json
 trading_agent/watchlist.json
 
+# ---- trading_agent: 本地模块级忽略规则（含敏感/临时） ----
+trading_agent/.gitignore
+
+# ---- trading_agent: 云端凭据与连接快照（含真实 IP / token / sha256，切勿推送） ----
+trading_agent/cloud_config_snapshot.json
+trading_agent/cloud_strategy_receipt.json
+trading_agent/strategy_config.yaml
+
+# ---- trading_agent: 含真实凭据的本地联调探针脚本 ----
+trading_agent/probe_cloud_test.py
+trading_agent/fetch_cloud_test.py
+trading_agent/verify_cloud_read.py
+trading_agent/reset_cloud_config.py
+
+# ---- trading_agent: 联调预览 / 临时数据 / 运行缓存 ----
+trading_agent/integration_preview.html
+trading_agent/.tmp_cloud/
+trading_agent/cloud_test_out/
+trading_agent/cloud_test_out_fallback/
+trading_agent/cloud_test_out_false/
+trading_agent/cache/
+trading_agent/reports/
+trading_agent/feedback.jsonl
+trading_agent/market_universe.json
+trading_agent/prefetched.json
+trading_agent/prefetched_verify.json
+trading_agent/test_universe_conn.json
+trading_agent/*.snapshot.json
+
 # ---- Playwright (e2e 测试产物) ----
 /test-results/
 /playwright-report/
