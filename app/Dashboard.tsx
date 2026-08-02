@@ -1808,18 +1808,42 @@ const STRATEGY_BLOCK_META: Record<string, { icon: React.ReactNode; cls: string; 
 };
 
 function StrategyBlocks({ content }: { content: string }) {
-  const lines = content.split("\n").map((line) => line.trim()).filter(Boolean);
+  const knownLabels = Object.keys(STRATEGY_BLOCK_META);
+  const blocks: { label?: string; body: string }[] = [];
+
+  for (const rawLine of content.split("\n")) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) {
+      // 保留空行以维持段落/表格间距
+      if (blocks.length > 0) {
+        blocks[blocks.length - 1].body += "\n";
+      }
+      continue;
+    }
+    const matchedLabel = knownLabels.find(
+      (label) => trimmed.startsWith(`${label}：`) || trimmed.startsWith(`${label}:`)
+    );
+    if (matchedLabel) {
+      const sepIndex = trimmed.indexOf("：") !== -1 ? trimmed.indexOf("：") : trimmed.indexOf(":");
+      const body = trimmed.slice(sepIndex + 1).trim();
+      blocks.push({ label: matchedLabel, body });
+    } else if (blocks.length === 0) {
+      blocks.push({ body: rawLine });
+    } else {
+      blocks[blocks.length - 1].body += "\n" + rawLine;
+    }
+  }
+
   return (
     <div className="strategy-blocks">
-      {lines.map((line, index) => {
-        const match = line.match(/^([：:])\s*(.*)$/);
-        const label = match ? line.slice(0, line.indexOf(match[2])) : "";
-        const body = match ? match[2] : line;
-        const meta = label ? STRATEGY_BLOCK_META[label] : undefined;
+      {blocks.map((block, index) => {
+        const meta = block.label ? STRATEGY_BLOCK_META[block.label] : undefined;
         if (!meta) {
           return (
             <div key={index} className="strategy-block strategy-block--plain">
-              <p>{line}</p>
+              <div className="strategy-block__body strategy-table-wrap">
+                <MarkdownMessage content={block.body.trim()} />
+              </div>
             </div>
           );
         }
@@ -1830,7 +1854,7 @@ function StrategyBlocks({ content }: { content: string }) {
               <span className="strategy-block__label">{meta.label}</span>
             </div>
             <div className="strategy-block__body strategy-table-wrap">
-              <MarkdownMessage content={body} />
+              <MarkdownMessage content={block.body.trim()} />
             </div>
           </div>
         );
