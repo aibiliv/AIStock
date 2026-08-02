@@ -107,7 +107,8 @@ trading_agent/cloud_config_snapshot.json
 trading_agent/cloud_strategy_receipt.json
 trading_agent/strategy_config.yaml
 
-# ---- trading_agent: 含真实凭据的本地联调探针脚本 ----
+# ---- trading_agent: 含真实凭据的本地联调探针脚本 + dev/ 本地联调工具目录（不入库） ----
+trading_agent/dev/
 trading_agent/probe_cloud_test.py
 trading_agent/fetch_cloud_test.py
 trading_agent/verify_cloud_read.py
