@@ -144,7 +144,7 @@ async function main(): Promise<void> {
   try {
     sqlite(
       db,
-      `UPDATE users SET passwordSalt = '${salt}', passwordHash = '${hash}', disabled = 0 WHERE id = ${targetId};`,
+      `UPDATE users SET salt = '${salt}', password_hash = '${hash}', disabled = 0 WHERE id = ${targetId};`,
     );
   } catch (e) {
     fail(`更新密码失败：${(e as Error).message}`);
