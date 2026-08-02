@@ -1,5 +1,18 @@
 import { sql } from "drizzle-orm";
-import { integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+
+// 多用户账户表（超级管理员在后台增删；普通用户不能自助注册）。
+// 密码仅存 PBKDF2 哈希 + 随机 salt，绝不存明文。
+export const users = sqliteTable("users", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  username: text("username").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  salt: text("salt").notNull(),
+  displayName: text("display_name").notNull().default(""),
+  role: text("role", { enum: ["super_admin", "user"] }).notNull().default("user"),
+  disabled: integer("disabled", { mode: "boolean" }).notNull().default(false),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
 
 // Keep the original prototype table in the migration graph so existing data is
 // never dropped when the new, validated tables are introduced.
@@ -18,6 +31,7 @@ export const legacyTrades = sqliteTable("trades", {
 
 export const tradeRecords = sqliteTable("trade_records", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull().default(0),
   symbol: text("symbol").notNull(),
   name: text("name").notNull(),
   side: text("side", { enum: ["买入", "卖出"] }).notNull(),
@@ -35,14 +49,18 @@ export const tradeRecords = sqliteTable("trade_records", {
 
 export const watchItems = sqliteTable("watch_items", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  symbol: text("symbol").notNull().unique(),
+  userId: integer("user_id").notNull().default(0),
+  symbol: text("symbol").notNull(),
   name: text("name").notNull(),
   note: text("note").notNull().default(""),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-});
+}, (table) => ({
+  userSymbolUnique: uniqueIndex("watch_items_user_symbol_idx").on(table.userId, table.symbol),
+}));
 
 export const watchDetails = sqliteTable("watch_details", {
-  symbol: text("symbol").primaryKey(),
+  symbol: text("symbol").notNull(),
+  userId: integer("user_id").notNull().default(0),
   conditionText: text("condition_text").notNull().default("等待自己的买入条件"),
   status: text("status", { enum: ["研究中", "等待条件", "已买入", "暂停"] }).notNull().default("研究中"),
   lastReviewedAt: text("last_reviewed_at"),
@@ -50,10 +68,13 @@ export const watchDetails = sqliteTable("watch_details", {
   conditionMetric: text("condition_metric"),
   conditionDirection: text("condition_direction"),
   conditionValue: real("condition_value"),
-});
+}, (table) => ({
+  pk: primaryKey({ columns: [table.symbol, table.userId] }),
+}));
 
 export const alertRules = sqliteTable("alert_rules", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull().default(0),
   symbol: text("symbol").notNull(),
   name: text("name").notNull(),
   type: text("type", { enum: ["止损", "止盈一", "止盈二"] }).notNull(),
@@ -67,6 +88,7 @@ export const alertRules = sqliteTable("alert_rules", {
 
 export const reviews = sqliteTable("reviews", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull().default(0),
   symbol: text("symbol").notNull(),
   name: text("name").notNull(),
   cycleEndTradeId: integer("cycle_end_trade_id"),
@@ -82,6 +104,7 @@ export const reviews = sqliteTable("reviews", {
 
 export const analysisReports = sqliteTable("analysis_reports", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull().default(0),
   symbol: text("symbol").notNull(),
   name: text("name").notNull(),
   priceCents: integer("price_cents").notNull(),
@@ -96,6 +119,7 @@ export const analysisReports = sqliteTable("analysis_reports", {
 
 export const announcementNotes = sqliteTable("announcement_notes", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull().default(0),
   symbol: text("symbol").notNull(),
   name: text("name").notNull(),
   title: text("title").notNull(),
@@ -109,12 +133,14 @@ export const announcementNotes = sqliteTable("announcement_notes", {
 
 export const accountSettings = sqliteTable("account_settings", {
   id: integer("id").primaryKey(),
+  userId: integer("user_id").notNull().default(0),
   initialCapitalCents: integer("initial_capital_cents").notNull(),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
 export const capitalFlows = sqliteTable("capital_flows", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull().default(0),
   amountCents: integer("amount_cents").notNull(),
   flowDate: text("flow_date").notNull(),
   note: text("note"),
@@ -123,6 +149,7 @@ export const capitalFlows = sqliteTable("capital_flows", {
 
 export const tradingPreferences = sqliteTable("trading_preferences", {
   id: integer("id").primaryKey(),
+  userId: integer("user_id").notNull().default(0),
   riskProfile: text("risk_profile", { enum: ["保守", "平衡", "激进"] }).notNull().default("平衡"),
   maxLossPercent: real("max_loss_percent").notNull().default(2),
   maxConcentrationPercent: real("max_concentration_percent").notNull().default(30),
@@ -136,6 +163,7 @@ export const tradingPreferences = sqliteTable("trading_preferences", {
 // 用户在「策略扫描」页对某只标的/某次信号给出有效/无效评价，供 optimizer 调整权重。
 export const strategyFeedback = sqliteTable("strategy_feedback", {
   id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id").notNull().default(0),
   symbol: text("symbol").notNull(),
   name: text("name").notNull().default(""),
   verdict: text("verdict", { enum: ["有效", "无效"] }).notNull().default("有效"),

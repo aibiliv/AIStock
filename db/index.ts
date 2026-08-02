@@ -36,6 +36,17 @@ export async function ensureSchema() {
   schemaReady = (async () => {
     const db = env.DB;
     await db.batch([
+      db.prepare(`CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        salt TEXT NOT NULL,
+        display_name TEXT NOT NULL DEFAULT '',
+        role TEXT NOT NULL DEFAULT 'user',
+        disabled INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`),
+      db.prepare(`CREATE INDEX IF NOT EXISTS users_username_idx ON users(username)`),
       db.prepare(`CREATE TABLE IF NOT EXISTS trade_records (
         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
         symbol TEXT NOT NULL,
@@ -59,14 +70,16 @@ export async function ensureSchema() {
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`),
       db.prepare(`CREATE TABLE IF NOT EXISTS watch_details (
-        symbol TEXT PRIMARY KEY NOT NULL,
+        symbol TEXT NOT NULL,
+        user_id INTEGER NOT NULL DEFAULT 0,
         condition_text TEXT NOT NULL DEFAULT '等待自己的买入条件',
         status TEXT NOT NULL DEFAULT '研究中',
         last_reviewed_at TEXT,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
         condition_metric TEXT,
         condition_direction TEXT,
-        condition_value REAL
+        condition_value REAL,
+        PRIMARY KEY (symbol, user_id)
       )`),
       db.prepare(`CREATE TABLE IF NOT EXISTS alert_rules (
         id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -185,10 +198,142 @@ export async function ensureSchema() {
     await addColumnIfMissing("analysis_reports", "price_millis", "price_millis INTEGER");
     await addColumnIfMissing("reviews", "tags", "tags TEXT NOT NULL DEFAULT '[]'");
     await addColumnIfMissing("reviews", "deviation_reason", "deviation_reason TEXT NOT NULL DEFAULT ''");
+
+    // ---- 多用户隔离迁移 ----
+    // 1) 给所有用户数据表加 user_id 列（老表兼容，默认 0 表示尚未归属）
+    for (const table of [
+      "trade_records", "watch_items", "alert_rules", "reviews",
+      "analysis_reports", "announcement_notes", "account_settings",
+      "capital_flows", "trading_preferences", "strategy_feedback",
+    ]) {
+      await addColumnIfMissing(table, "user_id", "user_id INTEGER NOT NULL DEFAULT 0");
+    }
+
+    // 2) watch_details 老表（单列 symbol 主键）迁移到复合主键 (symbol, user_id)
+    const wdInfo = await db.prepare(`PRAGMA table_info(watch_details)`).all();
+    const wdColumns = wdInfo.results as Array<{ name?: string }>;
+    if (wdColumns.length > 0 && !wdColumns.some((c) => c.name === "user_id")) {
+      await db.batch([
+        db.prepare(`CREATE TABLE watch_details_new (
+          symbol TEXT NOT NULL,
+          user_id INTEGER NOT NULL DEFAULT 0,
+          condition_text TEXT NOT NULL DEFAULT '等待自己的买入条件',
+          status TEXT NOT NULL DEFAULT '研究中',
+          last_reviewed_at TEXT,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          condition_metric TEXT,
+          condition_direction TEXT,
+          condition_value REAL,
+          PRIMARY KEY (symbol, user_id)
+        )`),
+        db.prepare(`INSERT INTO watch_details_new (symbol, user_id, condition_text, status, last_reviewed_at, updated_at, condition_metric, condition_direction, condition_value)
+          SELECT symbol, 0, condition_text, status, last_reviewed_at, updated_at, condition_metric, condition_direction, condition_value FROM watch_details`),
+        db.prepare(`DROP TABLE watch_details`),
+        db.prepare(`ALTER TABLE watch_details_new RENAME TO watch_details`),
+      ]);
+    }
+
+    // 3) 首次启动：若 users 表为空，则用环境变量 seed 一个超级管理员
+    const existingUsers = await db.prepare(`SELECT COUNT(*) AS count FROM users`).all();
+    const userCount = Number((existingUsers.results as Array<{ count?: number }>)[0]?.count ?? 0);
+    let adminId = 1;
+    if (userCount === 0) {
+      const runtimeEnv = env as unknown as {
+        APP_USERNAME?: string;
+        APP_PASSWORD?: string;
+        APP_AUTH_SECRET?: string;
+      };
+      const seedUsername = (runtimeEnv.APP_USERNAME ?? "admin").trim();
+      const seedPassword = runtimeEnv.APP_PASSWORD ?? "";
+      if (seedPassword.length < 12) {
+        throw new Error(
+          "首次启动必须设置 APP_USERNAME 与 APP_PASSWORD(≥12位) 以初始化超级管理员账户",
+        );
+      }
+      const salt = bytesToBase64Url(crypto.getRandomValues(new Uint8Array(16)));
+      const passwordHash = await pbkdf2Hash(seedPassword, salt);
+      const insertResult = await db.prepare(
+        `INSERT INTO users (username, password_hash, salt, display_name, role, disabled, created_at)
+         VALUES (?, ?, ?, ?, 'super_admin', 0, CURRENT_TIMESTAMP)`,
+      ).bind(seedUsername, passwordHash, salt, seedUsername).run();
+      adminId = Number(insertResult.meta?.last_row_id ?? 1);
+    } else {
+      const adminRow = await db.prepare(
+        `SELECT id FROM users WHERE role = 'super_admin' AND disabled = 0 ORDER BY id ASC LIMIT 1`,
+      ).all();
+      const existingAdmin = (adminRow.results as Array<{ id?: number }>)[0]?.id;
+      if (existingAdmin != null) {
+        adminId = Number(existingAdmin);
+      } else {
+        // 库里已有用户但尚无超级管理员：自动把 APP_USERNAME 指定账号
+        // （找不到则取 id 最小的账号）提升为 super_admin，避免老库永远停留在普通用户态
+        const runtimeEnv = env as unknown as { APP_USERNAME?: string };
+        const targetUsername = (runtimeEnv.APP_USERNAME ?? "").trim();
+        let promoteId: number | null = null;
+        if (targetUsername) {
+          const targetRow = await db.prepare(
+            `SELECT id FROM users WHERE username = ? AND disabled = 0 ORDER BY id ASC LIMIT 1`,
+          ).bind(targetUsername).all();
+          promoteId = (targetRow.results as Array<{ id?: number }>)[0]?.id ?? null;
+        }
+        if (promoteId == null) {
+          const firstRow = await db.prepare(
+            `SELECT id FROM users WHERE disabled = 0 ORDER BY id ASC LIMIT 1`,
+          ).all();
+          promoteId = (firstRow.results as Array<{ id?: number }>)[0]?.id ?? 1;
+        }
+        await db.prepare(
+          `UPDATE users SET role = 'super_admin' WHERE id = ?`,
+        ).bind(promoteId).run();
+        adminId = Number(promoteId);
+      }
+    }
+
+    // 4) 把老数据（user_id = 0）归属到超级管理员，实现平滑兼容
+    await db.batch([
+      db.prepare(`UPDATE trade_records SET user_id = ? WHERE user_id = 0`).bind(adminId),
+      db.prepare(`UPDATE watch_items SET user_id = ? WHERE user_id = 0`).bind(adminId),
+      db.prepare(`UPDATE watch_details SET user_id = ? WHERE user_id = 0`).bind(adminId),
+      db.prepare(`UPDATE alert_rules SET user_id = ? WHERE user_id = 0`).bind(adminId),
+      db.prepare(`UPDATE reviews SET user_id = ? WHERE user_id = 0`).bind(adminId),
+      db.prepare(`UPDATE analysis_reports SET user_id = ? WHERE user_id = 0`).bind(adminId),
+      db.prepare(`UPDATE announcement_notes SET user_id = ? WHERE user_id = 0`).bind(adminId),
+      db.prepare(`UPDATE account_settings SET user_id = ? WHERE user_id = 0`).bind(adminId),
+      db.prepare(`UPDATE capital_flows SET user_id = ? WHERE user_id = 0`).bind(adminId),
+      db.prepare(`UPDATE trading_preferences SET user_id = ? WHERE user_id = 0`).bind(adminId),
+      db.prepare(`UPDATE strategy_feedback SET user_id = ? WHERE user_id = 0`).bind(adminId),
+      // 单例表（id=1）确保归属超级管理员
+      db.prepare(`UPDATE account_settings SET user_id = ? WHERE id = 1`).bind(adminId),
+      db.prepare(`UPDATE trading_preferences SET user_id = ? WHERE id = 1`).bind(adminId),
+    ]);
   })().catch((error) => {
     schemaReady = null;
     throw error;
   });
 
   return schemaReady;
+}
+
+// 与 lib/auth.ts 保持一致：PBKDF2(SHA-256, 100k) 哈希，用于 seed 超级管理员。
+async function pbkdf2Hash(password: string, salt: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw",
+    encoder.encode(password),
+    "PBKDF2",
+    false,
+    ["deriveBits"],
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: encoder.encode(salt), iterations: 100_000, hash: "SHA-256" },
+    keyMaterial,
+    256,
+  );
+  return bytesToBase64Url(new Uint8Array(bits));
+}
+
+function bytesToBase64Url(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }

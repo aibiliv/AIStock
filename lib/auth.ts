@@ -1,23 +1,40 @@
 import { env } from "cloudflare:workers";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
+import { eq } from "drizzle-orm";
+import { getDb, ensureSchema } from "../db";
+import { users } from "../db/schema";
+import {
+  createSessionToken,
+  verifyToken,
+  signToken,
+  safeEqual,
+  generateSalt,
+  hashPassword,
+  bytesToBase64Url,
+  SESSION_SECONDS,
+  type SessionUser,
+} from "./crypto";
 
 export type AuthenticatedUser = {
+  id: number;
+  username: string;
   displayName: string;
-  email: string;
+  role: "super_admin" | "user";
+  email?: string;
 };
 
 const COOKIE_NAME = "stock_assistant_session";
 const SESSION_SECONDS = 60 * 60 * 24 * 30;
 
 type AuthConfig = {
-  username: string;
-  password: string;
   secret: string;
 };
 
 export function isAuthConfigured(): boolean {
-  return getAuthConfig() !== null;
+  const runtimeEnv = env as unknown as { APP_AUTH_SECRET?: string };
+  const secret = runtimeEnv.APP_AUTH_SECRET ?? "";
+  return secret.length >= 32;
 }
 
 export async function getAuthenticatedUser(): Promise<AuthenticatedUser | null> {
@@ -27,13 +44,10 @@ export async function getAuthenticatedUser(): Promise<AuthenticatedUser | null> 
   const token = (await cookies()).get(COOKIE_NAME)?.value;
   if (!token) return null;
 
-  const username = await verifySessionToken(token, config.secret);
-  if (username !== config.username) return null;
+  const payload = await verifySessionToken(token, config.secret);
+  if (!payload) return null;
 
-  return {
-    displayName: username,
-    email: username,
-  };
+  return payload;
 }
 
 export async function requireAuthenticatedUser(): Promise<AuthenticatedUser> {
@@ -48,20 +62,42 @@ export async function requireApiUser(): Promise<Response | null> {
   return Response.json({ error: "请先登录后再使用" }, { status: 401 });
 }
 
+/** 当前登录用户，未登录抛 401 Response（供需要 userId 的路由快速取用）。 */
+export async function getCurrentUser(): Promise<AuthenticatedUser> {
+  const user = await getAuthenticatedUser();
+  if (!user) {
+    throw Response.json({ error: "请先登录后再使用" }, { status: 401 });
+  }
+  return user;
+}
+
+/** 仅超级管理员可通过，否则抛 403 Response。 */
+export async function requireSuperAdmin(): Promise<AuthenticatedUser> {
+  const user = await getCurrentUser();
+  if (user.role !== "super_admin") {
+    throw Response.json({ error: "仅超级管理员可执行此操作" }, { status: 403 });
+  }
+  return user;
+}
+
 export async function authenticate(username: string, password: string): Promise<string | null> {
   const config = getAuthConfig();
   if (!config) return null;
 
-  const [usernameMatches, passwordMatches] = await Promise.all([
-    safeEqual(username, config.username),
-    safeEqual(password, config.password),
-  ]);
-  if (!usernameMatches || !passwordMatches) return null;
+  await ensureSchema();
+  const db = getDb();
+  const rows = await db
+    .select()
+    .from(users)
+    .where(eq(users.username, username))
+    .limit(1);
+  const user = rows[0];
+  if (!user || user.disabled) return null;
 
-  const expiresAt = Math.floor(Date.now() / 1000) + SESSION_SECONDS;
-  const payload = toBase64Url(JSON.stringify({ username: config.username, expiresAt }));
-  const signature = await sign(payload, config.secret);
-  return `${payload}.${signature}`;
+  const hash = await hashPassword(password, user.salt);
+  if (!await safeEqual(hash, user.passwordHash)) return null;
+
+  return createSessionToken(user, config.secret);
 }
 
 export function sessionCookie(token: string, secure: boolean): string {
@@ -87,73 +123,22 @@ export function clearSessionCookie(secure: boolean): string {
 }
 
 function getAuthConfig(): AuthConfig | null {
-  const runtimeEnv = env as unknown as {
-    APP_USERNAME?: string;
-    APP_PASSWORD?: string;
-    APP_AUTH_SECRET?: string;
-  };
-  const username = runtimeEnv.APP_USERNAME?.trim() ?? "";
-  const password = runtimeEnv.APP_PASSWORD ?? "";
+  const runtimeEnv = env as unknown as { APP_AUTH_SECRET?: string };
   const secret = runtimeEnv.APP_AUTH_SECRET ?? "";
-  if (!username || password.length < 12 || secret.length < 32) return null;
-  return { username, password, secret };
+  if (secret.length < 32) return null;
+  return { secret };
 }
 
-async function verifySessionToken(token: string, secret: string): Promise<string | null> {
-  const [payload, signature, extra] = token.split(".");
-  if (!payload || !signature || extra) return null;
-  if (!await safeEqual(signature, await sign(payload, secret))) return null;
-
-  try {
-    const parsed = JSON.parse(fromBase64Url(payload)) as { username?: unknown; expiresAt?: unknown };
-    if (typeof parsed.username !== "string" || typeof parsed.expiresAt !== "number") return null;
-    if (parsed.expiresAt <= Math.floor(Date.now() / 1000)) return null;
-    return parsed.username;
-  } catch {
-    return null;
-  }
+async function verifySessionToken(token: string, secret: string): Promise<AuthenticatedUser | null> {
+  const session = await verifyToken(token, secret);
+  if (!session) return null;
+  return {
+    id: session.id,
+    username: session.username,
+    displayName: session.displayName,
+    role: session.role,
+  };
 }
 
-async function sign(value: string, secret: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(value));
-  return bytesToBase64Url(new Uint8Array(signature));
-}
-
-async function safeEqual(left: string, right: string): Promise<boolean> {
-  const encoder = new TextEncoder();
-  const [leftHash, rightHash] = await Promise.all([
-    crypto.subtle.digest("SHA-256", encoder.encode(left)),
-    crypto.subtle.digest("SHA-256", encoder.encode(right)),
-  ]);
-  const leftBytes = new Uint8Array(leftHash);
-  const rightBytes = new Uint8Array(rightHash);
-  let difference = 0;
-  for (let index = 0; index < leftBytes.length; index += 1) {
-    difference |= leftBytes[index] ^ rightBytes[index];
-  }
-  return difference === 0;
-}
-
-function toBase64Url(value: string): string {
-  return bytesToBase64Url(new TextEncoder().encode(value));
-}
-
-function fromBase64Url(value: string): string {
-  const base64 = value.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
-  return new TextDecoder().decode(Uint8Array.from(atob(padded), (character) => character.charCodeAt(0)));
-}
-
-function bytesToBase64Url(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
+// 账户管理接口复用同一套密码哈希工具（实现位于 lib/crypto.ts）
+export { generateSalt, hashPassword };

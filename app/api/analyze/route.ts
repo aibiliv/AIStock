@@ -2,7 +2,7 @@ import { ensureSchema, getDb } from "../../../db";
 import { analysisReports } from "../../../db/schema";
 import { analyzeStockData, automaticExplanation } from "../../../lib/stocks";
 import { getAiConfig } from "../../../lib/ai-config";
-import { requireApiUser } from "../../../lib/auth";
+import { getCurrentUser, requireApiUser } from "../../../lib/auth";
 import { DEFAULT_PREFERENCES, fetchPreferences } from "../../../lib/preferences";
 import { isValidContext, type AssistantContext } from "../../../lib/assistant";
 import { generateStrategy } from "../../../lib/trading-strategy";
@@ -98,7 +98,7 @@ function slimFactsForPrompt(facts: Awaited<ReturnType<typeof analyzeStockData>>)
   };
 }
 
-async function getDeepSeekExplanation(facts: Awaited<ReturnType<typeof analyzeStockData>>) {
+async function getDeepSeekExplanation(facts: Awaited<ReturnType<typeof analyzeStockData>>, userId: number) {
   const fallback = automaticExplanation(facts);
   const ai = getAiConfig();
   if (!ai.configured) {
@@ -108,7 +108,7 @@ async function getDeepSeekExplanation(facts: Awaited<ReturnType<typeof analyzeSt
   let prefs = DEFAULT_PREFERENCES;
   try {
     await ensureSchema();
-    prefs = await fetchPreferences(getDb());
+    prefs = await fetchPreferences(getDb(), userId);
   } catch {
     // 偏好缺失时退回默认纪律
   }
@@ -184,6 +184,7 @@ export async function POST(request: Request) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     const payload = await request.json() as {
       query?: string;
       saveHistory?: boolean;
@@ -199,7 +200,7 @@ export async function POST(request: Request) {
     const facts = await analyzeStockData(query);
     const analysis = payload.explain === false || facts.stock.instrumentType === "etf"
       ? { mode: "automatic" as const, explanation: automaticExplanation(facts) }
-      : await getDeepSeekExplanation(facts);
+      : await getDeepSeekExplanation(facts, user.id);
     const result = { ...facts, ...analysis };
 
     if (payload.strategy) {
@@ -210,7 +211,7 @@ export async function POST(request: Request) {
           let prefs = DEFAULT_PREFERENCES;
           try {
             await ensureSchema();
-            prefs = await fetchPreferences(getDb());
+            prefs = await fetchPreferences(getDb(), user.id);
           } catch {
             // 偏好缺失时退回默认纪律
           }
@@ -226,6 +227,7 @@ export async function POST(request: Request) {
       try {
         await ensureSchema();
         await getDb().insert(analysisReports).values({
+          userId: user.id,
           symbol: facts.stock.code,
           name: facts.stock.name,
           priceCents: Math.round(facts.quote.price * 100),

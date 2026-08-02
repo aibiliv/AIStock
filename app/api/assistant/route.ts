@@ -1,6 +1,6 @@
 import { getAiConfig } from "../../../lib/ai-config";
 import { buildFallbackAnswer, isValidContext, type AssistantContext } from "../../../lib/assistant";
-import { requireApiUser } from "../../../lib/auth";
+import { getCurrentUser, requireApiUser } from "../../../lib/auth";
 import { ensureSchema, getDb } from "../../../db";
 import { DEFAULT_PREFERENCES, fetchPreferences, type TradingPreferences } from "../../../lib/preferences";
 
@@ -65,6 +65,7 @@ export async function POST(request: Request) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
 
+  const user = await getCurrentUser();
   const payload = await request.json().catch(() => null) as {
     question?: string;
     context?: unknown;
@@ -93,7 +94,7 @@ export async function POST(request: Request) {
   let prefs: TradingPreferences = DEFAULT_PREFERENCES;
   try {
     await ensureSchema();
-    prefs = await fetchPreferences(getDb());
+    prefs = await fetchPreferences(getDb(), user.id);
   } catch {
     // 偏好缺失时退回默认纪律，不影响对话
   }

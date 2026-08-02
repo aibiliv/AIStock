@@ -281,12 +281,14 @@ function NumberInput({
   onChange,
   placeholder,
   min = 0,
+  max,
   step,
 }: {
   value: number | undefined;
   onChange: (v: number) => void;
   placeholder?: string;
   min?: number;
+  max?: number;
   step?: number;
 }) {
   return (

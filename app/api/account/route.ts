@@ -1,18 +1,21 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { accountSettings, capitalFlows } from "../../../db/schema";
-import { requireApiUser } from "../../../lib/auth";
+import { getCurrentUser, requireApiUser } from "../../../lib/auth";
 import { shanghaiIso } from "../../../lib/time";
 
 export async function GET() {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     await ensureSchema();
     const db = getDb();
     const [settings, flows] = await Promise.all([
-      db.select().from(accountSettings).where(eq(accountSettings.id, 1)).limit(1),
-      db.select().from(capitalFlows).orderBy(desc(capitalFlows.flowDate), desc(capitalFlows.id)),
+      db.select().from(accountSettings).where(eq(accountSettings.userId, user.id)).limit(1),
+      db.select().from(capitalFlows)
+        .where(eq(capitalFlows.userId, user.id))
+        .orderBy(desc(capitalFlows.flowDate), desc(capitalFlows.id)),
     ]);
     return Response.json({
       initialCapitalCents: settings[0]?.initialCapitalCents ?? null,
@@ -33,6 +36,7 @@ export async function PUT(request: Request) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
 
+  const user = await getCurrentUser();
   const payload = await request.json().catch(() => null) as {
     initialCapital?: number;
     action?: string;
@@ -48,7 +52,8 @@ export async function PUT(request: Request) {
   // 删除出入金流水
   if (payload?.action === "delete_flow" && payload.flowId) {
     try {
-      await db.delete(capitalFlows).where(eq(capitalFlows.id, payload.flowId));
+      await db.delete(capitalFlows)
+        .where(and(eq(capitalFlows.id, payload.flowId), eq(capitalFlows.userId, user.id)));
       return Response.json({ ok: true });
     } catch {
       return Response.json({ error: "删除失败" }, { status: 500 });
@@ -67,6 +72,7 @@ export async function PUT(request: Request) {
     }
     try {
       await db.insert(capitalFlows).values({
+        userId: user.id,
         amountCents: Math.round(amount),
         flowDate,
         note: String(payload.note ?? "").trim() || null,
@@ -86,12 +92,11 @@ export async function PUT(request: Request) {
     try {
       const initialCapitalCents = Math.round(initialCapital * 100);
       await db.insert(accountSettings).values({
-        id: 1,
+        userId: user.id,
         initialCapitalCents,
-        createdAt: shanghaiIso(),
         updatedAt: shanghaiIso(),
       }).onConflictDoUpdate({
-        target: accountSettings.id,
+        target: accountSettings.userId,
         set: { initialCapitalCents, updatedAt: shanghaiIso() },
       });
       return Response.json({ initialCapitalCents });

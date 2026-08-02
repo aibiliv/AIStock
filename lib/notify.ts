@@ -8,7 +8,7 @@
  *
  * 对标：交易软件的"价格提醒推送"。
  */
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { DrizzleD1Database } from "drizzle-orm/d1";
 import * as schema from "../db/schema";
 import { ensureSchema, getDb } from "../db";
@@ -71,6 +71,13 @@ export async function checkAndNotifyAlerts(
     .from(schema.alertRules)
     .where(and(eq(schema.alertRules.enabled, true), isNull(schema.alertRules.triggeredAt)));
 
+  // 多用户隔离：按归属用户分组推送，消息中标注用户名以区分
+  const userIds = [...new Set(rules.map((r) => r.userId).filter((id) => id))];
+  const userRows = userIds.length
+    ? await db.select({ id: schema.users.id, username: schema.users.username }).from(schema.users).where(inArray(schema.users.id, userIds))
+    : [];
+  const usernameById = new Map(userRows.map((u) => [u.id, u.username]));
+
   const priceCache = new Map<string, number | null>();
   let notified = 0;
 
@@ -93,9 +100,11 @@ export async function checkAndNotifyAlerts(
     const triggered = rule.type === "止损" ? priceMillis <= targetMillis : priceMillis >= targetMillis;
     if (!triggered) continue;
 
+    const owner = rule.userId ? usernameById.get(rule.userId) : undefined;
+    const ownerTag = owner ? `【${owner}】` : "";
     const arrow = rule.type === "止损" ? "跌破" : "触及";
-    const title = `${rule.name}（${rule.symbol}）${rule.type}提醒`;
-    const message = `${rule.name} 现价约 ¥${(priceMillis / 1000).toFixed(2)}，${arrow}${rule.type}目标 ¥${(targetMillis / 1000).toFixed(2)}。`;
+    const title = `${ownerTag}${rule.name}（${rule.symbol}）${rule.type}提醒`;
+    const message = `${ownerTag}${rule.name} 现价约 ¥${(priceMillis / 1000).toFixed(2)}，${arrow}${rule.type}目标 ¥${(targetMillis / 1000).toFixed(2)}。`;
     errors.push(...(await sendNotify(env, title, message)));
     await db
       .update(schema.alertRules)

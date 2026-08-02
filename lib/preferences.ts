@@ -49,7 +49,9 @@ export function normalizePreferences(row: Partial<TradingPreferences> | undefine
   };
 }
 
-export async function fetchPreferences(db: AppDb): Promise<TradingPreferences> {
-  const rows = await db.select().from(tradingPreferences).where(eq(tradingPreferences.id, 1)).limit(1);
+export async function fetchPreferences(db: AppDb, userId?: number): Promise<TradingPreferences> {
+  const rows = userId
+    ? await db.select().from(tradingPreferences).where(eq(tradingPreferences.userId, userId)).limit(1)
+    : await db.select().from(tradingPreferences).where(eq(tradingPreferences.id, 1)).limit(1);
   return normalizePreferences(rows[0]);
 }

@@ -1,20 +1,21 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { watchDetails, watchItems } from "../../../db/schema";
 import { isStockCode } from "../../../lib/domain";
 import { canonicalStockName } from "../../../lib/stocks";
-import { requireApiUser } from "../../../lib/auth";
+import { getCurrentUser, requireApiUser } from "../../../lib/auth";
 import { shanghaiIso } from "../../../lib/time";
 
 export async function GET() {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     await ensureSchema();
     const db = getDb();
     const [items, details] = await Promise.all([
-      db.select().from(watchItems).orderBy(watchItems.id),
-      db.select().from(watchDetails),
+      db.select().from(watchItems).where(eq(watchItems.userId, user.id)).orderBy(watchItems.id),
+      db.select().from(watchDetails).where(eq(watchDetails.userId, user.id)),
     ]);
     const detailsBySymbol = new Map(details.map((detail) => [detail.symbol, detail]));
     return Response.json({
@@ -38,6 +39,7 @@ export async function POST(request: Request) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     const payload = await request.json() as { symbol?: string; name?: string; note?: string; conditionText?: string };
     const symbol = payload.symbol?.trim() ?? "";
     const name = canonicalStockName(symbol, payload.name?.trim() ?? "");
@@ -49,9 +51,11 @@ export async function POST(request: Request) {
 
     await ensureSchema();
     const db = getDb();
-    const existing = await db.select().from(watchItems).where(eq(watchItems.symbol, symbol)).limit(1);
+    const existing = await db.select().from(watchItems)
+      .where(and(eq(watchItems.symbol, symbol), eq(watchItems.userId, user.id))).limit(1);
     if (existing.length) {
-      const detail = await db.select().from(watchDetails).where(eq(watchDetails.symbol, symbol)).limit(1);
+      const detail = await db.select().from(watchDetails)
+        .where(and(eq(watchDetails.symbol, symbol), eq(watchDetails.userId, user.id))).limit(1);
       return Response.json({
         item: {
           ...existing[0],
@@ -64,8 +68,8 @@ export async function POST(request: Request) {
       });
     }
     const [itemRows] = await db.batch([
-      db.insert(watchItems).values({ symbol, name, note, createdAt: shanghaiIso() }).returning(),
-      db.insert(watchDetails).values({ symbol, conditionText, status: "研究中", tradedAt: shanghaiIso() }),
+      db.insert(watchItems).values({ userId: user.id, symbol, name, note, createdAt: shanghaiIso() }).returning(),
+      db.insert(watchDetails).values({ userId: user.id, symbol, conditionText, status: "研究中" }),
     ]);
     const item = itemRows[0];
     return Response.json({ item: { ...item, conditionText, status: "研究中", lastReviewedAt: null } }, { status: 201 });
@@ -78,6 +82,7 @@ export async function PATCH(request: Request) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     const payload = await request.json() as {
       symbol?: string;
       conditionText?: string;
@@ -114,12 +119,13 @@ export async function PATCH(request: Request) {
     const db = getDb();
     const item = await db.select({ symbol: watchItems.symbol })
       .from(watchItems)
-      .where(eq(watchItems.symbol, symbol))
+      .where(and(eq(watchItems.symbol, symbol), eq(watchItems.userId, user.id)))
       .limit(1);
     if (!item.length) {
       return Response.json({ error: "关注股票不存在" }, { status: 404 });
     }
-    const existing = await db.select().from(watchDetails).where(eq(watchDetails.symbol, symbol)).limit(1);
+    const existing = await db.select().from(watchDetails)
+      .where(and(eq(watchDetails.symbol, symbol), eq(watchDetails.userId, user.id))).limit(1);
     const values = {
       conditionText,
       status: payload.status as "研究中" | "等待条件" | "已买入" | "暂停",
@@ -130,8 +136,9 @@ export async function PATCH(request: Request) {
       conditionValue,
     };
     const [detail] = existing.length
-      ? await db.update(watchDetails).set(values).where(eq(watchDetails.symbol, symbol)).returning()
-      : await db.insert(watchDetails).values({ symbol, ...values, tradedAt: shanghaiIso() }).returning();
+      ? await db.update(watchDetails).set(values)
+        .where(and(eq(watchDetails.symbol, symbol), eq(watchDetails.userId, user.id))).returning()
+      : await db.insert(watchDetails).values({ userId: user.id, symbol, ...values }).returning();
     return Response.json({ detail });
   } catch {
     return Response.json({ error: "观察条件保存失败" }, { status: 500 });
@@ -142,6 +149,7 @@ export async function DELETE(request: Request) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     const symbol = new URL(request.url).searchParams.get("symbol")?.trim() ?? "";
     if (!isStockCode(symbol)) {
       return Response.json({ error: "股票代码不正确" }, { status: 400 });
@@ -149,8 +157,8 @@ export async function DELETE(request: Request) {
     await ensureSchema();
     const db = getDb();
     const [, deletedItems] = await db.batch([
-      db.delete(watchDetails).where(eq(watchDetails.symbol, symbol)),
-      db.delete(watchItems).where(eq(watchItems.symbol, symbol)).returning({ symbol: watchItems.symbol }),
+      db.delete(watchDetails).where(and(eq(watchDetails.symbol, symbol), eq(watchDetails.userId, user.id))),
+      db.delete(watchItems).where(and(eq(watchItems.symbol, symbol), eq(watchItems.userId, user.id))).returning({ symbol: watchItems.symbol }),
     ]);
     return deletedItems.length
       ? Response.json({ ok: true })

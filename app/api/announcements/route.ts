@@ -4,7 +4,7 @@ import { ensureSchema, getDb } from "../../../db";
 import { announcementNotes } from "../../../db/schema";
 import { isStockCode } from "../../../lib/domain";
 import { getAiConfig } from "../../../lib/ai-config";
-import { requireApiUser } from "../../../lib/auth";
+import { getCurrentUser, requireApiUser } from "../../../lib/auth";
 import { isEtfCode } from "../../../lib/stocks";
 import { shanghaiIso } from "../../../lib/time";
 
@@ -159,13 +159,14 @@ export async function GET(request: Request) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     const symbol = new URL(request.url).searchParams.get("symbol")?.trim() ?? "";
     if (!isStockCode(symbol)) return Response.json({ error: "股票代码不正确" }, { status: 400 });
     await ensureSchema();
     const notes = await getDb()
       .select()
       .from(announcementNotes)
-      .where(eq(announcementNotes.symbol, symbol))
+      .where(and(eq(announcementNotes.symbol, symbol), eq(announcementNotes.userId, user.id)))
       .orderBy(desc(announcementNotes.id))
       .limit(20);
     return Response.json({
@@ -180,6 +181,7 @@ export async function POST(request: Request) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     const form = await request.formData();
     const symbol = String(form.get("symbol") ?? "").trim();
     const name = String(form.get("name") ?? "").trim();
@@ -215,6 +217,7 @@ export async function POST(request: Request) {
     const result = await summarizeWithDeepSeek(text, isEtfCode(symbol));
     await ensureSchema();
     const [note] = await getDb().insert(announcementNotes).values({
+      userId: user.id,
       symbol,
       name,
       title,
@@ -236,6 +239,7 @@ export async function DELETE(request: Request) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     const url = new URL(request.url);
     const symbol = url.searchParams.get("symbol")?.trim() ?? "";
     const id = Number(url.searchParams.get("id"));
@@ -245,7 +249,7 @@ export async function DELETE(request: Request) {
     await ensureSchema();
     const [deleted] = await getDb()
       .delete(announcementNotes)
-      .where(and(eq(announcementNotes.id, id), eq(announcementNotes.symbol, symbol)))
+      .where(and(eq(announcementNotes.id, id), eq(announcementNotes.symbol, symbol), eq(announcementNotes.userId, user.id)))
       .returning();
     return deleted
       ? Response.json({ ok: true })

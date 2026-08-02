@@ -1,8 +1,9 @@
+import { eq } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { alertRules, tradeRecords } from "../../../db/schema";
 import { findInvalidSell } from "../../../lib/domain";
 import { buildMaxLossAlerts, extractMaxLossPercent, type MaxLossAlert, parseBrokerCsv, prepareTradeInput } from "../../../lib/trade-import";
-import { requireApiUser } from "../../../lib/auth";
+import { getCurrentUser, requireApiUser } from "../../../lib/auth";
 import { shanghaiIso } from "../../../lib/time";
 
 type ImportError = { line: number; symbol: string; reason: string };
@@ -11,6 +12,7 @@ export async function POST(request: Request) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     const payload = await request.json() as Record<string, unknown>;
     const csv = String(payload.csv ?? "").trim();
     if (!csv) {
@@ -24,7 +26,7 @@ export async function POST(request: Request) {
 
     await ensureSchema();
     const db = getDb();
-    const existingTrades = await db.select().from(tradeRecords);
+    const existingTrades = await db.select().from(tradeRecords).where(eq(tradeRecords.userId, user.id));
     let nextId = existingTrades.reduce((largest, trade) => Math.max(largest, trade.id), 0) + 1;
     const running = [...existingTrades];
     const errors: ImportError[] = [];
@@ -51,6 +53,7 @@ export async function POST(request: Request) {
       }
       const candidate = {
         id: nextId,
+        userId: user.id,
         symbol: prepared.values.symbol,
         name: prepared.values.name,
         side: prepared.values.side,
@@ -84,9 +87,10 @@ export async function POST(request: Request) {
           currentPriceMillis: candidate.priceMillis,
           maxLossMillis: riskPerShareTenThousandths,
         }).map((alert: MaxLossAlert) => ({
+          userId: user.id,
           symbol: alert.symbol,
           name: alert.name,
-          type: alert.note.includes("止损") ? "止损" : "止盈",
+          type: (alert.note.includes("止损") ? "止损" : "止盈一") as "止损" | "止盈一" | "止盈二",
           targetPriceCents: Math.round(alert.targetTenThousandths / 100),
           targetPriceMillis: Math.round(alert.targetTenThousandths / 10),
         }));

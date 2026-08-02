@@ -1,20 +1,22 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { alertRules, tradeRecords } from "../../../db/schema";
 import { findInvalidSell, isIsoDate, isStockCode, isTradeSide, toCents, toTenThousandths } from "../../../lib/domain";
 import { buildMaxLossAlerts } from "../../../lib/trade-import";
 import { canonicalStockName } from "../../../lib/stocks";
-import { requireApiUser } from "../../../lib/auth";
-import { shanghaiDate } from "../../../lib/time";
+import { getCurrentUser, requireApiUser } from "../../../lib/auth";
+import { shanghaiDate, shanghaiIso } from "../../../lib/time";
 
 export async function GET() {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     await ensureSchema();
     const rows = await getDb()
       .select()
       .from(tradeRecords)
+      .where(eq(tradeRecords.userId, user.id))
       .orderBy(desc(tradeRecords.tradeDate), desc(tradeRecords.id))
       .limit(500);
     return Response.json({ trades: rows });
@@ -27,6 +29,7 @@ export async function POST(request: Request) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     const payload = await request.json() as Record<string, unknown>;
     const symbol = String(payload.symbol ?? "").trim();
     const name = canonicalStockName(symbol, String(payload.name ?? "").trim());
@@ -97,7 +100,7 @@ export async function POST(request: Request) {
 
     await ensureSchema();
     const db = getDb();
-    const existingTrades = await db.select().from(tradeRecords);
+    const existingTrades = await db.select().from(tradeRecords).where(eq(tradeRecords.userId, user.id));
     const nextId = existingTrades.reduce((largest, trade) => Math.max(largest, trade.id), 0) + 1;
     const invalidSell = side === "卖出"
       ? findInvalidSell([...existingTrades, {
@@ -121,6 +124,7 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
     const tradeValues = {
+      userId: user.id,
       symbol,
       name,
       side,
@@ -143,9 +147,10 @@ export async function POST(request: Request) {
         currentPriceMillis: priceMillis,
         maxLossMillis: riskPerShareTenThousandths,
       }).map((alert) => ({
+        userId: user.id,
         symbol: alert.symbol,
         name: alert.name,
-        type: alert.note.includes("止损") ? "止损" : "止盈",
+        type: (alert.note.includes("止损") ? "止损" : "止盈一") as "止损" | "止盈一" | "止盈二",
         targetPriceCents: Math.round(alert.targetTenThousandths / 100),
         targetPriceMillis: Math.round(alert.targetTenThousandths / 10),
       }));
@@ -174,7 +179,9 @@ export async function PATCH(request: Request) {
     }
     await ensureSchema();
     const db = getDb();
-    const [existing] = await db.select().from(tradeRecords).where(eq(tradeRecords.id, id));
+    const user = await getCurrentUser();
+    const [existing] = await db.select().from(tradeRecords)
+      .where(and(eq(tradeRecords.id, id), eq(tradeRecords.userId, user.id)));
     if (!existing) {
       return Response.json({ error: "交易记录不存在" }, { status: 404 });
     }
@@ -233,11 +240,13 @@ export async function DELETE(request: Request) {
     }
     await ensureSchema();
     const db = getDb();
-    const [existing] = await db.select().from(tradeRecords).where(eq(tradeRecords.id, id));
+    const user = await getCurrentUser();
+    const [existing] = await db.select().from(tradeRecords)
+      .where(and(eq(tradeRecords.id, id), eq(tradeRecords.userId, user.id)));
     if (!existing) {
       return Response.json({ error: "交易记录不存在" }, { status: 404 });
     }
-    await db.delete(tradeRecords).where(eq(tradeRecords.id, id));
+    await db.delete(tradeRecords).where(and(eq(tradeRecords.id, id), eq(tradeRecords.userId, user.id)));
     return Response.json({ ok: true });
   } catch {
     return Response.json({ error: "交易记录删除失败" }, { status: 500 });

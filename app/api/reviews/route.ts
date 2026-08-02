@@ -1,8 +1,8 @@
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { reviews, tradeRecords } from "../../../db/schema";
 import { buildTradeCycles, isStockCode } from "../../../lib/domain";
-import { requireApiUser } from "../../../lib/auth";
+import { getCurrentUser, requireApiUser } from "../../../lib/auth";
 import { shanghaiIso } from "../../../lib/time";
 
 export function parseReviewTags(raw: unknown): string[] {
@@ -24,8 +24,10 @@ export async function GET() {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     await ensureSchema();
-    const rows = await getDb().select().from(reviews).orderBy(desc(reviews.id));
+    const rows = await getDb().select().from(reviews)
+      .where(eq(reviews.userId, user.id)).orderBy(desc(reviews.id));
     return Response.json({
       reviews: rows.map((review) => ({ ...review, tags: parseReviewTags(review.tags) })),
     });
@@ -38,6 +40,7 @@ export async function POST(request: Request) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     const payload = await request.json() as Record<string, unknown>;
     const symbol = String(payload.symbol ?? "").trim();
     const name = String(payload.name ?? "").trim();
@@ -62,18 +65,19 @@ export async function POST(request: Request) {
     }
     await ensureSchema();
     const db = getDb();
-    const trades = await db.select().from(tradeRecords);
+    const trades = await db.select().from(tradeRecords).where(eq(tradeRecords.userId, user.id));
     const cycle = buildTradeCycles(trades).find((item) =>
       item.symbol === symbol && item.endTradeId === cycleEndTradeId
     );
     if (!cycle) {
       return Response.json({ error: "没有找到已经清仓的对应交易" }, { status: 400 });
     }
-    const duplicate = await db.select().from(reviews);
+    const duplicate = await db.select().from(reviews).where(eq(reviews.userId, user.id));
     if (duplicate.some((review) => review.cycleEndTradeId === cycleEndTradeId)) {
       return Response.json({ error: "这次持仓周期已经完成复盘" }, { status: 409 });
     }
     const [review] = await db.insert(reviews).values({
+      userId: user.id,
       symbol,
       name: cycle.name,
       cycleEndTradeId,

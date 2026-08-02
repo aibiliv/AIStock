@@ -2,12 +2,13 @@ import { and, desc, eq } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { analysisReports } from "../../../db/schema";
 import { isStockCode } from "../../../lib/domain";
-import { requireApiUser } from "../../../lib/auth";
+import { getCurrentUser, requireApiUser } from "../../../lib/auth";
 
 export async function GET(request: Request) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     const symbol = new URL(request.url).searchParams.get("symbol")?.trim() ?? "";
     if (!isStockCode(symbol)) {
       return Response.json({ error: "股票代码不正确" }, { status: 400 });
@@ -27,7 +28,7 @@ export async function GET(request: Request) {
         createdAt: analysisReports.createdAt,
       })
       .from(analysisReports)
-      .where(eq(analysisReports.symbol, symbol))
+      .where(and(eq(analysisReports.symbol, symbol), eq(analysisReports.userId, user.id)))
       .orderBy(desc(analysisReports.id))
       .limit(20);
     return Response.json({ reports });
@@ -40,6 +41,7 @@ export async function DELETE(request: Request) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     const url = new URL(request.url);
     const symbol = url.searchParams.get("symbol")?.trim() ?? "";
     const id = Number(url.searchParams.get("id"));
@@ -49,7 +51,7 @@ export async function DELETE(request: Request) {
     await ensureSchema();
     const [deleted] = await getDb()
       .delete(analysisReports)
-      .where(and(eq(analysisReports.id, id), eq(analysisReports.symbol, symbol)))
+      .where(and(eq(analysisReports.id, id), eq(analysisReports.symbol, symbol), eq(analysisReports.userId, user.id)))
       .returning({ id: analysisReports.id });
     return deleted
       ? Response.json({ ok: true })

@@ -1,12 +1,12 @@
-import { desc } from "drizzle-orm";
-import { requireApiUser } from "../../../lib/auth";
+import { desc, eq } from "drizzle-orm";
+import { requireApiUser, getCurrentUser } from "../../../lib/auth";
 import { getDb, ensureSchema } from "../../../db";
 import { strategyFeedback } from "../../../db/schema";
 
 /**
  * 用户反馈接口（对应架构图「用户 → 本项目 → 优化策略」闭环）
  *
- * - GET  ：返回历史反馈（供前端展示、供 optimizer 参考）。
+ * - GET  ：返回当前用户的历史反馈（隔离）。
  * - POST ：用户在前端「策略扫描」页对某只标的/某次信号给出有效/无效评价，落库。
  *
  * 鉴权：需登录会话（requireApiUser）。
@@ -16,11 +16,13 @@ export async function GET() {
   if (unauthorized) return unauthorized;
 
   try {
+    const user = await getCurrentUser();
     await ensureSchema();
     const db = getDb();
     const rows = await db
       .select()
       .from(strategyFeedback)
+      .where(eq(strategyFeedback.userId, user.id))
       .orderBy(desc(strategyFeedback.createdAt))
       .limit(100);
     return Response.json({ ok: true, feedback: rows });
@@ -52,9 +54,10 @@ export async function POST(req: Request) {
   const source = String(b.source ?? "web").trim().slice(0, 20);
 
   try {
+    const user = await getCurrentUser();
     await ensureSchema();
     const db = getDb();
-    await db.insert(strategyFeedback).values({ symbol, name, verdict, note, source });
+    await db.insert(strategyFeedback).values({ userId: user.id, symbol, name, verdict, note, source });
     return Response.json({ ok: true });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { getDb, ensureSchema } from "../../../db";
-import { requireApiUser } from "../../../lib/auth";
+import { requireApiUser, getCurrentUser } from "../../../lib/auth";
 import { tradingPreferences } from "../../../db/schema";
 import { normalizePreferences, type TradingPreferences } from "../../../lib/preferences";
 import { shanghaiIso } from "../../../lib/time";
@@ -10,12 +10,13 @@ export async function GET() {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     await ensureSchema();
     const db = getDb();
     const rows = await db
       .select()
       .from(tradingPreferences)
-      .where(eq(tradingPreferences.id, 1))
+      .where(eq(tradingPreferences.userId, user.id))
       .limit(1);
     return NextResponse.json(normalizePreferences(rows[0]));
   } catch (error) {
@@ -28,6 +29,7 @@ export async function PUT(request: NextRequest) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     const body = (await request.json().catch(() => null)) as Partial<TradingPreferences> | null;
     const next = normalizePreferences(body ?? {});
     await ensureSchema();
@@ -35,9 +37,9 @@ export async function PUT(request: NextRequest) {
     const updatedAt = shanghaiIso();
     await db
       .insert(tradingPreferences)
-      .values({ id: 1, ...next, updatedAt })
+      .values({ userId: user.id, ...next, updatedAt })
       .onConflictDoUpdate({
-        target: tradingPreferences.id,
+        target: tradingPreferences.userId,
         set: {
           riskProfile: next.riskProfile,
           maxLossPercent: next.maxLossPercent,

@@ -1,10 +1,10 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { ensureSchema, getDb } from "../../../db";
 import { alertRules } from "../../../db/schema";
 import { isStockCode, toMillis } from "../../../lib/domain";
 import { shanghaiIso } from "../../../lib/time";
 import { canonicalStockName } from "../../../lib/stocks";
-import { requireApiUser } from "../../../lib/auth";
+import { getCurrentUser, requireApiUser } from "../../../lib/auth";
 
 const alertTypes = new Set(["止损", "止盈一", "止盈二"]);
 
@@ -12,8 +12,10 @@ export async function GET() {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     await ensureSchema();
-    const alerts = await getDb().select().from(alertRules).orderBy(desc(alertRules.id));
+    const alerts = await getDb().select().from(alertRules)
+      .where(eq(alertRules.userId, user.id)).orderBy(desc(alertRules.id));
     return Response.json({ alerts });
   } catch {
     return Response.json({ error: "提醒暂时无法读取" }, { status: 503 });
@@ -24,6 +26,7 @@ export async function POST(request: Request) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     const payload = await request.json() as { symbol?: string; name?: string; type?: string; targetPrice?: number };
     const symbol = payload.symbol?.trim() ?? "";
     const name = canonicalStockName(symbol, payload.name?.trim() ?? "");
@@ -35,6 +38,7 @@ export async function POST(request: Request) {
     }
     await ensureSchema();
     const [alert] = await getDb().insert(alertRules).values({
+      userId: user.id,
       symbol,
       name,
       type: type as "止损" | "止盈一" | "止盈二",
@@ -51,6 +55,7 @@ export async function PATCH(request: Request) {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
   try {
+    const user = await getCurrentUser();
     const payload = await request.json() as { id?: number; action?: string };
     const id = Number(payload.id);
     if (!Number.isInteger(id) || id <= 0) {
@@ -65,7 +70,8 @@ export async function PATCH(request: Request) {
       : payload.action === "acknowledge"
         ? { acknowledgedAt: shanghaiIso() }
         : { triggeredAt: shanghaiIso() };
-    const [alert] = await getDb().update(alertRules).set(values).where(eq(alertRules.id, id)).returning();
+    const [alert] = await getDb().update(alertRules).set(values)
+      .where(and(eq(alertRules.id, id), eq(alertRules.userId, user.id))).returning();
     return alert
       ? Response.json({ alert })
       : Response.json({ error: "提醒不存在" }, { status: 404 });

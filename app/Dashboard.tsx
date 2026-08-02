@@ -18,6 +18,7 @@ import { ImportPanel } from "./ImportPanel";
 import { MarkdownMessage } from "./MarkdownMessage";
 import { StrategyScanView, type StrategyScanResponse } from "./StrategyScanView";
 import { WritebackView } from "./WritebackView";
+import { UsersAdmin } from "./components/UsersAdmin";
 import {
   ArrowDown,
   ArrowUp,
@@ -51,6 +52,7 @@ import {
   Star,
   Trash2,
   Wallet,
+  Users,
   AlertTriangle,
   X,
   ChevronUp,
@@ -231,8 +233,11 @@ type Status = {
 };
 
 type User = {
+  id: number;
+  username: string;
   displayName: string;
-  email: string;
+  role: "super_admin" | "user";
+  email?: string;
 };
 
 const navItems: Array<{ id: View; label: string; icon: LucideIcon }> = [
@@ -822,6 +827,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
                 preferences={preferences}
                 onSavePreferences={savePreferences}
                 onImported={loadData}
+                currentUser={user}
               />
             )}
             {view === "scan" && (
@@ -3293,7 +3299,7 @@ function Trades({ trades, reviews, capitalFlows, initialCapitalCents, onBuy, onS
   );
 }
 
-function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferences, section, onSection, onDisable, onAcknowledge, onNotifications, onSaveCapital, onAddFlow, onDeleteFlow, onSavePreferences, onImported }: {
+function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferences, section, onSection, onDisable, onAcknowledge, onNotifications, onSaveCapital, onAddFlow, onDeleteFlow, onSavePreferences, onImported, currentUser }: {
   status: Status | null;
   initialCapitalCents: number | null;
   capitalFlows: CapitalFlow[];
@@ -3309,10 +3315,22 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
   onDeleteFlow: (flowId: number) => Promise<void>;
   onSavePreferences: (next: TradingPreferences) => Promise<void>;
   onImported: () => void;
+  currentUser: User;
 }) {
   const notificationState = typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported";
   const enabledAlertCount = alerts.filter((item) => item.enabled).length;
   const cardList = [
+    ...(currentUser.role === "super_admin"
+      ? [{
+          id: "users",
+          Icon: Users,
+          title: "用户管理",
+          caption: "账户与权限",
+          text: "仅超级管理员可添加或删除用户，每个用户数据完全隔离。",
+          state: "后台管理",
+          tone: "blue",
+        }]
+      : []),
     {
       id: "account",
       Icon: Wallet,
@@ -3517,6 +3535,9 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
                 )}
                 {card.id === "risk" && (
                   <PreferencesSettings preferences={preferences} onSave={onSavePreferences} />
+                )}
+                {card.id === "users" && (
+                  <UsersAdmin currentUserId={currentUser.id} />
                 )}
               </div>
             </article>
