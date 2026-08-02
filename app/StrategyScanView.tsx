@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   createChart,
   ColorType,
@@ -87,7 +87,10 @@ function pct(x: number): string {
   return `${x >= 0 ? "+" : ""}${(x * 100).toFixed(2)}%`;
 }
 
-const NEUTRAL_BORDER = "rgba(148,163,184,0.2)";
+const SCAN_LINE = "var(--accent)";
+const SCAN_TEXT = "var(--text-muted)";
+const SCAN_BORDER = "var(--line-strong)";
+const SCAN_GRID = "var(--line)";
 
 /* --------------------------- 净值曲线组件 --------------------------- */
 function StrategyCurveChart({ points }: { points: Array<{ date: string; value: number }> }) {
@@ -100,22 +103,22 @@ function StrategyCurveChart({ points }: { points: Array<{ date: string; value: n
       width: container.clientWidth || 600,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#64748b",
+        textColor: SCAN_TEXT,
         fontFamily: "inherit",
         attributionLogo: false,
       },
       grid: {
-        vertLines: { color: "rgba(148,163,184,0.14)" },
-        horzLines: { color: "rgba(148,163,184,0.14)" },
+        vertLines: { color: SCAN_GRID },
+        horzLines: { color: SCAN_GRID },
       },
-      rightPriceScale: { borderColor: NEUTRAL_BORDER },
-      timeScale: { borderColor: NEUTRAL_BORDER, timeVisible: false, secondsVisible: false },
+      rightPriceScale: { borderColor: SCAN_BORDER },
+      timeScale: { borderColor: SCAN_BORDER, timeVisible: false, secondsVisible: false },
       crosshair: { mode: 0 },
       handleScale: false,
       handleScroll: false,
     });
     const series = chart.addSeries(LineSeries, {
-      color: "#2563eb",
+      color: SCAN_LINE,
       lineWidth: 2,
       priceFormat: { type: "custom", minMove: 0.0001, formatter: (p: number) => p.toFixed(4) },
     });
@@ -153,34 +156,6 @@ function StrategyCurveChart({ points }: { points: Array<{ date: string; value: n
 }
 
 /* ------------------------------ 表格样式 ------------------------------ */
-const tableStyle: CSSProperties = {
-  width: "100%",
-  borderCollapse: "collapse",
-  fontSize: 13,
-};
-function thStyle(): CSSProperties {
-  return {
-    padding: "8px 10px",
-    textAlign: "left",
-    color: "#64748b",
-    borderBottom: `1px solid ${NEUTRAL_BORDER}`,
-    fontWeight: 600,
-  };
-}
-function tdStyle(): CSSProperties {
-  return { padding: "8px 10px", borderBottom: "1px solid rgba(148,163,184,0.12)" };
-}
-function feedbackBtn(active: boolean): CSSProperties {
-  return {
-    cursor: "pointer",
-    padding: "3px 9px",
-    fontSize: 12,
-    borderRadius: 6,
-    border: active ? "1px solid currentColor" : "1px solid rgba(148,163,184,0.3)",
-    background: active ? "rgba(148,163,184,0.12)" : "transparent",
-    color: "rgba(148,163,184,0.85)",
-  };
-}
 function verdictOf(feedback: Record<string, "有效" | "无效">, symbol: string): "有效" | "无效" | "" {
   return feedback[symbol] || "";
 }
@@ -296,23 +271,21 @@ export function StrategyScanView({
 
   if (loading) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="scan-view">
         <ScreenerConfigPanel onRun={handleRunInteractive} busy={scanBusy} />
         {scanError && <Banner tone="warn" title="扫描失败">{scanError}</Banner>}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 24 }}>
-          <Spinner /> 正在加载策略扫描结果…
-        </div>
+        <div className="loading-state"><Spinner /> 正在加载策略扫描结果…</div>
       </div>
     );
   }
   if (error || !scan || !scan.backtest) {
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="scan-view">
         <ScreenerConfigPanel onRun={handleRunInteractive} busy={scanBusy} />
         {scanError && <Banner tone="warn" title="扫描失败">{scanError}</Banner>}
         <Banner tone={scanBusy ? "info" : "warn"} title={scanBusy ? "正在运行策略扫描…" : "暂无策略扫描数据"}>
           {scanBusy ? (
-            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="scan-inline-loading">
               <Spinner /> 策略引擎正在执行选股与回测，请耐心等待（最多 60 秒）…
             </span>
           ) : (
@@ -330,7 +303,7 @@ export function StrategyScanView({
   const opt = scan.backtest.optimized;
 
   return (
-    <div className="scan-view" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className="scan-view">
       {/* 交互式配置面板 */}
       <ScreenerConfigPanel onRun={handleRunInteractive} busy={scanBusy} />
 
@@ -362,13 +335,7 @@ export function StrategyScanView({
         })()
       )}
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-          gap: 12,
-        }}
-      >
+      <div className="stat-grid scan-stats">
         <Stat
           label="最终信号"
           value={`MA${scan.backtest.finalSignal.fastMa}/MA${scan.backtest.finalSignal.slowMa}`}
@@ -397,83 +364,63 @@ export function StrategyScanView({
 
       <Card>
         <CardHeader title="选股榜单（多因子打分）" desc="风险调整动量 + 趋势 + 估值 + RSI/MACD 技术确认 + 流动性/规模，加权打分取 Top N；行业分散约束限制单行业最多入选数。" />
-        <div style={{ overflowX: "auto" }}>
-        <table style={tableStyle}>
+        <div className="scan-table-wrap">
+        <table className="scan-table">
           <thead>
             <tr>
-              <th style={thStyle()}>代码</th>
-              <th style={thStyle()}>名称</th>
-              <th style={thStyle()}>行业</th>
-              <th style={thStyle()}>得分</th>
-              <th style={thStyle()}>动量(20d)</th>
-              <th style={thStyle()}>RSI</th>
-              <th style={thStyle()}>风险动量</th>
-              <th style={thStyle()}>趋势</th>
-              <th style={thStyle()}>PE</th>
-              <th style={thStyle()}>PB</th>
-              <th style={thStyle()}>换手%</th>
-              <th style={thStyle()}>信号数</th>
-              <th style={thStyle()}>反馈</th>
+              <th>代码</th>
+              <th>名称</th>
+              <th>行业</th>
+              <th>得分</th>
+              <th>动量(20d)</th>
+              <th>RSI</th>
+              <th>风险动量</th>
+              <th>趋势</th>
+              <th>PE</th>
+              <th>PB</th>
+              <th>换手%</th>
+              <th>信号数</th>
+              <th>反馈</th>
             </tr>
           </thead>
           <tbody>
             {scan.selected.map((s) => (
               <tr key={s.code}>
-                <td style={tdStyle()}>{s.code}</td>
-                <td style={tdStyle()}>{s.name}</td>
-                <td style={tdStyle()}>
-                  <span
-                    style={{
-                      display: "inline-block",
-                      padding: "2px 8px",
-                      borderRadius: 6,
-                      fontSize: 12,
-                      lineHeight: "18px",
-                      background: "rgba(37,99,235,0.12)",
-                      color: "#3b82f6",
-                      border: "1px solid rgba(37,99,235,0.25)",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {s.sector ?? "其他"}
-                  </span>
+                <td>{s.code}</td>
+                <td>{s.name}</td>
+                <td>
+                  <span className="scan-sector">{s.sector ?? "其他"}</span>
                 </td>
-                <td style={tdStyle()}>{s.score.toFixed(3)}</td>
-                <td style={tdStyle()}>
+                <td>{s.score.toFixed(3)}</td>
+                <td>
                   <Tag tone={s.momentum >= 0 ? "up" : "down"}>{pct(s.momentum)}</Tag>
                 </td>
-                <td style={tdStyle()}>{s.rsi != null ? s.rsi.toFixed(1) : "-"}</td>
-                <td style={tdStyle()}>
+                <td>{s.rsi != null ? s.rsi.toFixed(1) : "-"}</td>
+                <td>
                   {s.factors ? `${(s.factors.momentum != null ? s.factors.momentum : 0) * 100 | 0}` : "-"}
                 </td>
-                <td style={tdStyle()}>
+                <td>
                   {s.factors ? `${(s.factors.trend != null ? s.factors.trend : 0) * 100 | 0}` : "-"}
                 </td>
-                <td style={tdStyle()}>{s.peTtm.toFixed(2)}</td>
-                <td style={tdStyle()}>{s.pb.toFixed(2)}</td>
-                <td style={tdStyle()}>{s.turnover.toFixed(2)}</td>
-                <td style={tdStyle()}>{s.signals}</td>
-                <td style={tdStyle()}>
-                  <span style={{ display: "inline-flex", gap: 6 }}>
+                <td>{s.peTtm.toFixed(2)}</td>
+                <td>{s.pb.toFixed(2)}</td>
+                <td>{s.turnover.toFixed(2)}</td>
+                <td>{s.signals}</td>
+                <td>
+                  <span className="scan-feedback">
                     <button
                       type="button"
+                      className={`scan-feedback__btn scan-feedback__btn--up ${verdictOf(feedback, s.code) === "有效" ? "is-active" : ""}`}
                       disabled={feedbackBusy === s.code + "有效"}
                       onClick={() => submitFeedback(s.code, s.name, "有效")}
-                      style={{
-                        ...feedbackBtn(verdictOf(feedback, s.code) === "有效"),
-                        color: verdictOf(feedback, s.code) === "有效" ? "#0f6e56" : undefined,
-                      }}
                     >
                       有效
                     </button>
                     <button
                       type="button"
+                      className={`scan-feedback__btn scan-feedback__btn--down ${verdictOf(feedback, s.code) === "无效" ? "is-active" : ""}`}
                       disabled={feedbackBusy === s.code + "无效"}
                       onClick={() => submitFeedback(s.code, s.name, "无效")}
-                      style={{
-                        ...feedbackBtn(verdictOf(feedback, s.code) === "无效"),
-                        color: verdictOf(feedback, s.code) === "无效" ? "#a32d2d" : undefined,
-                      }}
                     >
                       无效
                     </button>
@@ -489,27 +436,27 @@ export function StrategyScanView({
       {opt && (
         <Card>
           <CardHeader title="参数网格搜索 Top" desc="按夏普排序的参数组合表现。" />
-          <div style={{ overflowX: "auto" }}>
-          <table style={tableStyle}>
+          <div className="scan-table-wrap">
+          <table className="scan-table">
             <thead>
               <tr>
-                <th style={thStyle()}>快线</th>
-                <th style={thStyle()}>慢线</th>
-                <th style={thStyle()}>夏普</th>
-                <th style={thStyle()}>总收益</th>
-                <th style={thStyle()}>最大回撤</th>
+                <th>快线</th>
+                <th>慢线</th>
+                <th>夏普</th>
+                <th>总收益</th>
+                <th>最大回撤</th>
               </tr>
             </thead>
             <tbody>
               {opt.grid.map((g, i) => (
                 <tr key={i}>
-                  <td style={tdStyle()}>MA{g.fastMa}</td>
-                  <td style={tdStyle()}>MA{g.slowMa}</td>
-                  <td style={tdStyle()}>{g.metric.toFixed(3)}</td>
-                  <td style={tdStyle()}>
+                  <td>MA{g.fastMa}</td>
+                  <td>MA{g.slowMa}</td>
+                  <td>{g.metric.toFixed(3)}</td>
+                  <td>
                     <Tag tone={g.totalReturn >= 0 ? "up" : "down"}>{pct(g.totalReturn)}</Tag>
                   </td>
-                  <td style={tdStyle()}>
+                  <td>
                     <Tag tone={g.maxDrawdown >= 0 ? "up" : "down"}>{pct(g.maxDrawdown)}</Tag>
                   </td>
                 </tr>

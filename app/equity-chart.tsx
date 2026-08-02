@@ -37,25 +37,25 @@ export function EquityCurveChart({ title, points, height = 220 }: EquityCurveCha
       width: container.clientWidth || 600,
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
-        textColor: "#64748b",
+        textColor: "var(--text-faint)",
         fontFamily: "inherit",
         attributionLogo: false,
       },
       grid: {
-        vertLines: { color: "rgba(148,163,184,0.14)" },
-        horzLines: { color: "rgba(148,163,184,0.14)" },
+        vertLines: { color: "var(--line)" },
+        horzLines: { color: "var(--line)" },
       },
-      rightPriceScale: { borderColor: "rgba(148,163,184,0.2)" },
-      timeScale: { borderColor: "rgba(148,163,184,0.2)", timeVisible: false, secondsVisible: false },
+      rightPriceScale: { borderColor: "var(--line-strong)" },
+      timeScale: { borderColor: "var(--line-strong)", timeVisible: false, secondsVisible: false },
       crosshair: { mode: 0 },
       handleScale: false,
       handleScroll: false,
     });
 
     const series = chart.addSeries(AreaSeries, {
-      lineColor: "#1e6b4f",
-      topColor: "rgba(30,107,79,0.28)",
-      bottomColor: "rgba(30,107,79,0.02)",
+      lineColor: "var(--accent)",
+      topColor: "var(--accent-soft)",
+      bottomColor: "transparent",
       lineWidth: 2,
       priceFormat: {
         type: "custom",

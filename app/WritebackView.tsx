@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   SectionHeader,
   Card,
@@ -34,8 +34,6 @@ export type WritebackResponse = {
   error?: string;
 };
 
-const NEUTRAL_BORDER = "rgba(148,163,184,0.2)";
-
 function yuan(v: number): string {
   return `¥${v.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -50,66 +48,25 @@ function sideLabel(side: string): string {
 function SignalCard({ signal }: { signal: WritebackSignal }) {
   const amount = signal.price * signal.quantity;
   return (
-    <div
-      className="wb-signal-card"
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr auto",
-        gridTemplateRows: "auto auto auto",
-        gap: "4px 12px",
-        alignItems: "center",
-        padding: "12px 14px",
-        borderRadius: 10,
-        border: `1px solid ${NEUTRAL_BORDER}`,
-        background: "#fff",
-      }}
-    >
-      {/* 第一行：代码 + 方向标签 */}
-      <span style={{ fontWeight: 700, fontSize: 15 }}>{signal.code}</span>
-      <Tag tone={sideTone(signal.side)}>{sideLabel(signal.side)}</Tag>
-
-      {/* 第二行：名称 */}
-      <span style={{ color: "#475569", fontSize: 14, gridColumn: "1 / -1" }}>
-        {signal.name}
-      </span>
-
-      {/* 第三行：价格 / 数量 / 金额 */}
-      <span style={{ fontSize: 13, color: "#64748b" }}>价格 {yuan(signal.price)}</span>
-      <span style={{ fontSize: 13, color: "#64748b" }}>数量 {signal.quantity}</span>
-      <span
-        style={{
-          fontSize: 14,
-          fontWeight: 600,
-          gridColumn: "1 / -1",
-          textAlign: "right",
-          paddingTop: 4,
-          borderTop: `1px dashed ${NEUTRAL_BORDER}`,
-          marginTop: 2,
-        }}
-      >
-        {yuan(amount)}
-      </span>
+    <div className="wb-signal-card">
+      <div className="wb-signal-card__top">
+        <span className="wb-signal-card__code">{signal.code}</span>
+        <Tag tone={sideTone(signal.side)}>{sideLabel(signal.side)}</Tag>
+      </div>
+      <div className="wb-signal-card__name">{signal.name}</div>
+      <dl className="wb-signal-card__meta">
+        <div>
+          <dt>价格</dt>
+          <dd>{yuan(signal.price)}</dd>
+        </div>
+        <div>
+          <dt>数量</dt>
+          <dd>{signal.quantity}</dd>
+        </div>
+      </dl>
+      <div className="wb-signal-card__amount">{yuan(amount)}</div>
     </div>
   );
-}
-
-/* ---------- 桌面端表格样式 ---------- */
-const tableStyle: CSSProperties = {
-  width: "100%",
-  borderCollapse: "collapse",
-  fontSize: 13,
-};
-function thStyle(): CSSProperties {
-  return {
-    padding: "8px 10px",
-    textAlign: "left",
-    color: "#64748b",
-    borderBottom: `1px solid ${NEUTRAL_BORDER}`,
-    fontWeight: 600,
-  };
-}
-function tdStyle(): CSSProperties {
-  return { padding: "8px 10px", borderBottom: "1px solid rgba(148,163,184,0.12)" };
 }
 
 /* ------------------------------ 主视图 ------------------------------ */
@@ -172,7 +129,7 @@ export function WritebackView() {
   );
 
   return (
-    <div className="writeback-view" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+    <div className="writeback-view">
       <SectionHeader
         eyebrow="交易 Agent · 回写"
         title="回写结果"
@@ -191,42 +148,18 @@ export function WritebackView() {
         </Banner>
       )}
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-          gap: 12,
-        }}
-      >
-        <div
-          style={{
-            border: `1px solid ${NEUTRAL_BORDER}`,
-            borderRadius: 10,
-            padding: "12px 14px",
-          }}
-        >
-          <div style={{ fontSize: 12, color: "#64748b" }}>候选信号</div>
-          <div style={{ fontSize: 22, fontWeight: 700 }}>{writeback.signals.length} 笔</div>
+      <div className="stat-grid stat-grid--3 wb-stats">
+        <div className="stat">
+          <div className="stat__label">候选信号</div>
+          <div className="stat__value">{writeback.signals.length} 笔</div>
         </div>
-        <div
-          style={{
-            border: `1px solid ${NEUTRAL_BORDER}`,
-            borderRadius: 10,
-            padding: "12px 14px",
-          }}
-        >
-          <div style={{ fontSize: 12, color: "#64748b" }}>预估金额合计</div>
-          <div style={{ fontSize: 22, fontWeight: 700 }}>{yuan(totalAmount)}</div>
+        <div className="stat">
+          <div className="stat__label">预估金额合计</div>
+          <div className="stat__value">{yuan(totalAmount)}</div>
         </div>
-        <div
-          style={{
-            border: `1px solid ${NEUTRAL_BORDER}`,
-            borderRadius: 10,
-            padding: "12px 14px",
-          }}
-        >
-          <div style={{ fontSize: 12, color: "#64748b" }}>回写状态</div>
-          <div style={{ fontSize: 22, fontWeight: 700 }}>{writeback.dryRun ? "模拟" : "已执行"}</div>
+        <div className="stat">
+          <div className="stat__label">回写状态</div>
+          <div className="stat__value">{writeback.dryRun ? "模拟" : "已执行"}</div>
         </div>
       </div>
 
@@ -237,35 +170,35 @@ export function WritebackView() {
         ) : (
           <>
             {/* 移动端：卡片列表 */}
-            <div className="wb-signals-mobile" style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div className="wb-signals-mobile">
               {writeback.signals.map((s, i) => (
                 <SignalCard key={`${s.code}-${i}`} signal={s} />
               ))}
             </div>
             {/* 桌面端：表格 */}
-            <div className="wb-signals-desktop" style={{ overflowX: "auto" }}>
-              <table style={tableStyle}>
+            <div className="wb-signals-desktop">
+              <table className="wb-table">
                 <thead>
                   <tr>
-                    <th style={thStyle()}>代码</th>
-                    <th style={thStyle()}>名称</th>
-                    <th style={thStyle()}>方向</th>
-                    <th style={thStyle()}>价格</th>
-                    <th style={thStyle()}>数量</th>
-                    <th style={thStyle()}>金额</th>
+                    <th>代码</th>
+                    <th>名称</th>
+                    <th>方向</th>
+                    <th>价格</th>
+                    <th>数量</th>
+                    <th>金额</th>
                   </tr>
                 </thead>
                 <tbody>
                   {writeback.signals.map((s, i) => (
                     <tr key={`${s.code}-${i}`}>
-                      <td style={tdStyle()}>{s.code}</td>
-                      <td style={tdStyle()}>{s.name}</td>
-                      <td style={tdStyle()}>
+                      <td>{s.code}</td>
+                      <td>{s.name}</td>
+                      <td>
                         <Tag tone={sideTone(s.side)}>{sideLabel(s.side)}</Tag>
                       </td>
-                      <td style={tdStyle()}>{yuan(s.price)}</td>
-                      <td style={tdStyle()}>{s.quantity}</td>
-                      <td style={tdStyle()}>{yuan(s.price * s.quantity)}</td>
+                      <td>{yuan(s.price)}</td>
+                      <td>{s.quantity}</td>
+                      <td>{yuan(s.price * s.quantity)}</td>
                     </tr>
                   ))}
                 </tbody>

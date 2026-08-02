@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, type CSSProperties } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 /* ----------------------------- 类型 ----------------------------- */
 export type ScreenerOverrides = {
@@ -235,69 +235,7 @@ const ST_OPTIONS = [
 ] as const;
 
 /* ----------------------------- 样式 ----------------------------- */
-const LABEL: CSSProperties = {
-  fontSize: 13,
-  color: "#64748b",
-  fontWeight: 600,
-  marginBottom: 4,
-};
-const INPUT: CSSProperties = {
-  padding: "6px 10px",
-  border: "1px solid rgba(148,163,184,0.3)",
-  borderRadius: 6,
-  fontSize: 13,
-  background: "transparent",
-  color: "inherit",
-  outline: "none",
-  /* 移动端自适应：不固定宽度，用 min/max 约束 */
-  width: 80,
-  maxWidth: "100%",
-  boxSizing: "border-box" as const,
-};
-const INPUT_FOCUS: CSSProperties = {
-  ...INPUT,
-  borderColor: "#2563eb",
-  boxShadow: "0 0 0 2px rgba(37,99,235,0.12)",
-};
-const BTN_PRIMARY: CSSProperties = {
-  padding: "7px 18px",
-  borderRadius: 7,
-  border: "none",
-  background: "#2563eb",
-  color: "#fff",
-  fontSize: 13,
-  fontWeight: 600,
-  cursor: "pointer",
-};
-const BTN_SECONDARY: CSSProperties = {
-  ...BTN_PRIMARY,
-  background: "transparent",
-  color: "#64748b",
-  border: "1px solid rgba(148,163,184,0.3)",
-};
-const TAG_CHIP: CSSProperties = {
-  display: "inline-block",
-  padding: "2px 9px",
-  borderRadius: 5,
-  fontSize: 11.5,
-  lineHeight: "18px",
-  background: "rgba(37,99,235,0.09)",
-  color: "#3b82f6",
-  border: "1px solid rgba(37,99,235,0.2)",
-  whiteSpace: "nowrap",
-};
-const SELECT: CSSProperties = {
-  padding: "6px 10px",
-  border: "1px solid rgba(148,163,184,0.3)",
-  borderRadius: 6,
-  fontSize: 13,
-  /* 不能透明，否则原生下拉菜单可能出现白底白字/透明文字，选项看不见 */
-  background: "var(--surface-soft)",
-  color: "var(--text)",
-  outline: "none",
-  minWidth: 150,
-  cursor: "pointer",
-};
+/* 全部样式见 globals.css 的 .screener-* 系列，统一使用设计令牌 */
 
 /* ----------------------------- 子组件 ----------------------------- */
 function Checkbox({
@@ -310,12 +248,11 @@ function Checkbox({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: 13 }}>
+    <label className="screener-check">
       <input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        style={{ accentColor: "#2563eb", width: 15, height: 15 }}
       />
       {label}
     </label>
@@ -332,8 +269,8 @@ function Radio({
   onChange: () => void;
 }) {
   return (
-    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: 13 }}>
-      <input type="radio" checked={checked} onChange={onChange} style={{ accentColor: "#2563eb"}} />
+    <label className="screener-check">
+      <input type="radio" checked={checked} onChange={onChange} />
       {label}
     </label>
   );
@@ -352,18 +289,15 @@ function NumberInput({
   min?: number;
   step?: number;
 }) {
-  const [focus, setFocus] = useState(false);
   return (
     <input
+      className="screener-input"
       type="number"
       value={value ?? ""}
       placeholder={placeholder}
       min={min}
       step={step ?? 1}
       onChange={(e) => onChange(e.target.value ? Number(e.target.value) : 0)}
-      onFocus={() => setFocus(true)}
-      onBlur={() => setFocus(false)}
-      style={focus ? INPUT_FOCUS : INPUT}
     />
   );
 }
@@ -390,8 +324,8 @@ function SliderRow({
   const displayVal = value * displayMultiplier;
   const isDefault = Math.abs(value - defaultValue) < 0.001;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-      <span style={{ fontSize: 12, color: "#94a3b8", width: 90, flexShrink: 0, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
+    <div className="screener-slider">
+      <span className="screener-slider__label">{label}</span>
       <input
         type="range"
         min={min}
@@ -399,19 +333,8 @@ function SliderRow({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        style={{ flex: 1, accentColor: "#2563eb", height: 4, minWidth: 60 }}
       />
-      <span
-        style={{
-          fontSize: 12,
-          width: 48,
-          textAlign: "right",
-          fontFamily: "monospace",
-          color: isDefault ? "#94a3b8" : "#2563eb",
-          fontWeight: isDefault ? 400 : 600,
-          flexShrink: 0,
-        }}
-      >
+      <span className={`screener-slider__val ${isDefault ? "is-default" : "is-custom"}`}>
         {displayVal.toFixed(displayMultiplier === 1 ? 2 : 2)}
       </span>
     </div>
@@ -537,29 +460,21 @@ export function ScreenerConfigPanel({
   );
 
   return (
-    <div
-      style={{
-        background: "rgba(248,250,252,0.5)",
-        borderRadius: 10,
-        border: "1px solid rgba(148,163,184,0.18)",
-        padding: 16,
-        marginBottom: 16,
-      }}
-    >
+    <div className="screener-panel">
       {/* 标题行 */}
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 14 }}>
-        <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700 }}>选股前置条件</h3>
-        <span style={{ fontSize: 12, color: "#94a3b8" }}>让扫描更有针对性</span>
+      <div className="screener-panel__head">
+        <h3 className="screener-panel__title">选股前置条件</h3>
+        <span className="screener-muted">让扫描更有针对性</span>
       </div>
 
       {/* 策略预设下拉框 */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-          <span style={{ fontSize: 13, color: "#64748b", fontWeight: 600, whiteSpace: "nowrap" }}>策略预设</span>
+      <div className="screener-preset-row">
+        <div className="screener-preset-field">
+          <span className="screener-field-label">策略预设</span>
           <select
+            className="screener-select"
             value={selectedPreset}
             onChange={(e) => applyPreset(e.target.value)}
-            style={{ ...SELECT, /* 移动端自适应宽度 */ maxWidth: "100%", width: "auto", minWidth: 140 }}
           >
             <option value="">请选择策略预设</option>
             {STRATEGY_PRESETS.map((preset) => (
@@ -568,28 +483,18 @@ export function ScreenerConfigPanel({
           </select>
         </div>
         {STRATEGY_PRESETS.find((p) => p.key === selectedPreset) && (
-          <span style={{ fontSize: 12.5, color: "#94a3b8" }}>
+          <span className="screener-muted screener-preset-desc">
             {STRATEGY_PRESETS.find((p) => p.key === selectedPreset)!.desc}
           </span>
         )}
       </div>
 
       {/* 第一行：板块 + ST + 市值 —— 移动端自适应堆叠 */}
-      <div
-        className="screener-row"
-        style={{
-          display: "grid",
-          gap: 16,
-          alignItems: "start",
-          marginBottom: 12,
-          /* 桌面端三列并排；窄屏自动堆叠 */
-          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-        }}
-      >
+      <div className="screener-row">
         {/* 板块 */}
         <div>
-          <div style={LABEL}>板块 / 市场</div>
-          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+          <div className="screener-field-label">板块 / 市场</div>
+          <div className="screener-checks">
             {BOARD_OPTIONS.map((b) => (
               <Checkbox
                 key={b.key}
@@ -598,14 +503,14 @@ export function ScreenerConfigPanel({
                 onChange={() => toggleBoard(b.key)}
               />
             ))}
-            <span style={{ fontSize: 11.5, color: "#94a3b8", whiteSpace: "nowrap" }}>不选 = 全A</span>
+            <span className="screener-muted screener-hint">不选 = 全A</span>
           </div>
         </div>
 
         {/* ST 股 */}
         <div>
-          <div style={LABEL}>ST 股</div>
-          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+          <div className="screener-field-label">ST 股</div>
+          <div className="screener-checks">
             {ST_OPTIONS.map((s) => (
               <Radio
                 key={s.key}
@@ -619,15 +524,15 @@ export function ScreenerConfigPanel({
 
         {/* 流通市值 */}
         <div>
-          <div style={LABEL}>流通市值（亿元）</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap" }}>
+          <div className="screener-field-label">流通市值（亿元）</div>
+          <div className="screener-mcap">
             <NumberInput
               value={ov.mcap_min}
               onChange={(v) => set("mcap_min", v)}
               placeholder="不限"
               min={0}
             />
-            <span style={{ color: "#94a3b8", whiteSpace: "nowrap", flexShrink: 0 }}>—</span>
+            <span className="screener-divider">—</span>
             <NumberInput
               value={ov.mcap_max === 10000 ? undefined : ov.mcap_max}
               onChange={(v) => set("mcap_max", v || 10000)}
@@ -639,98 +544,66 @@ export function ScreenerConfigPanel({
       </div>
 
       {/* 操作按钮行 —— 移动端自适应 */}
-      <div style={{ marginBottom: 10 }}>
-        {/* 按钮组：移动端换行但不竖排文字 */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+      <div className="screener-actions">
+        <div className="screener-buttons">
           <button
             type="button"
+            className="screener-btn screener-btn--primary"
             disabled={busy}
             onClick={() => onRun(ov)}
-            style={{
-              ...BTN_PRIMARY,
-              /* 移动端按钮更紧凑 */
-              padding: "7px 14px",
-              whiteSpace: "nowrap",
-              opacity: busy ? 0.65 : 1,
-              cursor: busy ? "not-allowed" : "pointer",
-            }}
           >
             {busy ? "扫描中…" : "扫描"}
           </button>
           <button
             type="button"
+            className="screener-btn screener-btn--success"
             disabled={saving}
             onClick={saveConfig}
-            style={{
-              ...BTN_PRIMARY,
-              background: "#16a34a",
-              padding: "7px 14px",
-              whiteSpace: "nowrap",
-              opacity: saving ? 0.65 : 1,
-              cursor: saving ? "not-allowed" : "pointer",
-            }}
           >
             {saving ? "保存中…" : "保存配置"}
           </button>
-          <button type="button" onClick={reset} style={{ ...BTN_SECONDARY, padding: "7px 12px", whiteSpace: "nowrap" }}>
+          <button type="button" className="screener-btn screener-btn--ghost" onClick={reset}>
             重置
           </button>
           {saveMsg && (
-            <span style={{ fontSize: 12, color: saveMsg.ok ? "#16a34a" : "#dc2626", flexShrink: 0 }}>
+            <span className={`screener-savemsg ${saveMsg.ok ? "is-ok" : "is-error"}`}>
               {saveMsg.text}
             </span>
           )}
         </div>
         {/* 已应用摘要 + 权量标签：独立一行，移动端不挤在按钮旁 */}
         {(summaryTags.length > 0 || hasCustomWeights) && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6, alignItems: "center" }}>
+          <div className="screener-tags">
             {summaryTags.length > 0 && (
               <>
-                <span style={{ fontSize: 12, color: "#94a3b8", flexShrink: 0 }}>已应用：</span>
+                <span className="screener-muted">已应用：</span>
                 {summaryTags.map((t, i) => (
-                  <span key={i} style={TAG_CHIP}>{t}</span>
+                  <span key={i} className="screener-chip">{t}</span>
                 ))}
               </>
             )}
             {hasCustomWeights && (
-              <span style={{ ...TAG_CHIP, background: "rgba(220,38,38,0.07)", color: "#dc2626", borderColor: "rgba(220,38,38,0.2)" }}>
-                自定义权重
-              </span>
+              <span className="screener-chip screener-chip--warn">自定义权重</span>
             )}
           </div>
         )}
       </div>
 
       {/* 可展开：因子权重 + 高级阈值 */}
-      <div>
+      <div className="screener-weights">
         <button
           type="button"
+          className="screener-toggle"
           onClick={() => setShowWeights((s) => !s)}
-          style={{
-            background: "none",
-            border: "none",
-            color: "#2563eb",
-            fontSize: 12,
-            cursor: "pointer",
-            padding: "2px 0",
-          }}
         >
           {showWeights ? "▼ 收起参数" : "▶ 因子权重 & 高级参数"}
         </button>
 
         {showWeights && (
-          <div
-            style={{
-              marginTop: 10,
-              padding: 12,
-              background: "rgba(255,255,255,0.6)",
-              borderRadius: 8,
-              border: "1px solid rgba(148,163,184,0.12)",
-            }}
-          >
+          <div className="screener-weights-panel">
             {/* 因子权重滑块 */}
-            <div style={{ marginBottom: 10 }}>
-              <div style={{ ...LABEL, marginBottom: 8 }}>因子权重（拖动调整，默认值灰色显示）</div>
+            <div className="screener-weights-sliders">
+              <div className="screener-field-label screener-weights-title">因子权重（拖动调整，默认值灰色显示）</div>
               <SliderRow label="动量(风险调整)"     value={ov.w_momentum ?? DEFAULTS.w_momentum} defaultValue={DEFAULTS.w_momentum} onChange={(v) => set("w_momentum", v)} />
               <SliderRow label="估值(PE/PB)"       value={ov.w_value ?? DEFAULTS.w_value}         defaultValue={DEFAULTS.w_value}         onChange={(v) => set("w_value", v)} />
               <SliderRow label="趋势强度"           value={ov.w_trend ?? DEFAULTS.w_trend}         defaultValue={DEFAULTS.w_trend}         onChange={(v) => set("w_trend", v)} />
@@ -742,35 +615,34 @@ export function ScreenerConfigPanel({
             </div>
 
             {/* 高级阈值 */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10 }}>
+            <div className="screener-advanced">
               <div>
-                <div style={LABEL}>选出数量 top_n</div>
+                <div className="screener-field-label">选出数量 top_n</div>
                 <NumberInput value={ov.top_n} onChange={(v) => set("top_n", v)} min={1} max={50} />
               </div>
               <div>
-                <div style={LABEL}>单行业上限</div>
+                <div className="screener-field-label">单行业上限</div>
                 <NumberInput value={ov.max_per_sector} onChange={(v) => set("max_per_sector", v)} min={1} max={20} />
               </div>
               <div>
-                <div style={LABEL}>PE(TTM) 上限</div>
+                <div className="screener-field-label">PE(TTM) 上限</div>
                 <NumberInput value={ov.max_pe_ttm} onChange={(v) => set("max_pe_ttm", v)} min={0} step={10} />
               </div>
               <div>
-                <div style={LABEL}>PB 上限</div>
+                <div className="screener-field-label">PB 上限</div>
                 <NumberInput value={ov.max_pb} onChange={(v) => set("max_pb", v)} min={0} step={1} />
               </div>
               <div>
-                <div style={LABEL}>换手率下限 %</div>
+                <div className="screener-field-label">换手率下限 %</div>
                 <NumberInput value={ov.min_turnover_pct} onChange={(v) => set("min_turnover_pct", v)} min={0} step={0.05} />
               </div>
               <div>
-                <div style={LABEL}>市场状态过滤</div>
-                <label style={{ display: "inline-flex", alignItems: "center", gap: 5, cursor: "pointer", fontSize: 13 }}>
+                <div className="screener-field-label">市场状态过滤</div>
+                <label className="screener-check">
                   <input
                     type="checkbox"
                     checked={ov.market_enable !== false}
                     onChange={(e) => set("market_enable", e.target.checked)}
-                    style={{ accentColor: "#2563eb", width: 15, height: 15 }}
                   />
                   启用（牛/熊自动调仓）
                 </label>
