@@ -4933,3 +4933,11 @@ svg { display: block; }
     padding: 12px 16px;
   }
 }
+
+/* ---------- WritebackView 响应式 ---------- */
+.wb-signals-mobile { display: flex; }
+.wb-signals-desktop { display: none; }
+@media (min-width: 640px) {
+  .wb-signals-mobile { display: none !important; }
+  .wb-signals-desktop { display: block !important; }
+}
