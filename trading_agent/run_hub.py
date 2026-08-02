@@ -852,15 +852,16 @@ def main():
         print("（未配置 WX_PUSH_DRIVER，跳过微信推送；如需微信接收，在 .env 设置 WX_PUSH_DRIVER + 对应 Key）")
 
     # 可选：把选股结果推送到企业微信
-    # 优先级：WECOM_USERID 私聊（落点=本人企微）> WECOM_WEBHOOK_URL 群机器人（落点=群）
+    # 双推：WECOM_USERID 私聊（落点=本人企微）+ WECOM_WEBHOOK_URL 群机器人（落点=群），两者互不阻塞
     wecom_userid = os.environ.get("WECOM_USERID") or ""
     wecom_url = os.environ.get("WECOM_WEBHOOK_URL") or ""
-    if wecom_userid:
-        _wecom_txt = render_wecom_text(payload, signals, cloud_receipt)
-        push_wecom_cli(wecom_userid, _wecom_txt)
-    elif wecom_url:
-        _wecom_md = render_wecom_markdown(payload, signals, cloud_receipt)
-        push_wecom_webhook(wecom_url, _wecom_md)
+    if wecom_userid or wecom_url:
+        if wecom_userid:
+            _wecom_txt = render_wecom_text(payload, signals, cloud_receipt)
+            push_wecom_cli(wecom_userid, _wecom_txt)
+        if wecom_url:
+            _wecom_md = render_wecom_markdown(payload, signals, cloud_receipt)
+            push_wecom_webhook(wecom_url, _wecom_md)
     else:
         print("（未配置企业微信推送：WECOM_USERID / WECOM_WEBHOOK_URL 均未设置，跳过企微推送）")
 
