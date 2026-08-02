@@ -217,8 +217,17 @@ export function StrategyScanView({
   }, []);
 
   useEffect(() => {
+    // 顶层预取数据可能在组件首次渲染之后才到达（例如硬刷新 Ctrl+Shift+R
+    // 时 Dashboard 的 loadData 尚未完成，initialData 先为 null 再被填充）。
+    // 此时 loading 初始为 true，需要在 initialData 到达后纠正为“已加载”，
+    // 否则会一直停在“正在加载…”且不会自行拉取（guard 直接 return）。
+    if (initialData?.ok && initialData.scan) {
+      setScan(initialData.scan);
+      setLoading(false);
+      setError("");
+      return;
+    }
     // 仅在顶层未预取数据时才自行拉取，避免进入页面时重复加载造成闪烁
-    if (initialData?.ok && initialData.scan) return;
     let cleanup: (() => void) | undefined;
     const timer = window.setTimeout(() => {
       cleanup = load();
