@@ -189,13 +189,14 @@ function toNested(ov: ScreenerOverrides): Record<string, unknown> {
   // market 节（enable -> market_enable）
   if (ov.market_enable !== undefined) market["enable"] = ov.market_enable;
 
-  // signal 节
-  (["fast_ma", "slow_ma", "use_breakout_filter", "breakout_window"] as (keyof ScreenerOverrides)[]).forEach((k) => copy(signal, k));
+  // signal 节（含 MACD 参数，避免保存配置时丢失）
+  (["fast_ma", "slow_ma", "use_breakout_filter", "breakout_window", "macd_fast", "macd_slow", "macd_signal"] as (keyof ScreenerOverrides)[]).forEach((k) => copy(signal, k));
 
   return {
     screener,
     ...(Object.keys(market).length ? { market } : {}),
     ...(Object.keys(signal).length ? { signal } : {}),
+    ...(ov.preset ? { preset: ov.preset } : {}),
     optim: { enabled: true },
   };
 }
@@ -215,9 +216,10 @@ function fromNested(cfg: Record<string, unknown>): Partial<ScreenerOverrides> {
     if (k in s) (out as Record<string, unknown>)[k] = s[k];
   });
   if ("enable" in m) out.market_enable = Boolean(m["enable"]);
-  (["fast_ma", "slow_ma", "use_breakout_filter", "breakout_window"] as (keyof ScreenerOverrides)[]).forEach((k) => {
+  (["fast_ma", "slow_ma", "use_breakout_filter", "breakout_window", "macd_fast", "macd_slow", "macd_signal"] as (keyof ScreenerOverrides)[]).forEach((k) => {
     if (k in sig) (out as Record<string, unknown>)[k] = sig[k];
   });
+  if ("preset" in cfg && typeof cfg["preset"] === "string") (out as Record<string, unknown>).preset = cfg["preset"];
   return out;
 }
 
@@ -285,7 +287,7 @@ function NumberInput({
   step,
 }: {
   value: number | undefined;
-  onChange: (v: number) => void;
+  onChange: (v: number | undefined) => void;
   placeholder?: string;
   min?: number;
   max?: number;
@@ -299,7 +301,7 @@ function NumberInput({
       placeholder={placeholder}
       min={min}
       step={step ?? 1}
-      onChange={(e) => onChange(e.target.value ? Number(e.target.value) : 0)}
+      onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))}
     />
   );
 }
@@ -364,6 +366,7 @@ export function ScreenerConfigPanel({
         if (cancelled || !data?.ok || !data?.config) return;
         const cfg = fromNested(data.config as Record<string, unknown>);
         setOv((prev) => ({ ...DEFAULTS, ...prev, ...cfg }));
+        if (typeof cfg.preset === "string" && cfg.preset) setSelectedPreset(cfg.preset);
       })
       .catch(() => {
         /* 读取失败则保留 DEFAULTS */
@@ -399,7 +402,9 @@ export function ScreenerConfigPanel({
   }, [ov]);
 
   const set = useCallback(<K extends keyof ScreenerOverrides>(k: K, v: ScreenerOverrides[K]) => {
-    setOv((prev) => ({ ...prev, [k]: v }));
+    setOv((prev) => ({ ...prev, [k]: v, ...(k !== "preset" ? { preset: "" } : {}) }));
+    // 手动改动任一参数即视为脱离预设基线：清空 preset 标识，让 UI 如实反映当前为「手动配置」
+    if (k !== "preset") setSelectedPreset("");
   }, []);
 
   const reset = useCallback(() => {
@@ -453,13 +458,17 @@ export function ScreenerConfigPanel({
   const weightKeys: (keyof ScreenerOverrides)[] = [
     "w_momentum", "w_value", "w_liquidity", "w_rsi", "w_macd", "w_trend", "w_size", "w_quality",
   ];
-  const hasCustomWeights = weightKeys.some(
-    (k) => {
-      const v = ov[k];
-      const d = DEFAULTS[k];
-      return typeof v === "number" && typeof d === "number" && Math.abs(v - d) > 0.001;
-    },
-  );
+  // 基准：若当前套用了某预设，则以该预设的权重为基准，否则与默认权重比较。
+  // 这样仅当「真正手动偏离」时才标「自定义权重」，避免套用预设被误标。
+  const baseOverrides =
+    selectedPreset
+      ? STRATEGY_PRESETS.find((p) => p.key === selectedPreset)?.overrides || {}
+      : DEFAULTS;
+  const hasCustomWeights = weightKeys.some((k) => {
+    const v = ov[k];
+    const base = baseOverrides[k];
+    return typeof v === "number" && typeof base === "number" && Math.abs(v - base) > 0.001;
+  });
 
   return (
     <div className="screener-panel">

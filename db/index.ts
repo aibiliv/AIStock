@@ -209,6 +209,25 @@ export async function ensureSchema() {
       await addColumnIfMissing(table, "user_id", "user_id INTEGER NOT NULL DEFAULT 0");
     }
 
+    // 1.5) 单例配置表（账户设置 / 风险偏好）按 user_id 建立唯一索引，
+    // 支撑 account/preferences 路由的 onConflictDoUpdate（UPSERT）。
+    // 先去重（保留每用户最小 id 的一行），避免老库存在重复行导致建索引失败。
+    for (const table of ["account_settings", "trading_preferences"]) {
+      await db.batch([
+        db.prepare(
+          `DELETE FROM ${table} WHERE id NOT IN (SELECT MIN(id) FROM ${table} GROUP BY user_id)`,
+        ),
+      ]);
+    }
+    await db.batch([
+      db.prepare(
+        `CREATE UNIQUE INDEX IF NOT EXISTS account_settings_user_idx ON account_settings(user_id)`,
+      ),
+      db.prepare(
+        `CREATE UNIQUE INDEX IF NOT EXISTS trading_preferences_user_idx ON trading_preferences(user_id)`,
+      ),
+    ]);
+
     // 2) watch_details 老表（单列 symbol 主键）迁移到复合主键 (symbol, user_id)
     const wdInfo = await db.prepare(`PRAGMA table_info(watch_details)`).all();
     const wdColumns = wdInfo.results as Array<{ name?: string }>;

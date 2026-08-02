@@ -107,7 +107,7 @@ function StrategyCurveChart({ points }: { points: Array<{ date: string; value: n
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const container = ref.current;
-    if (!container || points.length === 0) return;
+    if (!container || !points || points.length === 0) return;
     const chart = createChart(container, {
       height: 240,
       width: container.clientWidth || 600,
@@ -342,7 +342,7 @@ export function StrategyScanView({
       )}
 
       <SectionHeader
-        eyebrow="交易 Agent · 文件桥"
+        eyebrow="文件桥接"
         title="策略扫描"
         subtitle={`候选池 ${scan.universeSize} 只 → 选出 ${scan.selectedCount} 只 ｜ 生成于 ${scan.generatedAt}`}
         desc="由 trading_agent 回测引擎生成，经文件桥同步到本页展示。"
@@ -387,7 +387,11 @@ export function StrategyScanView({
 
       <Card>
         <CardHeader title="组合净值曲线" desc="策略在历史区间上的组合净值（起始归一化 1.0）。" />
-        <StrategyCurveChart points={scan.equityCurve} />
+        {scan.equityCurve && scan.equityCurve.length > 0 ? (
+          <StrategyCurveChart points={scan.equityCurve} />
+        ) : (
+          <div className="scan-empty-hint">暂无净值曲线数据。</div>
+        )}
       </Card>
 
       <Card>

@@ -18,8 +18,10 @@ def generate_signals(kline: list[dict], signal_cfg):
 
     fast_ma, slow_ma = [], []
     for i in range(n):
-        fa = sum(closes[max(0, i - fast + 1): i + 1]) / fast
-        sa = sum(closes[max(0, i - slow + 1): i + 1]) / slow
+        fa_win = i - max(0, i - fast + 1) + 1
+        sa_win = i - max(0, i - slow + 1) + 1
+        fa = sum(closes[max(0, i - fast + 1): i + 1]) / fa_win
+        sa = sum(closes[max(0, i - slow + 1): i + 1]) / sa_win
         fast_ma.append(fa)
         slow_ma.append(sa)
 

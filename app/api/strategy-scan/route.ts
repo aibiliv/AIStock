@@ -1,5 +1,5 @@
 import { desc } from "drizzle-orm";
-import { requireApiUser } from "../../../lib/auth";
+import { requireApiUser, pushSharedSecret } from "../../../lib/auth";
 import { getDb, ensureSchema } from "../../../db";
 import { strategyScan } from "../../../db/schema";
 import { shanghaiIso } from "../../../lib/time";
@@ -19,10 +19,6 @@ const MAX_PUSH_BYTES = 1_000_000;
  * 鉴权：POST 需要 header `x-push-token`，值等于云端环境变量
  *   STRATEGY_PUSH_TOKEN（未设置时回退到 CRON_SECRET）。
  */
-function pushSecret(): string | undefined {
-  return process.env.STRATEGY_PUSH_TOKEN || process.env.CRON_SECRET || undefined;
-}
-
 async function readLocalScanPayload(): Promise<unknown | null> {
   try {
     const [{ existsSync, readFileSync }, path] = await Promise.all([
@@ -71,7 +67,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   // 推送鉴权：本地 PC 持有的 token 需与云端一致
-  const secret = pushSecret();
+  const secret = pushSharedSecret();
   const provided =
     req.headers.get("x-push-token") ||
     req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||

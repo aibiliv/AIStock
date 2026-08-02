@@ -52,6 +52,7 @@ export default defineConfig(async ({ mode }) => {
     MAIRUI_TOKEN: localEnv.MAIRUI_TOKEN ?? process.env.MAIRUI_TOKEN ?? "",
     NOTIFY_WEBHOOK_URLS: localEnv.NOTIFY_WEBHOOK_URLS ?? process.env.NOTIFY_WEBHOOK_URLS ?? "",
     CRON_SECRET: localEnv.CRON_SECRET ?? process.env.CRON_SECRET ?? "",
+    STRATEGY_PUSH_TOKEN: localEnv.STRATEGY_PUSH_TOKEN ?? process.env.STRATEGY_PUSH_TOKEN ?? "",
   };
   const vars = Object.fromEntries(
     Object.entries(runtimeVars).filter(([, v]) => v.trim().length > 0),

@@ -110,27 +110,31 @@ export type MaxLossAlert = {
   symbol: string;
   name: string;
   direction: "below" | "above";
+  type: "止损" | "止盈一" | "止盈二";
   targetTenThousandths: number;
   note: string;
 };
 
 /** 买入且设置了最大亏损线时，自动建立 3 条价格提醒（止损 / 止盈一 / 止盈二）。
- * 与手动录入 /api/trades 共用，保证两种录入方式预警行为一致。price 单位为毫（×1000）。 */
+ * 与手动录入 /api/trades 共用，保证两种录入方式预警行为一致。
+ * 单位约定：currentPriceMillis 为现价（毫，×1000）；maxLossTenThousandths 为
+ * 每股最大亏损（万分位，×10000，即 元×10000），与调用方 riskPerShareTenThousandths 一致。 */
 export function buildMaxLossAlerts(params: {
   symbol: string;
   name: string;
   currentPriceMillis: number;
-  maxLossMillis: number;
+  maxLossTenThousandths: number;
 }): MaxLossAlert[] {
-  const { symbol, name, currentPriceMillis, maxLossMillis } = params;
-  const stopLossPrice = (currentPriceMillis - maxLossMillis) / 1000;
-  const riskUnit = (currentPriceMillis - maxLossMillis) / 1000;
-  const takeProfit1 = (currentPriceMillis + riskUnit) / 1000;
-  const takeProfit2 = (currentPriceMillis + riskUnit * 2) / 1000;
+  const { symbol, name, currentPriceMillis, maxLossTenThousandths } = params;
+  const priceYuan = currentPriceMillis / 1000;
+  const lossYuan = maxLossTenThousandths / 10000;
+  const stop = priceYuan - lossYuan; // 止损价（最大亏损触发）
+  const takeProfit1 = priceYuan + lossYuan; // 1R 止盈
+  const takeProfit2 = priceYuan + 2 * lossYuan; // 2R 止盈
   return [
-    { symbol, name, direction: "below", targetTenThousandths: Math.max(0, Math.round(stopLossPrice * 1000)), note: "止损线（最大亏损触发）" },
-    { symbol, name, direction: "above", targetTenThousandths: Math.round(takeProfit1 * 1000), note: "止盈目标一（风险等价）" },
-    { symbol, name, direction: "above", targetTenThousandths: Math.round(takeProfit2 * 1000), note: "止盈目标二（风险两倍）" },
+    { symbol, name, direction: "below", type: "止损", targetTenThousandths: Math.max(0, Math.round(stop * 10000)), note: "止损线（最大亏损触发）" },
+    { symbol, name, direction: "above", type: "止盈一", targetTenThousandths: Math.round(takeProfit1 * 10000), note: "止盈目标一（风险等价）" },
+    { symbol, name, direction: "above", type: "止盈二", targetTenThousandths: Math.round(takeProfit2 * 10000), note: "止盈目标二（风险两倍）" },
   ];
 }
 

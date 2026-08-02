@@ -1,5 +1,5 @@
 import { desc } from "drizzle-orm";
-import { requireApiUser } from "../../../lib/auth";
+import { requireApiUser, pushSharedSecret } from "../../../lib/auth";
 import { getDb, ensureSchema } from "../../../db";
 import { strategyWriteback } from "../../../db/schema";
 import { shanghaiIso } from "../../../lib/time";
@@ -22,10 +22,6 @@ const MAX_PUSH_BYTES = 1_000_000;
  * 说明：当前本环境的 tdx-connector 仅暴露查询工具（无 place_order），
  *   因此枢纽推送过来的信号恒为「候选回写 / dry-run」，真实下单需接入带下单能力的连接器。
  */
-function pushSecret(): string | undefined {
-  return process.env.STRATEGY_PUSH_TOKEN || process.env.CRON_SECRET || undefined;
-}
-
 export async function GET() {
   const unauthorized = await requireApiUser();
   if (unauthorized) return unauthorized;
@@ -57,7 +53,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   // 推送鉴权：本地 PC 持有的 token 需与云端一致
-  const secret = pushSecret();
+  const secret = pushSharedSecret();
   const provided =
     req.headers.get("x-push-token") ||
     req.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ||

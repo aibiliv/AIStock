@@ -249,13 +249,20 @@ export async function getRealtime(code: string): Promise<RealtimeQuote | null> {
 
   const promise = fetchRealtime(key);
   realtimeCache.set(key, { expiresAt: now + REALTIME_CACHE_MS, value: promise });
-  const result = await promise;
-  if (result) {
-    realtimeCache.set(key, { expiresAt: Date.now() + REALTIME_CACHE_MS, value: result });
-  } else {
+  try {
+    const result = await promise;
+    if (result) {
+      realtimeCache.set(key, { expiresAt: Date.now() + REALTIME_CACHE_MS, value: result });
+    } else {
+      realtimeCache.delete(key);
+    }
+    return result;
+  } catch (e) {
+    // 拉取失败不要把 rejected promise 留在缓存里（否则窗口期内重复抛错且无法重试），
+    // 直接移除缓存并向上抛出，由调用方降级处理。
     realtimeCache.delete(key);
+    throw e;
   }
-  return result;
 }
 
 // ---------------------------------------------------------------------------

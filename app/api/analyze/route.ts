@@ -245,9 +245,13 @@ export async function POST(request: Request) {
     }
     return Response.json(result);
   } catch (error) {
-    const message = error instanceof Error && error.message.startsWith("暂时无法按名称识别")
-      ? error.message
-      : "股票分析暂时不可用，请稍后重试";
-    return Response.json({ error: message }, { status: 502 });
+    if (error instanceof Error && error.message.startsWith("暂时无法按名称识别")) {
+      // 用户输入无法识别的股票名/代码：属于客户端错误，返回 400 而非 502
+      return Response.json({ error: error.message }, { status: 400 });
+    }
+    return Response.json(
+      { error: "股票分析暂时不可用，请稍后重试" },
+      { status: 502 },
+    );
   }
 }

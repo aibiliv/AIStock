@@ -38,14 +38,16 @@ def _guess_board(code: str, name: str) -> str:
     Returns:
         "main"(主板), "cyb"(创业板), "kc"(科创板), "bj"(北交所)
     """
-    if code.startswith(("6", "0", "9")):
-        return "main"
-    if code.startswith("3"):
-        return "cyb"
+    # 科创板（688 开头，以及 68 开头的极少见变体）必须最先判断，
+    # 否则会被下面的 "6" 主板分支提前拦截。
     if code.startswith("688") or code.startswith("68"):
         return "kc"
+    if code.startswith("3"):
+        return "cyb"
     if code.startswith(("8", "4")):
         return "bj"
+    if code.startswith(("6", "0", "9")):
+        return "main"
     # 名称兜底：含"科创"→kc，含"北交"→bj
     if "科创" in name:
         return "kc"
@@ -134,7 +136,8 @@ def screen(cfg: config.AppConfig, codes: list[str], dp=None, top_n_override: int
         is_st = "ST" in name.upper() or "*" in name or "退" in name
         if sc.st_filter == "exclude_st" and is_st:
             continue
-        if sc.st_filter == "only_st" and not is_st:
+        # 兼容文档约定的 "include_st" 与代码旧名 "only_st"（二者均表示「仅选 ST」）
+        if sc.st_filter in ("only_st", "include_st") and not is_st:
             continue
         # 流通市值过滤（亿元）
         mcap_yi = quote.get("mcap_yi") or 0.0

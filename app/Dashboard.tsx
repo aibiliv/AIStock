@@ -39,8 +39,9 @@ import {
   NotebookPen,
   Pencil,
   Plus,
-  Bot,
-  Sparkles,
+  ScanLine,
+  SlidersHorizontal,
+  MessageSquare,
   ShieldCheck,
   ShieldAlert,
   RefreshCw,
@@ -242,12 +243,12 @@ type User = {
 
 const navItems: Array<{ id: View; label: string; icon: LucideIcon }> = [
   { id: "home", label: "首页", icon: HomeIcon },
-  { id: "analysis", label: "智能选股", icon: Search },
+  { id: "analysis", label: "个股分析", icon: Search },
   { id: "watchlist", label: "我的关注", icon: Star },
   { id: "trades", label: "交易记录", icon: ArrowLeftRight },
   { id: "analytics", label: "复盘总结", icon: TrendingUp },
   { id: "settings", label: "系统设置", icon: SettingsIcon },
-  { id: "scan", label: "策略扫描", icon: Bot },
+  { id: "scan", label: "策略扫描", icon: ScanLine },
   { id: "writeback", label: "回写结果", icon: Upload },
 ];
 
@@ -715,11 +716,11 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
         </nav>
         <div className="safety-note">
           <span>给新手的提醒</span>
-          <p>AI只负责解释信息，不替你决定买卖。重要止损请同时在券商App设置。</p>
+          <p>本应用只负责解释信息，不替你决定买卖。重要止损请同时在券商App设置。</p>
         </div>
         <div className="source-status">
           <i />
-          <span><b>{status?.deepseekConfigured ? (status.aiProvider === "openai" ? "OpenAI分析" : "AI分析") : "自动解释模式"}</b><small>{status?.dataSource ?? "正在检查数据源"}</small></span>
+          <span><b>{status?.deepseekConfigured ? "在线分析" : "自动解释模式"}</b><small>{status?.dataSource ?? "正在检查数据源"}</small></span>
         </div>
       </aside>
 
@@ -732,7 +733,7 @@ export function Dashboard({ user, signOutUrl }: { user: User; signOutUrl: string
           </div>
           <div className="top-actions">
             <button className="account-button" onClick={() => setConfirming("logout")} title={`当前账号：${user.email}`}>
-              <span className="avatar">{user.displayName.slice(0, 1).toUpperCase()}</span>
+              <span className="avatar">{(user.displayName || "?").slice(0, 1).toUpperCase()}</span>
               <b>{user.displayName}</b>
               <LogOut size={15} aria-label="退出" />
             </button>
@@ -1059,9 +1060,9 @@ function StockAnalysisPanel({
         </div>
       )}
       <section className={analysis ? "search-hero compact" : "search-hero"}>
-        {!analysis && <span className="eyebrow">公开数据 + AI解释 · 你来做决定</span>}
+        {!analysis && <span className="eyebrow">公开数据 + 自动解读 · 你来做决定</span>}
         <h2>{analysis ? "继续查" : "输入代码，先把它看懂。"}</h2>
-        {!analysis && <p>输入股票代码或名称，AI自动整理行情、财务与题材，你负责最后的判断。</p>}
+        {!analysis && <p>输入股票代码或名称，系统自动整理行情、财务与题材，你负责最后的判断。</p>}
         <form className="stock-search" onSubmit={onAnalyze}>
           <span className="search-icon"><Search size={21} /></span>
           <input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="例如 600519、贵州茅台" aria-label="股票代码或名称" />
@@ -1082,7 +1083,7 @@ function StockAnalysisPanel({
           onSell={onSell}
         />
       ) : (
-        <div className="empty-state analysis-empty">还没有分析记录。输入一只股票代码，AI 会整理它的行情、财务与题材，帮你把这只股票先看懂。</div>
+        <div className="empty-state analysis-empty">还没有分析记录。输入一只股票代码，系统会整理它的行情、财务与题材，帮你把这只股票先看懂。</div>
       )}
     </div>
   );
@@ -1577,7 +1578,7 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
       <section className="stock-summary panel">
         <div className="stock-identity">
           <span className="stock-avatar large">{stock.name.slice(0, 1)}</span>
-          <div><Badge tone="accent">{analysis.mode === "deepseek" ? "AI解释" : "自动解释"}</Badge><h2>{stock.name} <small>{stock.code}</small></h2><p>{stock.industry}{stock.sector ? ` · ${stock.sector}` : ""}</p></div>
+          <div><Badge tone="accent">{analysis.mode === "deepseek" ? "在线解读" : "自动解读"}</Badge><h2>{stock.name} <small>{stock.code}</small></h2><p>{stock.industry}{stock.sector ? ` · ${stock.sector}` : ""}</p></div>
         </div>
         <div className="price-block">
           <strong>{price(quote.price)}</strong>
@@ -1593,7 +1594,7 @@ function AnalysisView({ analysis, position, portfolioInsights, watched, canSell,
       </section>
 
       <section className="ai-conclusion">
-        <span className="ai-mark">{analysis.mode === "deepseek" ? "AI" : "算"}</span>
+        <span className="ai-mark">{analysis.mode === "deepseek" ? "在线" : "本地"}</span>
         <div><span>一句话看懂</span><h3>{explanation.summary}</h3><p>只基于页面所列公开数据整理，不构成投资建议。</p></div>
       </section>
 
@@ -1920,7 +1921,7 @@ function StrategyCard({ analysis, position, portfolioInsights }: {
   }
 
   const modeLabel = strategy
-    ? strategy.mode === "deepseek" ? "AI 生成" : strategy.mode === "openai" ? "AI 生成" : "规则兜底"
+    ? (strategy.mode === "deepseek" || strategy.mode === "openai") ? "在线生成" : "规则兜底"
     : undefined;
 
   return (
@@ -1934,7 +1935,7 @@ function StrategyCard({ analysis, position, portfolioInsights }: {
       {!strategy && !error && (
         <div className="strategy-empty">
           <div className="strategy-empty__icon">
-            <Sparkles size={28} />
+            <SlidersHorizontal size={28} />
           </div>
           <div className="strategy-empty__text">
             <p>结合你的账户资金、持仓成本与交易纪律，生成个性化买卖策略。</p>
@@ -1945,7 +1946,7 @@ function StrategyCard({ analysis, position, portfolioInsights }: {
             block
             disabled={loading}
             onClick={() => void generate()}
-            iconLeft={<Sparkles size={16} />}
+            iconLeft={<SlidersHorizontal size={16} />}
           >
             {loading ? "正在生成…" : "结合我的持仓生成策略"}
           </Button>
@@ -2038,7 +2039,7 @@ function SmartAssistant(
       role: "assistant",
       content: analysis
         ? `我已经读完${analysis.stock.name}的当前分析。你可以继续追问风险、财务，${position ? "也可以让我结合你的持仓成本解释。" : "记录持仓后还能获得个性化解释。"}`
-        : "当前没有选中具体股票，我可以基于你的账户与持仓记录回答问题（如仓位、现金、收益）。想问某只股票，先去「智能选股」分析它。",
+        : "当前没有选中具体股票，我可以基于你的账户与持仓记录回答问题（如仓位、现金、收益）。想问某只股票，先去「个股分析」分析它。",
     }]);
     setAssistantMode(null);
     setPrimed(true);
@@ -2094,16 +2095,13 @@ function SmartAssistant(
     <section className={floating ? "panel smart-assistant smart-assistant--floating" : "panel smart-assistant"}>
       {headerSlot}
       <SectionHeader
-        eyebrow="智能复盘助手"
+        eyebrow="复盘助手"
         title={analysis ? "可连续追问" : "账户级问答"}
         actions={
           <div className="assistant-header-actions">
             <Badge tone="accent">{analysis ? (position ? "已结合我的持仓" : "当前未记录持仓") : "未关联具体股票"}</Badge>
             {assistantMode === "fallback" && (
-              <Badge tone="neutral" title="未配置 AI 接口，当前使用本地规则生成回答">规则模式</Badge>
-            )}
-            {assistantMode === "ai" && (
-              <Badge tone="accent" title="由大模型生成">AI</Badge>
+              <Badge tone="neutral" title="未配置模型接口，当前使用本地规则生成回答">规则模式</Badge>
             )}
             {floating && (
               <button type="button" className="assistant-close" onClick={onClose} aria-label="收起助手">
@@ -2136,7 +2134,7 @@ function SmartAssistant(
           onChange={(event) => setQuestion(event.target.value)}
           maxLength={300}
           placeholder={analysis ? `继续问${analysis.stock.name}…` : "问账户、持仓或收益…"}
-          aria-label="向智能复盘助手提问"
+          aria-label="向复盘助手提问"
         />
         <Button variant="primary" type="submit" disabled={asking || !question.trim()}>{asking ? "思考中…" : "发送"}</Button>
       </form>
@@ -2293,7 +2291,7 @@ function FloatingAssistantLauncher(
   return (
     <>
       {open && (
-        <div ref={panelRef} className="assistant-fab-panel" role="dialog" aria-label="智能复盘助手" style={panelStyle}>
+        <div ref={panelRef} className="assistant-fab-panel" role="dialog" aria-label="复盘助手" style={panelStyle}>
           <SmartAssistant
             floating
             analysis={activeAnalysis}
@@ -2372,10 +2370,10 @@ function FloatingAssistantLauncher(
         onPointerDown={handleFabPointerDown}
         onPointerMove={handleFabPointerMove}
         onPointerUp={handleFabPointerUp}
-        aria-label={open ? "收起智能复盘助手" : "打开智能复盘助手"}
-        title={open ? "收起助手（可拖拽移动）" : "智能复盘助手（可拖拽移动）"}
+        aria-label={open ? "收起复盘助手" : "打开复盘助手"}
+        title={open ? "收起助手" : "复盘助手"}
       >
-        <Sparkles size={22} />
+        <MessageSquare size={20} />
       </button>
     </>
   );
@@ -2653,7 +2651,7 @@ function AnalysisHistory({ symbol, currentPrice }: { symbol: string; currentPric
           : ((currentPrice * 1000 / report.priceMillis) - 1) * 100;
         return (
           <article className="history-item" key={report.id}>
-            <div><b>{formatDateTimeShanghai(report.createdAt)}</b><span>{report.mode === "deepseek" ? "AI" : "自动解释"} · {report.priceMillis === null
+            <div><b>{formatDateTimeShanghai(report.createdAt)}</b><span>{report.mode === "deepseek" ? "在线" : "自动解释"} · {report.priceMillis === null
               ? <>旧记录约{money(report.priceCents)} · <i className="legacy-precision">精度不足，不计算涨跌</i></>
               : <>当时{millisPrice(report.priceMillis)} · 至今<span className={(change ?? 0) >= 0 ? "up" : "down"}>{(change ?? 0) >= 0 ? "+" : ""}{(change ?? 0).toFixed(2)}%</span></>
             }</span></div>
@@ -2728,7 +2726,7 @@ function AnnouncementPanel({ stock }: { stock: Analysis["stock"] }) {
 
   return (
     <section className="panel research-card announcement-card">
-      <SectionHeader number="08" title="官方公告" subtitle="官方原文优先 · AI只做摘要" bordered />
+      <SectionHeader number="08" title="官方公告" subtitle="官方原文优先 · 系统只做摘要" bordered />
       <div className="official-links">
         <a href={`https://www.cninfo.com.cn/new/fulltextSearch?keyWord=${stock.code}`} target="_blank" rel="noreferrer">巨潮资讯</a>
         <a href="https://www.sse.com.cn/disclosure/listedinfo/announcement/" target="_blank" rel="noreferrer">上交所公告</a>
@@ -2750,7 +2748,7 @@ function AnnouncementPanel({ stock }: { stock: Analysis["stock"] }) {
       <div className="announcement-list">
         {notes.slice(0, 3).map((note) => (
           <article key={note.id}>
-            <div><b>{note.title}</b><span>{note.mode === "deepseek" ? "AI摘要" : "自动摘要"} · {note.totalPages}页</span></div>
+            <div><b>{note.title}</b><span>{note.mode === "deepseek" ? "在线摘要" : "自动摘要"} · {note.totalPages}页</span></div>
             <p>{note.summary}</p>
             {note.risks.length > 0 && <small>需要核验：{note.risks.join("；")}</small>}
             <div className="announcement-actions">
@@ -3342,12 +3340,12 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
     },
     {
       id: "ai",
-      Icon: Bot,
-      title: "AI分析",
-      caption: "智能解释引擎",
+      Icon: MessageSquare,
+      title: "分析助手",
+      caption: "行情与财务解读",
       text: status?.deepseekConfigured
-        ? "AI分析已由服务端安全配置。"
-        : "当前未配置AI密钥，使用基于真实数据的自动解释。",
+        ? "分析助手已由服务端安全配置。"
+        : "当前未配置模型密钥，使用基于真实数据的自动解释。",
       state: status?.deepseekConfigured ? "已连接" : "自动模式",
       tone: status?.deepseekConfigured ? "green" : "neutral",
     },
@@ -3374,7 +3372,7 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
       Icon: ShieldCheck,
       title: "风险与纪律",
       caption: "个性化交易约束",
-      text: "风险偏好档位与交易纪律会作为硬约束发给大模型，用于买卖决策和仓位建议。",
+      text: "风险偏好档位与交易纪律会作为硬约束，用于买卖决策和仓位建议。",
       state: preferences ? `${preferences.riskProfile}型` : "平衡默认",
       tone: "blue",
     },
@@ -3391,7 +3389,7 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
 
   const boundaries = [
     { Icon: ShieldCheck, label: "不自动交易", detail: "任何买卖都需要你在券商App操作" },
-    { Icon: MessageCircle, label: "不荐股不承诺收益", detail: "AI 只整理公开信息与你的真实数据" },
+    { Icon: MessageCircle, label: "不荐股不承诺收益", detail: "本应用只整理公开信息与你的真实数据" },
     { Icon: AlertTriangle, label: "不承诺提醒必达", detail: "浏览器通知可能被系统拦截" },
 { Icon: CheckCircle2, label: "数据缺失会明说", detail: "查不到的字段显示「暂无」，不补数字" },
 { Icon: SettingsIcon, label: "最终决定由你作出", detail: "重要止损请在券商App重复设置" },
@@ -3468,11 +3466,11 @@ function Settings({ status, initialCapitalCents, capitalFlows, alerts, preferenc
                 )}
                 {card.id === "ai" && (
                   <div className="settings-card__panel">
-                    <h3>AI连接状态</h3>
+                    <h3>分析引擎状态</h3>
                     <p>
                       {status?.deepseekConfigured
-                        ? "AI API密钥只在服务端读取，浏览器无法看到。"
-                        : "没有AI密钥时，系统不会假装调用AI，而是明确显示「自动解释」。"}
+                        ? "模型 API 密钥只在服务端读取，浏览器无法看到。"
+                        : "没有模型密钥时，系统不会假装调用模型，而是明确显示「自动解释」。"}
                     </p>
                     {status?.aiProvider && (
                       <div className="settings-card__meta">
@@ -3939,7 +3937,7 @@ function PreferencesSettings({ preferences, onSave }: { preferences: TradingPref
 
   return (
     <div className="settings-card__panel">
-      <SectionHeader title="风险偏好与交易纪律" subtitle="以下内容会作为硬约束发送给大模型，用于买卖决策与仓位建议。" />
+      <SectionHeader title="风险偏好与交易纪律" subtitle="以下内容会作为硬约束，用于买卖决策与仓位建议。" />
       <div className="form-group">
         <label>风险偏好档位</label>
         <div className="segmented">

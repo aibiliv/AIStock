@@ -105,12 +105,15 @@ export async function checkAndNotifyAlerts(
     const arrow = rule.type === "止损" ? "跌破" : "触及";
     const title = `${ownerTag}${rule.name}（${rule.symbol}）${rule.type}提醒`;
     const message = `${ownerTag}${rule.name} 现价约 ¥${(priceMillis / 1000).toFixed(2)}，${arrow}${rule.type}目标 ¥${(targetMillis / 1000).toFixed(2)}。`;
-    errors.push(...(await sendNotify(env, title, message)));
-    await db
-      .update(schema.alertRules)
-      .set({ triggeredAt: shanghaiIso() })
-      .where(eq(schema.alertRules.id, rule.id));
-    notified += 1;
+    const notifyErrors = await sendNotify(env, title, message);
+    errors.push(...notifyErrors);
+    if (notifyErrors.length === 0) {
+      await db
+        .update(schema.alertRules)
+        .set({ triggeredAt: shanghaiIso() })
+        .where(eq(schema.alertRules.id, rule.id));
+      notified += 1;
+    }
   }
 
   return { checked: rules.length, notified, errors };

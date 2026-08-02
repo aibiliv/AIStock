@@ -78,7 +78,7 @@ class ScreenerConfig:
     w_macd: float = 0.12                # MACD 动能（柱为正且放大）
     w_trend: float = 0.16               # 趋势强度（价 vs 长期均线）
     w_size: float = 0.04                # 规模（总市值对数，越大越稳）
-    w_quality: float = 0.06             # 质量（ROE + 股息率；data.fundamentals 接入后自动启用）
+    w_quality: float = 0.06             # 质量（默认 0.06；仅当行情快照提供 ROE/股息率时实际启用，否则权重自动归 0）
     # —— 因子计算参数 ——
     rsi_window: int = 14                # RSI 周期
     macd_fast: int = 12                 # MACD 快线

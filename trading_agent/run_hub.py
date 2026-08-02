@@ -249,6 +249,24 @@ def apply_config(cfg: config.AppConfig, ov: dict):
         cfg.market.enable = bool(ov["market_enable"])
     if "index_code" in ov:
         cfg.market.index_code = str(ov["index_code"])
+    # signal 段补充（预设/云端配置常用、但此前 apply_config 漏接的键）
+    if "breakout_window" in ov:
+        cfg.signal.breakout_window = int(ov["breakout_window"])
+    if "max_positions" in ov:
+        cfg.signal.max_positions = int(ov["max_positions"])
+    # 市场状态（风控前置）调参键
+    if "ma_window" in ov:
+        cfg.market.ma_window = int(ov["ma_window"])
+    if "mom_window" in ov:
+        cfg.market.mom_window = int(ov["mom_window"])
+    if "bull_ma_gap" in ov:
+        cfg.market.bull_ma_gap = float(ov["bull_ma_gap"])
+    if "bear_ma_gap" in ov:
+        cfg.market.bear_ma_gap = float(ov["bear_ma_gap"])
+    if "bull_mom" in ov:
+        cfg.market.bull_mom = float(ov["bull_mom"])
+    if "bear_mom" in ov:
+        cfg.market.bear_mom = float(ov["bear_mom"])
     # 前置条件过滤（板块 / ST / 流通市值）
     if "boards" in ov:
         cfg.screener.boards = list(ov["boards"])

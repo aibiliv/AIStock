@@ -85,12 +85,12 @@ export async function POST(request: Request) {
           symbol: candidate.symbol,
           name: candidate.name,
           currentPriceMillis: candidate.priceMillis,
-          maxLossMillis: riskPerShareTenThousandths,
+          maxLossTenThousandths: riskPerShareTenThousandths,
         }).map((alert: MaxLossAlert) => ({
           userId: user.id,
           symbol: alert.symbol,
           name: alert.name,
-          type: (alert.note.includes("止损") ? "止损" : "止盈一") as "止损" | "止盈一" | "止盈二",
+          type: alert.type,
           targetPriceCents: Math.round(alert.targetTenThousandths / 100),
           targetPriceMillis: Math.round(alert.targetTenThousandths / 10),
         }));
