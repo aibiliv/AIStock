@@ -38,20 +38,67 @@ export type ScreenerOverrides = {
   macd_fast?: number;
   macd_slow?: number;
   macd_signal?: number;
+  // 信号：止损比例（基于买入价）
+  stop_loss_pct?: number;
   // 市场
   market_enable?: boolean;
+};
+
+/** 风险档（中文值，与 tradingPreferences.riskProfile 枚举一致） */
+export type RiskTier = "保守" | "平衡" | "激进";
+
+export const RISK_TIERS: { key: RiskTier; label: string; hint: string; color: string }[] = [
+  { key: "保守", label: "保守", hint: "低风险 · 重估值/质量/规模，避开追涨", color: "#16a34a" },
+  { key: "平衡", label: "平衡", hint: "中等风险 · 经典趋势/动量/动能", color: "#2563eb" },
+  { key: "激进", label: "激进", hint: "高风险 · 高动量/高换手，追涨题材", color: "#dc2626" },
+];
+
+export const RISK_TIER_LABEL: Record<RiskTier, string> = {
+  保守: "保守",
+  平衡: "平衡",
+  激进: "激进",
 };
 
 /** 经典短线策略预设（与 trading_agent/strategy/presets.py 保持同步） */
 export const STRATEGY_PRESETS: {
   key: string;
   label: string;
+  risk: RiskTier;
   desc: string;
   overrides: Partial<ScreenerOverrides>;
 }[] = [
+  // --- 保守（低风险）---
+  {
+    key: "value_defensive",
+    label: "价值防御",
+    risk: "保守",
+    desc: "保守：重估值 + 质量 + 大市值，低动量/低换手，宽止损，避开高波动与题材炒作。适合稳健底仓。",
+    overrides: {
+      w_value: 0.30, w_quality: 0.28, w_size: 0.20, w_trend: 0.12,
+      w_momentum: 0.06, w_rsi: 0.02, w_macd: 0.02, w_liquidity: 0.00,
+      momentum_window: 60, max_pe_ttm: 25, max_pb: 3.0, min_turnover_pct: 0.15,
+      top_n: 8, max_per_sector: 2, st_filter: "exclude_st",
+      use_breakout_filter: false, stop_loss_pct: -0.12,
+    },
+  },
+  {
+    key: "dividend_cashflow",
+    label: "红利现金流",
+    risk: "保守",
+    desc: "保守：重质量（ROE/股息）+ 低波动 + 低估值，优选现金流稳定的蓝筹，少交易、求稳。",
+    overrides: {
+      w_quality: 0.42, w_value: 0.22, w_size: 0.18, w_trend: 0.10,
+      w_rsi: 0.04, w_momentum: 0.02, w_macd: 0.02, w_liquidity: 0.00,
+      momentum_window: 60, max_pe_ttm: 20, max_pb: 2.5, min_turnover_pct: 0.15,
+      top_n: 8, max_per_sector: 1, st_filter: "exclude_st",
+      use_breakout_filter: false, stop_loss_pct: -0.12,
+    },
+  },
+  // --- 平衡（中等风险）---
   {
     key: "breakout",
     label: "放量突破",
+    risk: "平衡",
     desc: "强调动量 + 量能，要求活跃换手，捕捉横盘后放量突破前高。",
     overrides: {
       w_momentum: 0.40, w_liquidity: 0.22, w_trend: 0.16, w_rsi: 0.10,
@@ -63,6 +110,7 @@ export const STRATEGY_PRESETS: {
   {
     key: "ma_golden",
     label: "均线多头金叉",
+    risk: "平衡",
     desc: "趋势跟随：重趋势 + 动量，快/慢均线 5/10 金叉确认。",
     overrides: {
       w_trend: 0.38, w_momentum: 0.26, w_liquidity: 0.14, w_rsi: 0.12,
@@ -73,6 +121,7 @@ export const STRATEGY_PRESETS: {
   {
     key: "macd_cross",
     label: "MACD 金叉",
+    risk: "平衡",
     desc: "动能反转：重 MACD 动能 + 趋势，捕捉 DIF 上穿 DEA。",
     overrides: {
       w_macd: 0.40, w_trend: 0.24, w_momentum: 0.18, w_rsi: 0.10,
@@ -80,10 +129,24 @@ export const STRATEGY_PRESETS: {
       macd_fast: 12, macd_slow: 26, macd_signal: 9, min_turnover_pct: 0.30,
     },
   },
-  // --- 激进策略 ---
+  // --- 激进（高风险）---
+  {
+    key: "youzi",
+    label: "游资风格",
+    risk: "激进",
+    desc: "游资超短打法近似：超短周期强动量(8日) + 高换手量能驱动 + 不恐高(放开估值) + 短周期突破确认。捕捉游资控盘、放量拉升的弹性标的。",
+    overrides: {
+      w_momentum: 0.42, w_liquidity: 0.28, w_trend: 0.14, w_rsi: 0.08,
+      w_macd: 0.08, w_value: 0.00, w_size: 0.00, w_quality: 0.00,
+      momentum_window: 8, max_pe_ttm: 10000, max_pb: 1000,
+      min_turnover_pct: 1.8, top_n: 5, st_filter: "exclude_st",
+      use_breakout_filter: true, breakout_window: 12,
+    },
+  },
   {
     key: "momentum_chase",
     label: "强势追涨",
+    risk: "激进",
     desc: "激进：极高动量权重，放开 PE/PB 限制，高换手门槛，精选 4 只。追涨不恐高。",
     overrides: {
       w_momentum: 0.50, w_liquidity: 0.22, w_trend: 0.14, w_rsi: 0.08,
@@ -96,6 +159,7 @@ export const STRATEGY_PRESETS: {
   {
     key: "bottom_reversal",
     label: "超跌反弹",
+    risk: "激进",
     desc: "激进：重 RSI 低位 + MACD 反转，筛超跌后动能回暖标的，PE/PB 放宽，精选 5 只。",
     overrides: {
       w_rsi: 0.38, w_macd: 0.28, w_momentum: 0.16, w_liquidity: 0.08,
@@ -108,6 +172,7 @@ export const STRATEGY_PRESETS: {
   {
     key: "hot_theme",
     label: "题材热点追踪",
+    risk: "激进",
     desc: "激进：流动性为王 + 量能，不限 PE/PB，极高换手门槛，每板块只取 1 只，纯交易驱动。",
     overrides: {
       w_liquidity: 0.40, w_momentum: 0.25, w_macd: 0.15, w_trend: 0.12,
@@ -116,19 +181,6 @@ export const STRATEGY_PRESETS: {
       max_pe_ttm: 10000, max_pb: 1000,
       min_turnover_pct: 3.0, top_n: 3, max_per_sector: 1,
       use_breakout_filter: false,
-    },
-  },
-  // --- 游资风格 ---
-  {
-    key: "youzi",
-    label: "游资风格",
-    desc: "游资超短打法近似：超短周期强动量(8日) + 高换手量能驱动 + 不恐高(放开估值) + 短周期突破确认。捕捉游资控盘、放量拉升的弹性标的。",
-    overrides: {
-      w_momentum: 0.42, w_liquidity: 0.28, w_trend: 0.14, w_rsi: 0.08,
-      w_macd: 0.08, w_value: 0.00, w_size: 0.00, w_quality: 0.00,
-      momentum_window: 8, max_pe_ttm: 10000, max_pb: 1000,
-      min_turnover_pct: 1.8, top_n: 5, st_filter: "exclude_st",
-      use_breakout_filter: true, breakout_window: 12,
     },
   },
 ];
@@ -156,6 +208,7 @@ const DEFAULTS: Required<ScreenerOverrides> = {
   min_turnover_pct: 0.15,
   use_breakout_filter: true,
   breakout_window: 20,
+  stop_loss_pct: -0.08,
   fast_ma: 5,
   slow_ma: 20,
   macd_fast: 12,
@@ -189,8 +242,8 @@ function toNested(ov: ScreenerOverrides): Record<string, unknown> {
   // market 节（enable -> market_enable）
   if (ov.market_enable !== undefined) market["enable"] = ov.market_enable;
 
-  // signal 节（含 MACD 参数，避免保存配置时丢失）
-  (["fast_ma", "slow_ma", "use_breakout_filter", "breakout_window", "macd_fast", "macd_slow", "macd_signal"] as (keyof ScreenerOverrides)[]).forEach((k) => copy(signal, k));
+  // signal 节（含 MACD 参数与止损比例，避免保存配置时丢失）
+  (["fast_ma", "slow_ma", "use_breakout_filter", "breakout_window", "macd_fast", "macd_slow", "macd_signal", "stop_loss_pct"] as (keyof ScreenerOverrides)[]).forEach((k) => copy(signal, k));
 
   return {
     screener,
@@ -283,14 +336,12 @@ function NumberInput({
   onChange,
   placeholder,
   min = 0,
-  max,
   step,
 }: {
   value: number | undefined;
   onChange: (v: number | undefined) => void;
   placeholder?: string;
   min?: number;
-  max?: number;
   step?: number;
 }) {
   return (
@@ -478,7 +529,7 @@ export function ScreenerConfigPanel({
         <span className="screener-muted">让扫描更有针对性</span>
       </div>
 
-      {/* 策略预设下拉框 */}
+      {/* 策略预设下拉框（按风险档分组） */}
       <div className="screener-preset-row">
         <div className="screener-preset-field">
           <span className="screener-field-label">策略预设</span>
@@ -488,16 +539,31 @@ export function ScreenerConfigPanel({
             onChange={(e) => applyPreset(e.target.value)}
           >
             <option value="">请选择策略预设</option>
-            {STRATEGY_PRESETS.map((preset) => (
-              <option key={preset.key} value={preset.key}>{preset.label}</option>
+            {RISK_TIERS.map((tier) => (
+              <optgroup key={tier.key} label={`${tier.label} · ${tier.hint}`}>
+                {STRATEGY_PRESETS.filter((p) => p.risk === tier.key).map((preset) => (
+                  <option key={preset.key} value={preset.key}>{preset.label}（{preset.risk}）</option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </div>
-        {STRATEGY_PRESETS.find((p) => p.key === selectedPreset) && (
-          <span className="screener-muted screener-preset-desc">
-            {STRATEGY_PRESETS.find((p) => p.key === selectedPreset)!.desc}
-          </span>
-        )}
+        {(() => {
+          const sel = STRATEGY_PRESETS.find((p) => p.key === selectedPreset);
+          if (!sel) return null;
+          const tier = RISK_TIERS.find((t) => t.key === sel.risk)!;
+          return (
+            <span className="screener-preset-desc">
+              <span
+                className="risk-badge"
+                style={{ background: tier.color, color: "#fff" }}
+              >
+                {tier.label}
+              </span>
+              <span className="screener-muted" style={{ marginLeft: 6 }}>{sel.desc}</span>
+            </span>
+          );
+        })()}
       </div>
 
       {/* 第一行：板块 + ST + 市值 —— 移动端自适应堆叠 */}
@@ -629,11 +695,11 @@ export function ScreenerConfigPanel({
             <div className="screener-advanced">
               <div>
                 <div className="screener-field-label">选出数量 top_n</div>
-                <NumberInput value={ov.top_n} onChange={(v) => set("top_n", v)} min={1} max={50} />
+                <NumberInput value={ov.top_n} onChange={(v) => set("top_n", v)} min={1} />
               </div>
               <div>
                 <div className="screener-field-label">单行业上限</div>
-                <NumberInput value={ov.max_per_sector} onChange={(v) => set("max_per_sector", v)} min={1} max={20} />
+                <NumberInput value={ov.max_per_sector} onChange={(v) => set("max_per_sector", v)} min={1} />
               </div>
               <div>
                 <div className="screener-field-label">PE(TTM) 上限</div>

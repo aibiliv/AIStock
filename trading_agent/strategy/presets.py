@@ -15,14 +15,68 @@
 from __future__ import annotations
 
 
-# 选股预设集合：3 套经典（breakout/ma_golden/macd_cross）+ 3 套激进
-# （momentum_chase/bottom_reversal/hot_theme）+ 游资风格（youzi）。
-# 前端 app/ScreenerConfigPanel.tsx 的 STRATEGY_PRESETS 须与本字典保持同步，
+# 选股预设集合，按风险档（risk）统一标注，与交易纪律风险偏好 riskProfile
+# （conservative/balanced/aggressive）对齐：
+#   conservative（保守）：低波动 + 重估值/质量/规模，避开高换手追涨，求稳。
+#   balanced（平衡）    ：经典趋势/动量/动能策略，风险适中。
+#   aggressive（激进）  ：高动量 + 高换手 + 放开估值，追涨/超跌/题材，波动大。
+# 每套预设新增 "risk" 字段用于前端分组与展示；前端
+# app/ScreenerConfigPanel.tsx 的 STRATEGY_PRESETS 须与本字典保持同步，
 # 否则 CLI/API 直接按 preset 名调用会找不到预设、参数丢失退回默认。
 # 注：打板/连板等需实时涨停盘口数据的策略，引擎暂无对应因子，用「高换手+强动量」近似。
 STRATEGY_PRESETS: dict[str, dict] = {
+    # —— 保守策略（低风险：重估值/质量/规模，低波动，避开追涨）——
+    "value_defensive": {
+        "label": "价值防御",
+        "risk": "保守",
+        "desc": "保守：重估值 + 质量 + 大市值，低动量/低换手，宽止损，避开高波动与题材炒作。适合稳健底仓。",
+        "overrides": {
+            "w_value": 0.30,
+            "w_quality": 0.28,
+            "w_size": 0.20,
+            "w_trend": 0.12,
+            "w_momentum": 0.06,
+            "w_rsi": 0.02,
+            "w_macd": 0.02,
+            "w_liquidity": 0.00,
+            "momentum_window": 60,       # 长回看，过滤短炒
+            "max_pe_ttm": 25,            # 低估上限（保守，不追高估值）
+            "max_pb": 3.0,
+            "min_turnover_pct": 0.15,    # 低换手门槛，避开活跃游资票
+            "top_n": 8,
+            "max_per_sector": 2,
+            "st_filter": "exclude_st",
+            "use_breakout_filter": False,
+            "stop_loss_pct": -0.12,      # 宽止损，给价值票更多容错
+        },
+    },
+    "dividend_cashflow": {
+        "label": "红利现金流",
+        "risk": "保守",
+        "desc": "保守：重质量（ROE/股息）+ 低波动 + 低估值，优选现金流稳定的蓝筹，少交易、求稳。",
+        "overrides": {
+            "w_quality": 0.42,
+            "w_value": 0.22,
+            "w_size": 0.18,
+            "w_trend": 0.10,
+            "w_rsi": 0.04,
+            "w_momentum": 0.02,
+            "w_macd": 0.02,
+            "w_liquidity": 0.00,
+            "momentum_window": 60,
+            "max_pe_ttm": 20,
+            "max_pb": 2.5,
+            "min_turnover_pct": 0.15,
+            "top_n": 8,
+            "max_per_sector": 1,
+            "st_filter": "exclude_st",
+            "use_breakout_filter": False,
+            "stop_loss_pct": -0.12,
+        },
+    },
     "breakout": {
         "label": "放量突破",
+        "risk": "balanced",
         "desc": "强调动量 + 量能，要求活跃换手，捕捉横盘后放量突破前高。",
         "overrides": {
             # 因子权重（运行时归一化）
@@ -43,6 +97,7 @@ STRATEGY_PRESETS: dict[str, dict] = {
     },
     "ma_golden": {
         "label": "均线多头金叉",
+        "risk": "平衡",
         "desc": "趋势跟随：重趋势 + 动量，快/慢均线 5/10 金叉确认。",
         "overrides": {
             "w_trend": 0.38,
@@ -60,6 +115,7 @@ STRATEGY_PRESETS: dict[str, dict] = {
     },
     "macd_cross": {
         "label": "MACD 金叉",
+        "risk": "平衡",
         "desc": "动能反转：重 MACD 动能 + 趋势，捕捉 DIF 上穿 DEA。",
         "overrides": {
             "w_macd": 0.40,
@@ -82,6 +138,7 @@ STRATEGY_PRESETS: dict[str, dict] = {
     # 不依赖 mcap 市值约束——westock 行情快照无 mcap 字段，mcap_min>0 会把全部票过滤成 0 只。
     "youzi": {
         "label": "游资风格",
+        "risk": "激进",
         "desc": "游资超短打法近似：超短周期强动量(8日) + 高换手量能驱动 + 不恐高(放开估值) + 短周期突破确认。捕捉游资控盘、放量拉升的弹性标的（注：真实打板需涨停盘口数据，此处用高换手+强动量近似）。",
         "overrides": {
             "w_momentum": 0.42,
@@ -105,6 +162,7 @@ STRATEGY_PRESETS: dict[str, dict] = {
     # —— 激进策略（与前端 ScreenerConfigPanel.tsx 的 STRATEGY_PRESETS 同步）——
     "momentum_chase": {
         "label": "强势追涨",
+        "risk": "激进",
         "desc": "激进：极高动量权重，放开 PE/PB 限制，高换手门槛，精选 4 只。追涨不恐高。",
         "overrides": {
             "w_momentum": 0.50, "w_liquidity": 0.22, "w_trend": 0.14, "w_rsi": 0.08,
@@ -116,6 +174,7 @@ STRATEGY_PRESETS: dict[str, dict] = {
     },
     "bottom_reversal": {
         "label": "超跌反弹",
+        "risk": "激进",
         "desc": "激进：重 RSI 低位 + MACD 反转，筛超跌后动能回暖标的，PE/PB 放宽，精选 5 只。",
         "overrides": {
             "w_rsi": 0.38, "w_macd": 0.28, "w_momentum": 0.16, "w_liquidity": 0.08,
@@ -127,6 +186,7 @@ STRATEGY_PRESETS: dict[str, dict] = {
     },
     "hot_theme": {
         "label": "题材热点追踪",
+        "risk": "激进",
         "desc": "激进：流动性为王 + 量能，不限 PE/PB，极高换手门槛，每板块只取 1 只，纯交易驱动。",
         "overrides": {
             "w_liquidity": 0.40, "w_momentum": 0.25, "w_macd": 0.15, "w_trend": 0.12,

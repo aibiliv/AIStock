@@ -1,0 +1,25 @@
+# 统一换行符：文本文件以 LF 存储，检出时按平台转换
+* text=auto eol=lf
+
+# 明确按语言指定，避免误判
+*.py text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.md text eol=lf
+*.sql text eol=lf
+*.mjs text eol=lf
+*.sh text eol=lf
+
+# 二进制文件不转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.svg text eol=lf
+*.woff binary
+*.woff2 binary
