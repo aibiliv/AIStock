@@ -26,6 +26,12 @@ services:
 
     restart: unless-stopped
 
+    # 显式指定国内 DNS，避免容器内 workerd 不读取宿主 /etc/resolv.conf
+    # 导致 push2.eastmoney.com 等数据源 "Network connection lost"。
+    dns:
+      - 223.5.5.5
+      - 119.29.29.29
+
     # 资源限制（Ubuntu 24 默认 cgroup v2，自动生效）
     deploy:
       resources:
